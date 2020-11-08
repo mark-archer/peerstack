@@ -12,7 +12,7 @@ export function newid(): string {
 }
 
 export function isid(sid: any) {
-  return !!/^.*-[0-9]+-[0-9a-f]{32}$/i.exec(sid)
+  return Boolean(/^[0-9a-f]{32}$/i.exec(sid))
 };
 
 export function isEmail(x) {
