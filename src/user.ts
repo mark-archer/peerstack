@@ -1,4 +1,4 @@
-import { newid, encodeUint8ArrayToBaseN, decodeUint8ArrayFromBaseN, hashObject } from './common';
+import { newid, encodeUint8ArrayToBaseN, decodeUint8ArrayFromBaseN, hashObject, anyObject } from './common';
 import * as nacl from 'tweetnacl';
 import * as naclUtil from 'tweetnacl-util';
 
@@ -37,16 +37,23 @@ export function openMessage(signedMsg: string, publicKey: (Uint8Array | string))
   return naclUtil.encodeUTF8(msgOpened);
 }
 
-export function signObject(obj: ({ [key: string]: any }), privateKey: string) {
-  const hash = hashObject(obj);
-  obj.signature = signMessage(hash, privateKey);
+export type signedObject = { signature: string } & anyObject;
+
+export function signObject(obj: anyObject, privateKey: string): signedObject {
+  const signedObj: signedObject = { ...obj, signature: undefined }
+  delete signedObj.signature;
+  const hash = hashObject(signedObj);
+  signedObj.signature = signMessage(hash, privateKey);
+  return signedObj;
 }
 
-export function verifyObjectOwner(obj: ({ [key: string]: any }), publicKey: string) {
+export function verifySignedObject(obj: signedObject, publicKey: string) {
   try {
     const signature = obj.signature;
     const sigHash = openMessage(signature, publicKey);
+    delete obj.signature;
     const hash = hashObject(obj);
+    obj.signature = signature;
     if (hash !== sigHash) {
       throw new Error('signature hash does not match');
     }

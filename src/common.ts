@@ -4,6 +4,8 @@ import { sha256 } from 'js-sha256';
 
 const stableStringify = require('fast-json-stable-stringify');
 
+export type anyObject = ({ [key: string]: any });
+
 export const isObject = (x: any) => _.isObject(x) && !_.isArray(x) && !_.isDate(x);
 export const guid = uuid.v4;
 
