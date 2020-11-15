@@ -1,17 +1,14 @@
-const { defaults } = require('jest-config');
-//module.exports = defaults;
 module.exports = {
   verbose: true,
-  moduleFileExtensions: [...defaults.moduleFileExtensions, 'ts', 'tsx'],
-  // testPathIgnorePatterns: [
-  //   '/node_modules/',
-  //   '/scripts'
-  // ],
-  testMatch: [
-    //'<rootDir>/build/tests/**/*.(js)'
-    '<rootDir>/src/**/*.test.(ts|tsx)'
+  preset: 'ts-jest',
+  testEnvironment: 'node',
+  setupFiles: [
+    '<rootDir>/node_modules/should',
+    '<rootDir>/node_modules/reflect-metadata',
+    '<rootDir>/jest.setup.js',
   ],
-  transform: {
-    '.(ts|tsx)': '<rootDir>/node_modules/ts-jest/preprocessor.js'
-  },
-}
+  testMatch: [
+    "<rootDir>/src/**/?(*.)+(test).ts",
+    "<rootDir>/src/**/?(*.)+(ext-test).ts",
+  ],
+};

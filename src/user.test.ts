@@ -18,4 +18,11 @@ describe('user', () => {
     expect(() => verifySignedObject(signedObj, newMe().publicKey)).toThrow(/Object signature verification failed/);
     expect(() => verifySignedObject(signedObj, me.publicKey + 1)).toThrow(/bad public key size/);
   })
+
+  test('object verification error', () => {
+    const obj = { name: 'mark', date: new Date() }
+    const signedObj = signObject(obj, me.privateKey);
+    signedObj.name = 'some other name'
+    expect(() => verifySignedObject(signedObj, me.publicKey)).toThrow(/signature hash does not match/)
+  })
 })

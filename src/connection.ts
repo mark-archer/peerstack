@@ -1,5 +1,5 @@
 import { anyObject, hashValue, newid } from "./common";
-import { IMe, IUser, openMessage, signedObject, signMessage } from "./user";
+import { IMe, IUser, openMessage, signedObject, signMessage, signObject, verifySignedObject } from "./user";
 import * as _ from "lodash";
 
 export type txfn = <T>(data: (string | IRemoteData)) => Promise<T | void>
@@ -53,27 +53,6 @@ export function newConnection(remoteDeviceId: string, send: txfn): IConnection {
   return conn
 }
 
-function signRemoteMessage(connection: IConnection, msg: IRemoteData) {
-  const idsHash = hashValue(connection.id + msg.id).toString().substr(0, 6);
-  const sigData = [idsHash, Date.now()].join();
-  msg.signature = signMessage(sigData, connection.me.privateKey);
-}
-
-function verifyRemoteMessage(connection: IConnection, msg: IRemoteData) {
-  const sig = openMessage(msg.signature, connection.remoteUser.publicKey);
-  const [remoteIdsHash, strDT] = sig.split(',');
-  const idsHash = hashValue(connection.id + msg.id).toString().substr(0, 6);
-  if (remoteIdsHash !== idsHash) {
-    throw new Error('invalid hash: ' + JSON.stringify({ idsHash, remoteIdsHash }));
-  }
-  const givenDT = Number(strDT);
-  const dt = Date.now();
-  const maxVarianceInDT = 100000; // 100 seconds
-  if (givenDT > (dt + maxVarianceInDT) || givenDT < (dt - maxVarianceInDT)) {
-    throw new Error('invalid dt: ' + JSON.stringify({ dt, givenDT }));
-  }
-}
-
 export function RPC<T extends Function>(connection: IConnection, fn: T): T {
   return <any>function (...args) {
     return makeRemoteCall(connection, fn.name as any, args);
@@ -81,32 +60,50 @@ export function RPC<T extends Function>(connection: IConnection, fn: T): T {
 }
 
 export async function ping(n: number, s: string) {
-  console.log('ping', n + s);
   return ['pong', ...arguments];
+}
+
+export async function testError(msg: string) {
+  throw new Error(msg);
 }
 
 export const remotelyCallableFunctions: { [key: string]: Function } = {
   [ping.name]: ping,  
+  [testError.name]: testError
 }
 
 export async function makeRemoteCall(connection: IConnection, fnName: string, args: any[]) {
+  const id = newid();
+  let rejectRemoteCall;
+  const remoteCallPromise = new Promise((resolve, reject) => {
+    rejectRemoteCall = reject;
+    connection.handlers[id] = (err, result) => err ? reject(err) : resolve(result);
+  });
   try {
-    const id = newid();
-    const remoteCall: IRemoteCall = {
+    let remoteCall: IRemoteCall = {
       type: 'call',
       id,
       fnName,
       args,
       signature: undefined
     }
-    signRemoteMessage(connection, remoteCall);
-    connection.send(remoteCall)
-    return new Promise((resolve, reject) => {
-      connection.handlers[id] = (err, result) => err ? reject(err) : resolve(result);
-    });
+    remoteCall = signObject(remoteCall, connection.me.privateKey);
+    connection.send(remoteCall);
   } catch (err) {
-    console.error('error in doRemoteCall: ', err);
+    rejectRemoteCall(err);
   }
+  return remoteCallPromise;
+}
+
+async function sendRemoteError(connection: IConnection, callId: string, error: string) {
+  let response: IRemoteResponse = {
+    type: 'response',
+    id: callId,
+    error,
+    signature: undefined
+  }
+  response = signObject(response, connection.me.privateKey);
+  connection.send(response);
 }
 
 
@@ -120,38 +117,24 @@ async function handelRemoteCall(connection: IConnection, remoteCall: IRemoteCall
       error = `${fnName} is not a remotely callable function`;
     } else {
       try {
-        if ((fn as any).passConnection) {
-          args.push(connection);
-        }
         result = await fn(...args);
       } catch (err) {
         error = String(err);
       }
     }
-    const response: IRemoteResponse = {
+    let response: IRemoteResponse = {
       type: 'response',
       id,
       result,
       error,
       signature: undefined
     }
-    signRemoteMessage(connection, response);
+    response = signObject(response, connection.me.privateKey);
     connection.send(response);
   } catch (err) {
-    console.log('error in doRemoteCall: ', err);
+    sendRemoteError(connection, id, 'unhandled error in handelRemoteCall: ' + err);
   }
 }
-
-// function sendRemoteError(connection: IConnection, data: IRemoteCall | IRemoteResponse, error: string) {
-//   const remoteError: IRemoteResponse = {
-//     type: 'response',
-//     id: data.id,
-//     error,
-//     signature: undefined
-//   }
-//   signRemoteMessage(connection, remoteError);
-//   return connection.send(remoteError);
-// }
 
 const messageChunks = {};
 export function onPeerMessage(connection: IConnection, message: string | IRemoteData) {
@@ -163,24 +146,26 @@ export function onPeerMessage(connection: IConnection, message: string | IRemote
   const msgObj = message as IRemoteCall | IRemoteResponse | IRemoteChunk;
 
   if (msgObj.type === 'chunk') {
-    // TODO validate chunk size, iChunk, and total size, to prevent remote attacker filling up memory 
+    // validate chunk size, iChunk, and total size, to prevent remote attacker filling up memory 
+    if (msgObj.totalChunks * msgObj.chunk.length > 1e9) {
+
+    }
     if (!messageChunks[msgObj.id]) {
       messageChunks[msgObj.id] = [];
     }
     const chunks = messageChunks[msgObj.id];
     chunks[msgObj.iChunk] = msgObj.chunk;
     if (_.compact(chunks).length === msgObj.totalChunks) {
-      onPeerMessage(connection, { data: chunks.join('') } as any);
       delete messageChunks[msgObj.id];
+      onPeerMessage(connection, chunks.join(''));
     }
     return;
   }
 
   try {
-    verifyRemoteMessage(connection, msgObj)
+    verifySignedObject(msgObj, connection.remoteUser.publicKey)
   } catch (err) {
-    console.log('verification of remote message failed:', msgObj, err);    
-    // sendRemoteError(connection, msgObj, 'verification of remote message failed');
+    sendRemoteError(connection, msgObj.id, 'verification of remote message failed');
     return;
   }
 
@@ -194,10 +179,12 @@ export function onPeerMessage(connection: IConnection, message: string | IRemote
         handler(msgObj.error, msgObj.result);
         delete connection.handlers[msgObj.id];
       } else {
-        console.error('no handler for remote response', msgObj);
+        /* istanbul ignore next */ 
+        console.error('no handler for remote response', connection, msgObj)
       }
       break;
     default:
-      throw new Error('unknown remote call: ' + JSON.stringify(msgObj));
+      // @ts-ignore
+      sendRemoteError(connection, msgObj.id, 'unknown remote call: ' + msgObj.type)
   }
 }

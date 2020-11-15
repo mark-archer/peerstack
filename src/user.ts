@@ -39,8 +39,8 @@ export function openMessage(signedMsg: string, publicKey: (Uint8Array | string))
 
 export type signedObject = { signature: string } & anyObject;
 
-export function signObject(obj: anyObject, privateKey: string): signedObject {
-  const signedObj: signedObject = { ...obj, signature: undefined }
+export function signObject<T>(obj: T, privateKey: string): T & { signature: string } {
+  const signedObj = { ...obj, signature: undefined }
   delete signedObj.signature;
   const hash = hashObject(signedObj);
   signedObj.signature = signMessage(hash, privateKey);
