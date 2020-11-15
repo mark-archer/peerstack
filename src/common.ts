@@ -1,3 +1,5 @@
+/* istanbul ignore file */
+
 import * as _ from 'lodash';
 import * as uuid from 'uuid';
 import { sha256 } from 'js-sha256';
