@@ -37,9 +37,11 @@ export function openMessage(signedMsg: string, publicKey: (Uint8Array | string))
   return naclUtil.encodeUTF8(msgOpened);
 }
 
-export type signedObject = { signature: string } & anyObject;
+export interface ISigned {
+  signature: string
+}
 
-export function signObject<T>(obj: T, privateKey: string): T & { signature: string } {
+export function signObject<T>(obj: T, privateKey: string): T & ISigned {
   const signedObj = { ...obj, signature: undefined }
   delete signedObj.signature;
   const hash = hashObject(signedObj);
@@ -47,7 +49,7 @@ export function signObject<T>(obj: T, privateKey: string): T & { signature: stri
   return signedObj;
 }
 
-export function verifySignedObject(obj: signedObject, publicKey: string) {
+export function verifySignedObject(obj: ISigned, publicKey: string) {
   try {
     const signature = obj.signature;
     const sigHash = openMessage(signature, publicKey);

@@ -1,4 +1,7 @@
+import { hashObject } from "./common";
 import { newMe, signMessage, openMessage, signObject, verifySignedObject } from "./user"
+import * as _ from 'lodash';
+import 'should';
 
 describe('user', () => {
   const me = newMe();
@@ -24,5 +27,13 @@ describe('user', () => {
     const signedObj = signObject(obj, me.privateKey);
     signedObj.name = 'some other name'
     expect(() => verifySignedObject(signedObj, me.publicKey)).toThrow(/signature hash does not match/)
+  })
+
+  test('object hashs are 64 chars and signatures 256 chars', () => {
+    const obj = { nums: _.range(1000000), propA: 'A', propB: 'B' };
+    const hash = hashObject(obj);
+    hash.length.should.equal(64);
+    const signature = signMessage(hash, me.privateKey);
+    signature.length.should.equal(256);
   })
 })

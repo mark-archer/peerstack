@@ -1,5 +1,5 @@
-import { anyObject, hashValue, newid } from "./common";
-import { IMe, IUser, openMessage, signedObject, signMessage, signObject, verifySignedObject } from "./user";
+import { newid } from "./common";
+import { IMe, IUser, signObject, verifySignedObject } from "./user";
 import * as _ from "lodash";
 
 export type txfn = <T>(data: (string | IRemoteData)) => Promise<T | void>
