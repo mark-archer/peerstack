@@ -9,7 +9,7 @@ export interface IUser {
 }
 
 export interface IMe extends IUser {
-  privateKey: string
+  secretKey: string
 }
 
 export function newMe(displayName?: string): IMe {
@@ -18,15 +18,15 @@ export function newMe(displayName?: string): IMe {
   return {
     id: userId,
     displayName: displayName || userId,
-    privateKey: encodeUint8ArrayToBaseN(newKey.secretKey),
+    secretKey: encodeUint8ArrayToBaseN(newKey.secretKey),
     publicKey: encodeUint8ArrayToBaseN(newKey.publicKey),
   }
 }
 
-export function signMessage(msg: string, privateKey: string) {
-  const secretKey = decodeUint8ArrayFromBaseN(privateKey)
+export function signMessage(msg: string, secretKey: string) {
+  const _secretKey = decodeUint8ArrayFromBaseN(secretKey)
   const msgDecoded = naclUtil.decodeUTF8(msg);
-  const msgSigned = nacl.sign(msgDecoded, secretKey);
+  const msgSigned = nacl.sign(msgDecoded, _secretKey);
   return encodeUint8ArrayToBaseN(msgSigned);
 }
 
@@ -41,11 +41,11 @@ export interface ISigned {
   signature: string
 }
 
-export function signObject<T>(obj: T, privateKey: string): T & ISigned {
-  const signedObj = { ...obj, signature: undefined }
+export function signObject<T>(obj: T, secretKey: string): T & ISigned {
+  const signedObj = obj as T & ISigned;
   delete signedObj.signature;
   const hash = hashObject(signedObj);
-  signedObj.signature = signMessage(hash, privateKey);
+  signedObj.signature = signMessage(hash, secretKey);
   return signedObj;
 }
 

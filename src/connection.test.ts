@@ -86,7 +86,7 @@ describe('connection', () => {
         await RPC(_connLocal, fakeFn)();
         throw 'should not get here'
       } catch (err) {
-        expect(String(err)).toMatch("Cannot read property 'privateKey' of null");
+        expect(String(err)).toMatch("Cannot read property 'secretKey' of null");
       }
     })
   })

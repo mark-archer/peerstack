@@ -87,7 +87,7 @@ export async function makeRemoteCall(connection: IConnection, fnName: string, ar
       args,
       signature: undefined
     }
-    remoteCall = signObject(remoteCall, connection.me.privateKey);
+    remoteCall = signObject(remoteCall, connection.me.secretKey);
     connection.send(remoteCall);
   } catch (err) {
     rejectRemoteCall(err);
@@ -102,7 +102,7 @@ async function sendRemoteError(connection: IConnection, callId: string, error: s
     error,
     signature: undefined
   }
-  response = signObject(response, connection.me.privateKey);
+  response = signObject(response, connection.me.secretKey);
   connection.send(response);
 }
 
@@ -129,7 +129,7 @@ async function handelRemoteCall(connection: IConnection, remoteCall: IRemoteCall
       error,
       signature: undefined
     }
-    response = signObject(response, connection.me.privateKey);
+    response = signObject(response, connection.me.secretKey);
     connection.send(response);
   } catch (err) {
     sendRemoteError(connection, id, 'unhandled error in handelRemoteCall: ' + err);
