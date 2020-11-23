@@ -78,6 +78,12 @@ export const baseOps = {
   },
 }
 
+if (typeof window === 'undefined' || !window.indexedDB) {
+  console.log("Your browser doesn't support a stable version of IndexedDB.");
+} else {
+
+}
+
 // export async function validateAndSaveComment(data: IComment) {
 //   if (data.type !== 'comment') {
 //     throw new Error('validateAndSaveComment should only be called with data of type "comment"');

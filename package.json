@@ -7,16 +7,25 @@
   "license": "UNLICENSED",
   "private": true,
   "scripts": {
-    "test": "jest --coverage --no-cache"
+    "test": "jest --coverage --no-cache --runInBand"
   },
   "devDependencies": {
+    "@types/expect-puppeteer": "^4.4.5",
     "@types/jest": "^26.0.15",
+    "@types/jest-environment-puppeteer": "^4.4.0",
     "@types/lodash": "^4.14.165",
+    "@types/puppeteer": "^5.4.0",
     "@types/should": "^13.0.0",
+    "express": "^4.17.1",
     "jest": "^26.6.3",
+    "jest-cli": "^26.6.3",
+    "jest-puppeteer": "^4.4.0",
+    "puppeteer": "^5.5.0",
     "reflect-metadata": "^0.1.13",
     "should": "^13.2.3",
-    "typescript": "^4.0.5"
+    "typescript": "^4.0.5",
+    "webpack": "^5.5.1",
+    "webpack-dev-middleware": "^4.0.2"
   },
   "dependencies": {
     "fast-json-stable-stringify": "^2.1.0",
