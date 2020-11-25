@@ -1,5 +1,6 @@
 import { hashObject } from './common';
 import Crpytr from 'cryptr';
+import Fingerprintjs2 from 'fingerprintjs2';
 
 let fingerprint;
 export function getFingerprint(): Promise<string> {
@@ -7,11 +8,10 @@ export function getFingerprint(): Promise<string> {
     return Promise.resolve(fingerprint);
   }
   return new Promise(resolve => {
-    new (require('fingerprintjs2'))().get(function(_fingerprint, components) {
+    const fingerprinter = new Fingerprintjs2();
+    fingerprinter.get(function(_fingerprint, components) {
       const safeComponents = components.filter(i => !['resolution', 'timezone', 'plugins'].some(k => i.key.match(k)))
       fingerprint = hashObject(safeComponents);
-      fingerprint = hashObject(safeComponents);
-      console.log({ _fingerprint,fingerprint, components });
       resolve(fingerprint);
     })
   })
