@@ -20,7 +20,9 @@
     "typescript": "^4.0.5"
   },
   "dependencies": {
+    "cryptr": "^6.0.2",
     "fast-json-stable-stringify": "^2.1.0",
+    "fingerprintjs2": "1.8.1",
     "js-sha256": "^0.9.0",
     "lodash": "^4.17.20",
     "ts-jest": "^26.4.3",
