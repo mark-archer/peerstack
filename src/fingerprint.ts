@@ -2,7 +2,7 @@ import { hashObject } from './common';
 import Crpytr from 'cryptr';
 
 let fingerprint;
-export function getFingerprint() {
+export function getFingerprint(): Promise<string> {
   if (fingerprint) {
     return Promise.resolve(fingerprint);
   }
