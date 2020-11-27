@@ -1,6 +1,6 @@
 import { newid } from './common';
 import { newMe, signObject } from './user';
-import { baseOps, IData, /*validateAndSave, IGroup, GROUPS_GROUP_ID, validateAndGet, IDataEvent*/ } from './db';
+import { baseOps, IData, setupIndexedDBOps, /*validateAndSave, IGroup, GROUPS_GROUP_ID, validateAndGet, IDataEvent*/ } from './db';
 
 describe('db', () => {
 
@@ -44,6 +44,30 @@ describe('db', () => {
     await baseOps.delete(dbData.groupId, dbData.id);
     const dbData3 = await baseOps.get(data.groupId, data.id);
     expect(dbData3).toBeNull();
+  })
+
+  test.skip('indexedDB baseOps CRUD', async () => {
+    setupIndexedDBOps();
+    const id = newid();
+    let data: IData = { id, groupId: id, ownerId: id, type: 'fake', createMS: Date.now(), signature: null }
+
+    // CREATE
+    let r = await baseOps.insert(data);    
+    expect(r).toMatchObject([id,id]);
+    data = await baseOps.get(id, id);
+    expect(data).toMatchObject({ type: 'fake' })
+
+    // UPDATE
+    data.type = 'fake2'
+    r = await baseOps.update(data);
+    expect(r).toMatchObject([id,id]);
+    data = await baseOps.get(id, id);
+    expect(data).toMatchObject({ type: 'fake2' });
+
+    // DELETE
+    await baseOps.delete(id, id);
+    data = await baseOps.get(id, id);
+    expect(data).toBeNull();
   })
 
   // test('validated CRUD', async () => {

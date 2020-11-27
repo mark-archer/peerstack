@@ -78,6 +78,81 @@ export const baseOps = {
   },
 }
 
+export function setupIndexedDBOps(
+  dbName: string = 'peerstack', 
+  dbVersion: number = 1, 
+  onUpgrade?: ((evt: IDBVersionChangeEvent) => Promise<void>)) 
+{
+  if (typeof window === 'undefined' || !window.indexedDB) {
+    throw new Error('indexdb is not currently available')
+  }
+  const openDb = (): Promise<IDBDatabase> => new Promise(async (resolve, reject) => {
+    const request = window.indexedDB.open(dbName, dbVersion);
+    request.onerror = evt => reject(new Error('insert failed - failed to open db: ' + String(evt)));
+    request.onupgradeneeded = evt => {
+      if (onUpgrade) return onUpgrade(evt);
+      var db = (evt.target as any).result as IDBDatabase;
+      if (dbVersion <= 1) {
+        const dataStore = db.createObjectStore("data", { keyPath: ['groupId', 'id'] });
+        // dataStore.createIndex("group-id", ['groupId', 'id'], { unique: true, multiEntry: false })
+      }
+    }
+    request.onsuccess = evt => resolve((evt.target as any).result as IDBDatabase)
+  });
+
+  baseOps.get = (groupId: string, id: string): Promise<IData> => new Promise(async (resolve, reject) => {
+    const db = await openDb();
+    const transaction = db.transaction(['data'], 'readonly');
+    transaction.onerror = evt => reject(evt);
+    const request = transaction.objectStore('data').get([groupId, id]);
+    request.onerror = evt => reject(evt);
+    request.onsuccess = evt => resolve((evt.target as any).result);
+  });
+
+  baseOps.insert = (data: IData): Promise<any> => new Promise(async (resolve, reject) => {
+    const db = await openDb();
+    const transaction = db.transaction(['data'], 'readwrite');
+    transaction.onerror = evt => reject(evt);
+    const request = transaction.objectStore('data').add(data);
+    request.onsuccess = evt => resolve((evt.target as any).result);
+  });
+
+  baseOps.update = (data: IData): Promise<any> => new Promise(async (resolve, reject) => {
+    const db = await openDb();
+    const transaction = db.transaction(['data'], 'readwrite');
+    transaction.onerror = evt => reject(evt);
+    const request = transaction.objectStore('data').put(data);
+    request.onerror = evt => reject(evt);
+    request.onsuccess = evt => resolve((evt.target as any).result);
+  });
+
+  baseOps.delete = (groupId, id): Promise<any> => new Promise(async (resolve, reject) => {
+    const db = await openDb();
+    const transaction = db.transaction(['data'], 'readwrite');
+    transaction.onerror = evt => reject(evt);
+    const request = transaction.objectStore('data').delete([groupId, id]);
+    request.onerror = evt => reject(evt);
+    request.onsuccess = evt => resolve((evt.target as any).result);
+  });
+
+  baseOps.find = (groupId: string, query: string | IDBKeyRange, index?: string): Promise<IData[]> => 
+    new Promise(async (resolve, reject) => {
+      // WIP
+      const db = await openDb();
+      const transaction = db.transaction(['data'], 'readwrite');
+      transaction.onerror = evt => reject(evt);
+      const dataStore = transaction.objectStore('data');
+      let request: IDBRequest;
+      if (index) {
+        request = dataStore.index(index).getAll(query);
+      } else {
+        request = dataStore.getAll(query);
+      }
+      request.onerror = evt => reject(evt);
+      request.onsuccess = evt => resolve((evt.target as any).result);
+    });
+}
+
 // export async function validateAndSaveComment(data: IComment) {
 //   if (data.type !== 'comment') {
 //     throw new Error('validateAndSaveComment should only be called with data of type "comment"');
