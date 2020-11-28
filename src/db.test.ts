@@ -1,74 +1,89 @@
 import { newid } from './common';
 import { newMe, signObject } from './user';
-import { baseOps, IData, setupIndexedDBOps, /*validateAndSave, IGroup, GROUPS_GROUP_ID, validateAndGet, IDataEvent*/ } from './db';
+import { IData, getMemoryDB, getIndexedDB, /*validateAndSave, IGroup, GROUPS_GROUP_ID, validateAndGet, IDataEvent*/ } from './db';
 
 describe('db', () => {
 
   test('baseOps CRUD', async () => {
+    const db = await getMemoryDB()
     const data: IData = {
       type: 'post',
       id: newid(),
       groupId: newid(),
       ownerId: newid(),
-      createMS: Date.now(),
       signature: null,
     }
     // CREATE
-    await baseOps.insert(data)
+    await db.insert(data)
 
     // READ
-    const dbData = await baseOps.get(data.groupId, data.id);
+    const dbData = await db.get(data.id);
     expect(dbData).toMatchObject(data);
 
     // UPDATE
     dbData.signature = 'updated';
-    await baseOps.update(dbData);
-    const dbData2 = await baseOps.get(data.groupId, data.id);
+    await db.update(dbData);
+    const dbData2 = await db.get(data.id);
     expect(dbData2).toMatchObject(dbData2);
 
     // FIND with index
-    const results2 = await baseOps.find(data.groupId, 'post', 'type');
+    const results2 = await db.find('post', 'type');
     expect(results2).toMatchObject([{ id: data.id }])
 
     // FIND with key range
     const keyRange = { includes: () => true } as any;
-    const results = await baseOps.find(data.groupId, keyRange);
+    const results = await db.find(data.groupId, keyRange);
     expect(results).toMatchObject([{ id: data.id }])
 
     // FIND with bad id
-    const results3 = await baseOps.find(data.groupId, 'bad-id');
+    const results3 = await db.find(data.groupId, 'bad-id');
     expect(results3.length).toEqual(0);
 
 
     // DELETE 
-    await baseOps.delete(dbData.groupId, dbData.id);
-    const dbData3 = await baseOps.get(data.groupId, data.id);
+    await db.delete(dbData.id);
+    const dbData3 = await db.get(data.id);
     expect(dbData3).toBeNull();
   })
 
   test.skip('indexedDB baseOps CRUD', async () => {
-    setupIndexedDBOps();
+    const db = await getIndexedDB();
     const id = newid();
-    let data: IData = { id, groupId: id, ownerId: id, type: 'fake', createMS: Date.now(), signature: null }
+    let data: IData = { id, groupId: id, ownerId: id, signature: null, test: 4 }
 
     // CREATE
-    let r = await baseOps.insert(data);    
-    expect(r).toMatchObject([id,id]);
-    data = await baseOps.get(id, id);
-    expect(data).toMatchObject({ type: 'fake' })
-
+    await db.insert(data)
+    const startTime = Date.now();
+    data = await db.get(id);
+    console.log('insert', {data});
+    console.log(`took: ${Date.now() - startTime}ms`)
+    
     // UPDATE
     data.type = 'fake2'
-    r = await baseOps.update(data);
-    expect(r).toMatchObject([id,id]);
-    data = await baseOps.get(id, id);
-    expect(data).toMatchObject({ type: 'fake2' });
+    let r = await db.update(data);
+    console.log({r});
+    data = await db.get(id);
+    console.log('update', {data})
+    console.log(`took: ${Date.now() - startTime}ms`)
 
+    // READ
+    data.id = newid();
+    const time = Date.now();
+    await db.insert(data);
+    console.log('simple find', await db.find(id))
+    console.log('find with group index - expect 2', await db.find(id, 'groupId'))
+    console.log('find with type index - expect several', await db.find('fake2', 'type'))
+    console.log('find with lastUpdateTime - expect 1', await db.find(IDBKeyRange.lowerBound(time), 'lastUpdateTime'))
+    console.log(`took: ${Date.now() - startTime}ms`)
+    
     // DELETE
-    await baseOps.delete(id, id);
-    data = await baseOps.get(id, id);
-    expect(data).toBeNull();
-  })
+    r = await db.delete(id);
+    console.log({r});
+    data = await db.get(id);
+    console.log('delete',{data})
+
+    console.log(`took: ${Date.now() - startTime}ms`)
+  });
 
   // test('validated CRUD', async () => {
   //   const user = newMe();

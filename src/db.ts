@@ -3,10 +3,11 @@ import { verifySignedObject, ISigned } from './user';
 
 export interface IData extends ISigned {
   id: string,
-  type: 'group' | 'comment' | string,
   groupId: string,
+  type?: 'group' | 'any' | string,
   ownerId: string,
-  createMS: number,
+  lastUpdateTime?: number,
+  [key:string]: any
 }
 
 // export const GROUPS_GROUP_ID = 'groups';
@@ -38,87 +39,94 @@ export interface IData extends ISigned {
 //   type: 'comment',
 // }
 
-export const memoryDB: {
-  [groupId: string]: { [id: string]: IData }
-} = {}
+export type indexes = 'groupId' | 'type' | 'ownerId' | 'lastUpdateTime'
+  | 'groupId-lastUpdateTime' | 'type-lastUpdateTime' | 'ownerId-lastUpdateTime' 
+  | 'groupId-type-lastUpdateTime' | 'groupId-ownerId-lastUpdateTime';
 
-export const baseOps = {
-  get: async function (groupId: string, id: string): Promise<IData> {
-    // indexdb.get
-    return get(memoryDB, `${groupId}.${id}`, null)
-  },
-  insert: async function (data: IData): Promise<void> {
-    // indexdb.add
-    set(memoryDB, `${data.groupId}.${data.id}`, JSON.parse(JSON.stringify(data)))
-  },
-  update: async function (data: IData): Promise<void> {
-    // indexdb.put
-    set(memoryDB, `${data.groupId}.${data.id}`, JSON.parse(JSON.stringify(data)))
-  },
-  delete: async function (groupId: string, id: string): Promise<void> {
-    // indexdb.delete
-    set(memoryDB, `${groupId}.${id}`, undefined)
-  },
-  find: async function (groupId: string, query: string | IDBKeyRange, index?: string): Promise<IData[]> {
-    const results: IData[] = [];
-    const group = memoryDB[groupId];
-    Object.keys(group).forEach(id => {
-      let testValue = id;
-      if (index) {
-        testValue = get(group, `${id}.${index}`, null);
-      }
-      if (
-        (typeof query === 'string' && testValue === query) ||
-        (query.includes && query.includes(testValue))
-      ) {
-        results.push(group[id])
-      }
-    })
-    return results;
-  },
+export interface IDB {
+  insert: (data: IData) => Promise<void> 
+  update: (data: IData) => Promise<void> 
+  delete: (id: string) => Promise<void> 
+  get: (id: string) => Promise<IData> 
+  find: (query: string | IDBKeyRange, index?: indexes) => Promise<IData[]> 
 }
 
-export function setupIndexedDBOps(
+export function getMemoryDB(): IDB {
+  const memoryDB: {
+    [id: string]: IData
+  } = {}
+  
+  const baseOps: IDB = {    
+    insert: async data => memoryDB[data.id] = JSON.parse(JSON.stringify(data)),
+    update: async data => memoryDB[data.id] = JSON.parse(JSON.stringify(data)),
+    delete: async id => delete memoryDB[id] as undefined,
+    get: async id => memoryDB[id],
+    find: async (query: string | IDBKeyRange, index?: string) => {
+      const results: IData[] = [];
+      Object.keys(memoryDB).forEach(id => {
+        let testValue = id;
+        if (index) {
+          testValue = get(memoryDB, `${id}.${index}`, null);
+        }
+        if (
+          (typeof query === 'string' && testValue === query) ||
+          (query.includes && query.includes(testValue))
+        ) {
+          results.push(memoryDB[id])
+        }
+      })
+      return results;
+    },
+  }
+  return baseOps
+}
+
+
+export async function getIndexedDB(
   dbName: string = 'peerstack', 
   dbVersion: number = 1, 
-  onUpgrade?: ((evt: IDBVersionChangeEvent) => Promise<void>)) 
+  onUpgrade?: ((evt: IDBVersionChangeEvent) => Promise<void>)
+): Promise<IDB> 
 {
   if (typeof window === 'undefined' || !window.indexedDB) {
-    throw new Error('indexdb is not currently available')
+    throw new Error('indexedDB is not currently available')
   }
-  const openDb = (): Promise<IDBDatabase> => new Promise(async (resolve, reject) => {
+  const db: IDBDatabase = await new Promise(async (resolve, reject) => {
     const request = window.indexedDB.open(dbName, dbVersion);
-    request.onerror = evt => reject(new Error('insert failed - failed to open db: ' + String(evt)));
+    request.onerror = evt => reject(new Error('failed to open db: ' + String(evt)));
+    request.onsuccess = evt => resolve((evt.target as any).result as IDBDatabase)
     request.onupgradeneeded = evt => {
       if (onUpgrade) return onUpgrade(evt);
       var db = (evt.target as any).result as IDBDatabase;
       if (dbVersion <= 1) {
-        const dataStore = db.createObjectStore("data", { keyPath: ['groupId', 'id'] });
-        // dataStore.createIndex("group-id", ['groupId', 'id'], { unique: true, multiEntry: false })
+        const dataStore = db.createObjectStore("data", { keyPath: 'id' });
+        dataStore.createIndex("groupId", 'groupId', { unique: false })
+        dataStore.createIndex("type", 'type', { unique: false })
+        dataStore.createIndex("ownerId", 'ownerId', { unique: false })
+        dataStore.createIndex("lastUpdateTime", 'lastUpdateTime', { unique: false })
+
+        dataStore.createIndex("groupId-lastUpdateTime", ['groupId', 'lastUpdateTime'], { unique: false })
+        dataStore.createIndex("type-lastUpdateTime", ['type', 'lastUpdateTime'], { unique: false })
+        dataStore.createIndex("ownerId-lastUpdateTime", ['ownerId', 'lastUpdateTime'], { unique: false })
+        
+        dataStore.createIndex("groupId-type-lastUpdateTime", ['groupId', 'type', 'lastUpdateTime'], { unique: false })
+        dataStore.createIndex("groupId-ownerId-lastUpdateTime", ['groupId', 'ownerId', 'lastUpdateTime'], { unique: false })
       }
     }
-    request.onsuccess = evt => resolve((evt.target as any).result as IDBDatabase)
-  });
+  });  
 
-  baseOps.get = (groupId: string, id: string): Promise<IData> => new Promise(async (resolve, reject) => {
-    const db = await openDb();
-    const transaction = db.transaction(['data'], 'readonly');
-    transaction.onerror = evt => reject(evt);
-    const request = transaction.objectStore('data').get([groupId, id]);
-    request.onerror = evt => reject(evt);
-    request.onsuccess = evt => resolve((evt.target as any).result);
-  });
-
-  baseOps.insert = (data: IData): Promise<any> => new Promise(async (resolve, reject) => {
-    const db = await openDb();
+  const insert = (data: IData): Promise<any> => new Promise(async (resolve, reject) => {
+    data.type = data.type || 'any';
+    data.lastUpdateTime = Date.now();
     const transaction = db.transaction(['data'], 'readwrite');
     transaction.onerror = evt => reject(evt);
     const request = transaction.objectStore('data').add(data);
     request.onsuccess = evt => resolve((evt.target as any).result);
   });
 
-  baseOps.update = (data: IData): Promise<any> => new Promise(async (resolve, reject) => {
-    const db = await openDb();
+  const update = (data: IData): Promise<any> => new Promise(async (resolve, reject) => {
+    data.type = data.type || 'any';
+    data.lastUpdateTime = Date.now();
     const transaction = db.transaction(['data'], 'readwrite');
     transaction.onerror = evt => reject(evt);
     const request = transaction.objectStore('data').put(data);
@@ -126,19 +134,25 @@ export function setupIndexedDBOps(
     request.onsuccess = evt => resolve((evt.target as any).result);
   });
 
-  baseOps.delete = (groupId, id): Promise<any> => new Promise(async (resolve, reject) => {
-    const db = await openDb();
+  const deleteOp = (id): Promise<any> => new Promise(async (resolve, reject) => {
     const transaction = db.transaction(['data'], 'readwrite');
     transaction.onerror = evt => reject(evt);
-    const request = transaction.objectStore('data').delete([groupId, id]);
+    const request = transaction.objectStore('data').delete(id);
     request.onerror = evt => reject(evt);
     request.onsuccess = evt => resolve((evt.target as any).result);
   });
 
-  baseOps.find = (groupId: string, query: string | IDBKeyRange, index?: string): Promise<IData[]> => 
+  const get = (id: string): Promise<IData> => new Promise(async (resolve, reject) => {
+    const transaction = db.transaction(['data'], 'readonly');
+    transaction.onerror = evt => reject(evt);
+    const request = transaction.objectStore('data').get(id);
+    request.onerror = evt => reject(evt);
+    request.onsuccess = evt => resolve((evt.target as any).result);
+  });
+
+  const find = (query: string | IDBKeyRange, index?: indexes): Promise<IData[]> => 
     new Promise(async (resolve, reject) => {
       // WIP
-      const db = await openDb();
       const transaction = db.transaction(['data'], 'readwrite');
       transaction.onerror = evt => reject(evt);
       const dataStore = transaction.objectStore('data');
@@ -151,7 +165,123 @@ export function setupIndexedDBOps(
       request.onerror = evt => reject(evt);
       request.onsuccess = evt => resolve((evt.target as any).result);
     });
+
+  const baseOps: IDB = {
+    insert,
+    update,
+    delete: deleteOp,
+    get,
+    find,
+  }
+
+  
+  return baseOps;
 }
+
+// export async function setupIndexedDBGroupOps(
+//   groupId: string,
+//   dbName: string = 'peerstack') 
+// {
+//   if (typeof window === 'undefined' || !window.indexedDB) {
+//     throw new Error('indexdb is not currently available')
+//   }
+//   const groupStoreName = 'groups';
+//   const dbVersion = Date.now();
+//   const db: IDBDatabase = await new Promise(async (resolve, reject) => {
+//     const request = window.indexedDB.open(dbName, dbVersion);
+//     request.onerror = evt => reject(new Error('failed to open db: ' + String(evt)));
+//     request.onsuccess = evt => resolve((evt.target as any).result as IDBDatabase)
+//     request.onupgradeneeded = async evt => {
+//       var db = (evt.target as any).result as IDBDatabase;
+//       const { oldVersion } = evt
+//       let groupStorePromise = Promise.resolve();
+//       if (oldVersion < 1) {
+//         groupStorePromise = new Promise((resolve) => {
+//           const objectStore = db.createObjectStore(groupStoreName, { keyPath: 'id' });
+//           objectStore.transaction.oncomplete = () => resolve();
+//         });
+//       }
+//       await groupStorePromise;
+//       if (groupId === groupStoreName) {
+//         resolve(db);
+//       }
+
+//       const tx = db.transaction(groupStoreName, 'readonly');
+//       tx.onerror = evt => reject(evt);
+//       const group = await new Promise((resolve, reject) => {
+//         const request = tx.objectStore(groupStoreName).get(groupId);
+//         request.onerror = evt => reject(evt);
+//         request.onsuccess = evt => resolve((evt.target as any).result);
+//       });
+//       if (!group) {
+//         // add group
+//         const tx = db.transaction(groupStoreName, 'readwrite');
+//         tx.onerror = evt => reject(evt);
+//         await new Promise((resolve, reject) => {
+//           const request = tx.objectStore(groupStoreName).add({ id: groupId, });
+//           request.onerror = evt => reject(evt);
+//           request.onsuccess = evt => resolve((evt.target as any).result);
+//         });
+//         const groupObjectStore = db.createObjectStore(groupId, { keyPath: 'id' });
+//         groupObjectStore.createIndex('type', 'type', { unique: false })
+//         groupObjectStore.createIndex('createMS', 'createMS', { unique: false })
+//         groupObjectStore.createIndex('updateMS', 'updateMS', { unique: false })
+        
+//       }
+//       resolve(db);
+//     }    
+//   });
+  
+//   baseOps.get = (groupId: string, id: string): Promise<IData> => new Promise(async (resolve, reject) => {
+//     resolve(null)
+//     // const db = await openDb();
+//     // const transaction = db.transaction(['data'], 'readonly');
+//     // transaction.onerror = evt => reject(evt);
+//     // const request = transaction.objectStore('data').get([groupId, id]);
+//     // request.onerror = evt => reject(evt);
+//     // request.onsuccess = evt => resolve((evt.target as any).result);
+//   });
+
+//   baseOps.insert = (data: IData): Promise<any> => new Promise(async (resolve, reject) => {
+//     resolve(null);
+//     // const transaction = db.transaction(['data'], 'readwrite');
+//     // transaction.onerror = evt => reject(evt);
+//     // const request = transaction.objectStore('data').add(data);
+//     // request.onsuccess = evt => resolve((evt.target as any).result);
+//   });
+
+//   baseOps.update = (data: IData): Promise<any> => new Promise(async (resolve, reject) => {
+//     const transaction = db.transaction(['data'], 'readwrite');
+//     transaction.onerror = evt => reject(evt);
+//     const request = transaction.objectStore('data').put(data);
+//     request.onerror = evt => reject(evt);
+//     request.onsuccess = evt => resolve((evt.target as any).result);
+//   });
+
+//   baseOps.delete = (groupId, id): Promise<any> => new Promise(async (resolve, reject) => {
+//     const transaction = db.transaction(['data'], 'readwrite');
+//     transaction.onerror = evt => reject(evt);
+//     const request = transaction.objectStore('data').delete([groupId, id]);
+//     request.onerror = evt => reject(evt);
+//     request.onsuccess = evt => resolve((evt.target as any).result);
+//   });
+
+//   baseOps.find = (groupId: string, query: string | IDBKeyRange, index?: string): Promise<IData[]> => 
+//     new Promise(async (resolve, reject) => {
+//       // WIP
+//       const transaction = db.transaction(['data'], 'readwrite');
+//       transaction.onerror = evt => reject(evt);
+//       const dataStore = transaction.objectStore('data');
+//       let request: IDBRequest;
+//       if (index) {
+//         request = dataStore.index(index).getAll(query);
+//       } else {
+//         request = dataStore.getAll(query);
+//       }
+//       request.onerror = evt => reject(evt);
+//       request.onsuccess = evt => resolve((evt.target as any).result);
+//     });
+// }
 
 // export async function validateAndSaveComment(data: IComment) {
 //   if (data.type !== 'comment') {
