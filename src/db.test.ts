@@ -73,7 +73,7 @@ describe('db', () => {
     console.log('simple find', await db.find(id))
     console.log('find with group index - expect 2', await db.find(id, 'group'))
     console.log('find with type index - expect several', await db.find('fake2', 'type'))
-    console.log('find with lastUpdateTime - expect 1', await db.find(IDBKeyRange.lowerBound(time), 'modifiedTime'))
+    console.log('find with modified - expect 1', await db.find(IDBKeyRange.lowerBound(time), 'modified'))
     console.log(`took: ${Date.now() - startTime}ms`)
     
     // DELETE

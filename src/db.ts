@@ -6,7 +6,7 @@ export interface IData extends ISigned {
   group: string,
   type?: 'group' | 'any' | string,
   owner: string,
-  modifiedTime?: number,
+  modified?: number,
   [key:string]: any
 }
 
@@ -39,9 +39,9 @@ export interface IData extends ISigned {
 //   type: 'comment',
 // }
 
-export type indexes = 'group' | 'type' | 'owner' | 'modifiedTime'
-  | 'group-modifiedTime' | 'type-modifiedTime' | 'owner-modifiedTime' 
-  | 'group-type-modifiedTime' | 'group-owner-modifiedTime';
+export type indexes = 'group' | 'type' | 'owner' | 'modified'
+  | 'group-modified' | 'type-modified' | 'owner-modified' 
+  | 'group-type-modified' | 'group-owner-modified';
 
 export interface IDB {
   insert: (data: IData | IData[]) => Promise<void> 
@@ -73,14 +73,14 @@ export async function getIndexedDB(
         dataStore.createIndex("group", 'group', { unique: false })
         dataStore.createIndex("type", 'type', { unique: false })
         dataStore.createIndex("owner", 'owner', { unique: false })
-        dataStore.createIndex("modifiedTime", 'modifiedTime', { unique: false })
+        dataStore.createIndex("modified", 'modified', { unique: false })
 
-        dataStore.createIndex("group-modifiedTime", ['group', 'modifiedTime'], { unique: false })
-        dataStore.createIndex("type-modifiedTime", ['type', 'modifiedTime'], { unique: false })
-        dataStore.createIndex("owner-modifiedTime", ['owner', 'modifiedTime'], { unique: false })
+        dataStore.createIndex("group-modified", ['group', 'modified'], { unique: false })
+        dataStore.createIndex("type-modified", ['type', 'modified'], { unique: false })
+        dataStore.createIndex("owner-modified", ['owner', 'modified'], { unique: false })
         
-        dataStore.createIndex("group-type-modifiedTime", ['group', 'type', 'modifiedTime'], { unique: false })
-        dataStore.createIndex("group-owner-modifiedTime", ['group', 'owner', 'modifiedTime'], { unique: false })
+        dataStore.createIndex("group-type-modified", ['group', 'type', 'modified'], { unique: false })
+        dataStore.createIndex("group-owner-modified", ['group', 'owner', 'modified'], { unique: false })
       }
     }
   });  
