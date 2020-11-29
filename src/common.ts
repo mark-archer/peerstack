@@ -15,8 +15,18 @@ export function newid(): string {
   return uuid.v4().replace(/-/g, '');
 }
 
-export function isid(sid: any) {
-  return Boolean(/^[0-9a-f]{32}$/i.exec(sid))
+export function isid(id: any) {  
+  // valid 
+  //      7194ee666e4c4ab18f1f7466ec525a43
+  //      7194ee666e4c4ab18f1f7466ec525a43:a
+  //      7194ee666e4c4ab18f1f7466ec525a43:a:b
+  // invalid
+  //      7194ee666e4c4ab18f1f7466ec525a43ab
+  //      7194ee666e4c4ab18f1f7466ec525a4
+  //      7194ee666e4c4ab18f1f7466ec525a43:
+  //      7194ee666e4c4ab18f1f7466ec525a43:a:
+  //      a:7194ee666e4c4ab18f1f7466ec525a43
+  return Boolean(/^[0-9a-f]{32}(:[0-9a-z]+)*$/i.exec(id)) && id.length <= 128;
 };
 
 export function isEmail(x) {
