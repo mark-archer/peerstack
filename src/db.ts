@@ -48,7 +48,7 @@ export interface IDB {
   update: (data: IData | IData[]) => Promise<void> 
   delete: (id: string) => Promise<void> 
   get: (id: string) => Promise<IData> 
-  find: (query: string | IDBKeyRange, index?: indexes) => Promise<IData[]> 
+  find: (query?: string | IDBKeyRange, index?: indexes) => Promise<IData[]> 
 }
 
 
@@ -129,7 +129,7 @@ export async function getIndexedDB(
     request.onsuccess = evt => resolve((evt.target as any).result);
   });
 
-  const find = (query: string | IDBKeyRange, index?: indexes): Promise<IData[]> => 
+  const find = (query?: string | IDBKeyRange, index?: indexes): Promise<IData[]> => 
     new Promise(async (resolve, reject) => {
       // WIP
       const transaction = db.transaction(['data'], 'readwrite');
