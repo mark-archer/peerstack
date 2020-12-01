@@ -1,5 +1,5 @@
 import { newid } from "./common";
-import { IConnection, testError, IRemoteChunk, newConnection, RPC, ping, IRemoteData, onPeerMessage, IRemoteCall } from "./connection";
+import { IConnection, testError, IRemoteChunk, newConnection, RPC, ping, IRemoteData, onPeerMessage, IRemoteCall } from "./remote-calls";
 import { newMe, signMessage, signObject } from "./user";
 import { should } from 'should';
 

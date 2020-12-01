@@ -167,10 +167,9 @@ export function js(jsCode: string, externalReferences?: any) {
   const hideGlobals = [
     'process', 'global'//,'setTimeout','setInterval','setImmediate','clearImmediate','clearInterval','clearTimeout'    
   ];
-  const utils = module.exports;
-  const typeInfo = require('../src/TypeInfo');
-  const refNames = ['utils', 'utils_1', 'typeInfo', 'typeInfo_1', 'Promise', 'console'];
-  const refValues = [utils, utils, typeInfo, typeInfo, Promise, console];
+  const common = module.exports;
+  const refNames = ['console', 'common'];
+  const refValues = [console, common];
   _.keys(externalReferences).forEach(key => {
     refNames.push(key);
     refValues.push(externalReferences[key]);

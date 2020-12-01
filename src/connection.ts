@@ -1,190 +1,274 @@
 import { newid } from "./common";
-import { IMe, IUser, signObject, verifySignedObject } from "./user";
-import * as _ from "lodash";
+import { IUser } from "./user";
+import { onPeerMessage, IConnection } from "./remote-calls";
 
-export type txfn = <T>(data: (string | IRemoteData)) => Promise<T | void>
+export interface ISDIExchange {
+  connectionId: string
+  fromDevice: string
+  toDevice: string
+  iceCandidates: RTCIceCandidate[]
+  sdi: RTCSessionDescriptionInit,
+  user?: IUser
+}
 
-export interface IConnection {
+export interface IDeviceConnection extends IConnection  {
   id: string
-  remoteDeviceId: string
-  lastAck: number //time
+  pc: RTCPeerConnection
+  dc: RTCDataChannel
+  lastAck: number
+  onAnswer: ((sdi: ISDIExchange) => void)
   handlers: { [key: string]: ((err: any, result: any) => void) }
-  send: txfn
-  receive: txfn
-  me?: IMe
   remoteUser?: IUser
 }
 
-export interface IRemoteData {
-  type: 'call' | 'response' | 'chunk'
-  id: string,
-  signature: string
+export const deviceId = newid(); // TODO this should probably be persisted with local storage
+
+let connections: IDeviceConnection[] = [];
+
+const server: {
+  getIceServers: () => Promise<RTCIceServer[]>
+  sendIceCandidate: (data: ISDIExchange) => Promise<void>
+} = ({} as any)
+
+
+type SocketEvent = 'offer' | 'answer' | 'iceCandidate'
+const socket: {
+  emit: (eventName: SocketEvent, sdi: ISDIExchange) => Promise<void>
+  on: (eventName: SocketEvent, handler: ((sdi: ISDIExchange) => Promise<void>)) => void
+} = ({} as any)
+
+async function signalOffer(offer: ISDIExchange) {
+  // // TODO try to do it through peers first
+  // for (const c of openConnections) {
+  //   const success = await remoteCall(c, {
+  //     type: "offer",
+  //     id: newid(),
+  //     data: offer,
+  //   })
+  //   if (success) break;
+  // }
+
+  // do it through the server
+  socket.emit('offer', offer);
 }
 
-export interface IRemoteCall extends IRemoteData {
-  type: 'call'
-  fnName: string
-  args: any[]
+async function signalAnswer(answer: ISDIExchange) {
+  // MAYBE try to do it through peers first
+  socket.emit('answer', answer);
 }
 
-export interface IRemoteResponse extends IRemoteData {
-  type: 'response'
-  result?: any
-  error?: any
-}
-
-export interface IRemoteChunk extends IRemoteData {
-  type: 'chunk',
-  iChunk: number,
-  totalChunks: number
-  chunk: string,
-}
-
-export function newConnection(remoteDeviceId: string, send: txfn): IConnection {
-  let conn;
-  conn = {
-    id: newid(),
-    remoteDeviceId,
-    handlers: {},
-    lastAck: Date.now(),
-    send,
-    receive: data => onPeerMessage(conn, data) 
-  }
-  return conn
-}
-
-export function RPC<T extends Function>(connection: IConnection, fn: T): T {
-  return <any>function (...args) {
-    return makeRemoteCall(connection, fn.name as any, args);
-  };
-}
-
-export async function ping(n: number, s: string) {
-  return ['pong', ...arguments];
-}
-
-export async function testError(msg: string) {
-  throw new Error(msg);
-}
-
-export const remotelyCallableFunctions: { [key: string]: Function } = {
-  [ping.name]: ping,  
-  [testError.name]: testError
-}
-
-export async function makeRemoteCall(connection: IConnection, fnName: string, args: any[]) {
-  const id = newid();
-  let rejectRemoteCall;
-  const remoteCallPromise = new Promise((resolve, reject) => {
-    rejectRemoteCall = reject;
-    connection.handlers[id] = (err, result) => err ? reject(err) : resolve(result);
-  });
+async function connectToDevice(toDeviceId) {
   try {
-    let remoteCall: IRemoteCall = {
-      type: 'call',
-      id,
-      fnName,
-      args,
-      signature: undefined
-    }
-    remoteCall = signObject(remoteCall, connection.me.secretKey);
-    connection.send(remoteCall);
-  } catch (err) {
-    rejectRemoteCall(err);
-  }
-  return remoteCallPromise;
-}
+    const connectionId = newid();
 
-async function sendRemoteError(connection: IConnection, callId: string, error: string) {
-  let response: IRemoteResponse = {
-    type: 'response',
-    id: callId,
-    error,
-    signature: undefined
-  }
-  response = signObject(response, connection.me.secretKey);
-  connection.send(response);
-}
-
-
-async function handelRemoteCall(connection: IConnection, remoteCall: IRemoteCall) {
-  const { id, fnName, args } = remoteCall;
-  try {
-    const fn = remotelyCallableFunctions[fnName];
-    let result;
-    let error;
-    if (typeof fn !== 'function') {
-      error = `${fnName} is not a remotely callable function`;
-    } else {
-      try {
-        result = await fn(...args);
-      } catch (err) {
-        error = String(err);
+    // get seed ice servers
+    let iceServers: RTCIceServer[] = [
+      {
+        urls: [
+          "stun:stun.l.google.com:19302",
+          "stun:stun1.l.google.com:19302",
+          "stun:stun2.l.google.com:19302",
+          "stun:stun3.l.google.com:19302",
+          "stun:stun4.l.google.com:19302",
+        ],
       }
+    ]
+    try {
+      iceServers = await server.getIceServers();
+    } catch (err) { 
+      // iceServers = [];
     }
-    let response: IRemoteResponse = {
-      type: 'response',
-      id,
-      result,
-      error,
-      signature: undefined
+  
+    let rtcConfig: RTCConfiguration = {
+      peerIdentity: connectionId,
+      iceServers
     }
-    response = signObject(response, connection.me.secretKey);
-    connection.send(response);
-  } catch (err) {
-    sendRemoteError(connection, id, 'unhandled error in handelRemoteCall: ' + err);
+  
+    // prepare connection   
+    let pc = new RTCPeerConnection(rtcConfig);
+    let dc = pc.createDataChannel(`${connectionId}-data`);
+    const sdi = await pc.createOffer();
+    if (!sdi) return alert('generated falsy sdi offer')
+    await pc.setLocalDescription(sdi);
+  
+    // gather ice candidates
+    const iceCandidates: RTCIceCandidate[] = [];
+  
+    // send any additional ice candidates through the signalling channel
+    pc.onicecandidate = e => {
+      if (!e.candidate) return;
+      iceCandidates.push(e.candidate)
+      server.sendIceCandidate({
+        connectionId,
+        fromDevice: deviceId,
+        toDevice: toDeviceId,
+        iceCandidates,
+        sdi: null
+      })
+    }
+  
+    // record offer and setup answer promise
+    let onAnswer: ((sdi: ISDIExchange) => void);
+    const answerPromise = new Promise<ISDIExchange>(resolve => onAnswer = resolve);
+  
+    let connection: IDeviceConnection = {
+      id: connectionId,
+      remoteDeviceId: toDeviceId,
+      send: null,
+      receive: null,
+      pc,
+      dc,
+      lastAck: Date.now(),
+      onAnswer,
+      handlers: {},
+    }
+    connections.push(connection);
+  
+    dc.onmessage = e => onPeerMessage(connection, e.data);
+    dc.onopen = e => {
+      console.log('dc connection open to', toDeviceId)
+    }
+    dc.onclose = e => {
+      console.log("dc.onclose")
+      pc.close();
+      connections = connections.filter(c => c != connection)
+    }
+  
+    // setTimeout(() => syncData(connection), 1000);
+  
+    // send offer
+    console.log('ice candidates at offer time', iceCandidates)
+    signalOffer({
+      connectionId,
+      fromDevice: deviceId,
+      toDevice: toDeviceId,
+      sdi,
+      iceCandidates,
+    })
+  
+    // wait for answer
+    const answer = await answerPromise;
+    connection.remoteUser = answer.user;
+  
+    if (answer.user) connection.remoteUser = answer.user; // TODO verify user identity with signedObject
+  
+    // set answer
+    if (!answer.sdi) return alert('sdi falsy on received answer')
+    await pc.setRemoteDescription(answer.sdi)
+
+    // connection is now established
+    console.log(`connection to peer established!`, connectionId, { connections })
+  }
+  catch (err) {
+    console.error('error connecting to device', toDeviceId, err);
+    throw err;
+  }  
+}
+
+async function handelOffer(offer: ISDIExchange) {
+  try {
+    // build answer connection
+    let pc2 = new RTCPeerConnection();
+
+    // add connection to list
+    let connection: IDeviceConnection;
+    connection = {
+      id: offer.connectionId,
+      remoteDeviceId: offer.fromDevice,
+      send: null,
+      receive: null,
+      pc: pc2,
+      dc: null,
+      lastAck: Date.now(),
+      onAnswer: null,
+      handlers: {},
+      remoteUser: offer.user
+    }
+    connections.push(connection);
+    
+    // gather ice candidates
+    const iceCandidates: RTCIceCandidate[] = [];
+
+    // send any additional ice candidates through the signalling channel
+    pc2.onicecandidate = e => {
+      if (!e.candidate) return;
+      iceCandidates.push(e.candidate);
+      sendIceCandidate({
+        connectionId: offer.connectionId,
+        fromDevice: deviceId,
+        toDevice: offer.fromDevice,
+        iceCandidates: iceCandidates,
+        sdi: null
+      })
+    }
+
+    if (!offer.sdi) return alert('sdi falsy on received offer')
+    await pc2.setRemoteDescription(offer.sdi);
+
+    // build answer
+    const sdi = await pc2.createAnswer();
+    if (!sdi) return alert('generated falsy sdi answer: ' +  JSON.stringify(sdi));
+    await pc2.setLocalDescription(sdi)
+
+    // send answer
+    console.log('ice candidates at answer time', iceCandidates)
+    signalAnswer({
+      connectionId: offer.connectionId,
+      fromDevice: deviceId,
+      toDevice: offer.fromDevice,
+      iceCandidates,
+      sdi
+    })
+
+    // listen for data connections
+    pc2.ondatachannel = e => {
+      let dc2: RTCDataChannel = e.channel;
+      connection.dc = dc2;
+      dc2.onmessage = e => onPeerMessage(connection, e.data);
+      dc2.onopen = e => {
+        console.log('dc2 connection open to', offer.fromDevice)
+      }
+      dc2.onclose = e => {
+        console.log("dc2.onclose")
+        pc2.close();
+        connections = connections.filter(c => c != connection)
+      };
+    }
+  }
+  catch (err) {
+    console.error('error handling offer');
+    throw err;
   }
 }
 
-const messageChunks = {};
-export function onPeerMessage(connection: IConnection, message: string | IRemoteData) {
-  connection.lastAck = Date.now();
-  if (message === 'ack') return;
-  if (typeof message === 'string') {
-    message = JSON.parse(message);
-  }
-  const msgObj = message as IRemoteCall | IRemoteResponse | IRemoteChunk;
+async function handelAnswer(answer: ISDIExchange) {
+  const connection = connections.find(c => c.id == answer.connectionId)
+  if (connection) connection.onAnswer(answer);
+  else console.log('could not find connection for answer', answer);
+}
 
-  if (msgObj.type === 'chunk') {
-    // validate chunk size, iChunk, and total size, to prevent remote attacker filling up memory 
-    if (msgObj.totalChunks * msgObj.chunk.length > 1e9) {
+function sendIceCandidate(iceCandidate: ISDIExchange) {
+  console.log('sending ice candidate', iceCandidate.iceCandidates);
+  socket.emit('iceCandidate', iceCandidate)
+}
 
-    }
-    if (!messageChunks[msgObj.id]) {
-      messageChunks[msgObj.id] = [];
-    }
-    const chunks = messageChunks[msgObj.id];
-    chunks[msgObj.iChunk] = msgObj.chunk;
-    if (_.compact(chunks).length === msgObj.totalChunks) {
-      delete messageChunks[msgObj.id];
-      onPeerMessage(connection, chunks.join(''));
-    }
+socket.on('offer', (offer: ISDIExchange) => handelOffer(offer));
+
+socket.on('answer', (answer: ISDIExchange) => handelAnswer(answer));
+
+socket.on('iceCandidate', async (iceCandidate: ISDIExchange) => {
+  console.log('received ice candidate', iceCandidate.iceCandidates);
+  const conn = connections.find(c => c.id == iceCandidate.connectionId)
+  if (!conn) {
+    console.log('no connection found for iceCandidate', iceCandidate);
+    alert('no connection found for iceCandidate');
     return;
   }
-
   try {
-    verifySignedObject(msgObj, connection.remoteUser.publicKey)
+    for (const ic of iceCandidate.iceCandidates) {
+      await conn.pc.addIceCandidate(ic)
+    }
   } catch (err) {
-    sendRemoteError(connection, msgObj.id, 'verification of remote message failed');
-    return;
+    console.log('error adding ice candidate', iceCandidate.iceCandidates, err);
   }
-
-  switch (msgObj.type) {
-    case 'call':
-      handelRemoteCall(connection, msgObj);
-      break;
-    case 'response':
-      const handler = connection.handlers[msgObj.id]
-      if (handler) {
-        handler(msgObj.error, msgObj.result);
-        delete connection.handlers[msgObj.id];
-      } else {
-        /* istanbul ignore next */ 
-        console.error('no handler for remote response', connection, msgObj)
-      }
-      break;
-    default:
-      // @ts-ignore
-      sendRemoteError(connection, msgObj.id, 'unknown remote call: ' + msgObj.type)
-  }
-}
+});
