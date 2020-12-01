@@ -43,30 +43,32 @@ export function init(server: Server, TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN) {
 
     console.log('client connected', socketId);
 
-    socket.on('getIceServers', async (na, resFn: Function) => {
-      try {
-        resFn(getIceServers());
-      } catch (err) {
-        console.error('getIceServers failed', err);
-      }
-    })
-
-    socket.on('getAvailableDevices', async (na, resFn: Function) => {
-      try {
-        const availableDevices =
-          devices.filter(d => d.user.id === user.id && d.deviceId !== deviceId);
-          //devices.filter(d => d.device !== deviceId);  
-        resFn(availableDevices);
-      } catch (err) {
-        console.error('getAvailableDevices failed', err);
-      }
-    })
-
     socket.on('disconnect', function () {
       console.log('client disconnected', socketId);
       devices = devices.filter(d => d.deviceId != deviceId);
       delete deviceSocket[deviceId];
     });
+
+    socket.on('getIceServers', async (na, callback: Function) => {
+      try {
+        callback(null, getIceServers());
+      } catch (err) {
+        console.error('getIceServers failed', err);
+        callback('getIceServers failed: ' + String(err))
+      }
+    })
+
+    socket.on('get-available-devices', async (na, callback: Function) => {
+      try {
+        const availableDevices =
+          devices.filter(d => d.user.id === user.id && d.deviceId !== deviceId);
+          //devices.filter(d => d.device !== deviceId);  
+        callback(null, availableDevices);
+      } catch (err) {
+        console.error('getAvailableDevices failed', err);
+        callback('getAvailableDevices failed: ' + String(err))
+      }
+    })
 
     socket.on('register-device', async (registration: IDeviceRegistration, callback: Function) => {
       try {

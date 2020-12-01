@@ -16,7 +16,7 @@ export interface IDeviceRegistration {
   user: IUser
 }
 
-export interface IDeviceConnection extends IConnection  {
+export interface IDeviceConnection extends IConnection {
   id: string
   pc: RTCPeerConnection
   dc: RTCDataChannel
@@ -42,6 +42,7 @@ export function init(_deviceId: string, _user: IUser) {
     console.log('connected to server', io.id);
     registerDevice({ deviceId, user });
   });
+  // // reconnect is called in addition to connect so redundant for now
   // io.on('reconnect', async () => {
   //   console.log('reconnected to server');
   //   registerDevice({ deviceId, user });
@@ -69,18 +70,53 @@ export function init(_deviceId: string, _user: IUser) {
       console.log('error adding ice candidate', iceCandidate.iceCandidates, err);
     }
   });
+
+  
 }
 
 async function registerDevice(registration: IDeviceRegistration) {
   // TODO try to do it through peers first
-  return new Promise((resolve, reject) => {
-    console.log('registration request')
+  await new Promise((resolve, reject) => {
     io.emit('register-device', registration, (err, res) => {
-      console.log('registration response', { err, res })
-      if (err) return reject(err);
-      resolve(res);
+      if (err) reject(err);
+      else resolve(res);
     })
   })
+  const otherDevices = await getAvailableDevices();
+  console.log('availableDevices', otherDevices);
+  otherDevices.forEach(device => connectToDevice(device.deviceId))
+}
+
+export async function getAvailableDevices(): Promise<IDeviceRegistration[]> {
+  // TODO try to do it through peers first
+  return new Promise((resolve, reject) => {
+    io.emit('get-available-devices', {}, (err, res) => {
+      if (err) reject(err)
+      else resolve(res)
+    })
+  })
+}
+
+async function getIceServers() {
+  let iceServers: RTCIceServer[] = [
+    {
+      urls: [
+        "stun:stun.l.google.com:19302",
+        "stun:stun1.l.google.com:19302",
+        "stun:stun2.l.google.com:19302",
+        "stun:stun3.l.google.com:19302",
+        "stun:stun4.l.google.com:19302",
+      ],
+    }
+  ]
+  try {
+    // TODO try to do it through peers first
+    iceServers = await new Promise((resolve, reject) =>
+      io.emit('getIceServers', {}, (err, res) => err ? reject(err) : resolve(res)));
+  } catch (err) {
+    console.warn('failed to get iceServers, using fallback', err)
+  }
+  return iceServers;
 }
 
 async function sendOffer(offer: ISDIExchange) {
@@ -98,27 +134,6 @@ async function sendIceCandidate(iceCandidate: ISDIExchange) {
   io.emit('iceCandidate', iceCandidate)
 }
 
-async function getIceServers() {
-  let iceServers: RTCIceServer[] = [
-    {
-      urls: [
-        "stun:stun.l.google.com:19302",
-        "stun:stun1.l.google.com:19302",
-        "stun:stun2.l.google.com:19302",
-        "stun:stun3.l.google.com:19302",
-        "stun:stun4.l.google.com:19302",
-      ],
-    }
-  ]
-  try {
-    // TODO try to do it through peers first
-    iceServers = await io.emit('getIceServers');
-  } catch (err) { 
-    console.warn('failed to get iceServers, using fallback', err)
-  }
-  return iceServers;
-}
-
 export async function connectToDevice(toDeviceId) {
   try {
     const existingConnection = connections.find(c => c.remoteDeviceId === toDeviceId);
@@ -128,22 +143,22 @@ export async function connectToDevice(toDeviceId) {
 
     // get ice servers
     const iceServers: RTCIceServer[] = await getIceServers();
-  
+
     let rtcConfig: RTCConfiguration = {
       peerIdentity: connectionId,
       iceServers
     }
-  
+
     // prepare connection   
     let pc = new RTCPeerConnection(rtcConfig);
     let dc = pc.createDataChannel(`${connectionId}-data`);
     const sdi = await pc.createOffer();
     if (!sdi) return alert('generated falsy sdi offer')
     await pc.setLocalDescription(sdi);
-  
+
     // gather ice candidates
     const iceCandidates: RTCIceCandidate[] = [];
-  
+
     // send any additional ice candidates through the signalling channel
     pc.onicecandidate = e => {
       if (!e.candidate) return;
@@ -156,11 +171,11 @@ export async function connectToDevice(toDeviceId) {
         sdi: null
       })
     }
-  
+
     // record offer and setup answer promise
     let onAnswer: ((sdi: ISDIExchange) => void);
     const answerPromise = new Promise<ISDIExchange>(resolve => onAnswer = resolve);
-  
+
     let connection: IDeviceConnection = {
       id: connectionId,
       remoteDeviceId: toDeviceId,
@@ -173,7 +188,7 @@ export async function connectToDevice(toDeviceId) {
       handlers: {},
     }
     connections.push(connection);
-  
+
     dc.onmessage = e => onPeerMessage(connection, e.data);
     dc.onopen = e => {
       console.log('dc connection open to', toDeviceId)
@@ -183,9 +198,9 @@ export async function connectToDevice(toDeviceId) {
       pc.close();
       connections = connections.filter(c => c != connection)
     }
-  
+
     // setTimeout(() => syncData(connection), 1000);
-  
+
     // send offer
     console.log('ice candidates at offer time', iceCandidates)
     sendOffer({
@@ -195,13 +210,13 @@ export async function connectToDevice(toDeviceId) {
       sdi,
       iceCandidates,
     })
-  
+
     // wait for answer
     const answer = await answerPromise;
     connection.remoteUser = answer.user;
-  
+
     if (answer.user) connection.remoteUser = answer.user; // TODO verify user identity with signedObject
-  
+
     // set answer
     if (!answer.sdi) return alert('sdi falsy on received answer')
     await pc.setRemoteDescription(answer.sdi)
@@ -214,7 +229,7 @@ export async function connectToDevice(toDeviceId) {
   catch (err) {
     console.error('error connecting to device', toDeviceId, err);
     throw err;
-  }  
+  }
 }
 
 async function handelOffer(offer: ISDIExchange) {
@@ -236,7 +251,7 @@ async function handelOffer(offer: ISDIExchange) {
       remoteUser: offer.user
     }
     connections.push(connection);
-    
+
     // gather ice candidates
     const iceCandidates: RTCIceCandidate[] = [];
 
@@ -258,7 +273,7 @@ async function handelOffer(offer: ISDIExchange) {
 
     // build answer
     const sdi = await pc2.createAnswer();
-    if (!sdi) return alert('generated falsy sdi answer: ' +  JSON.stringify(sdi));
+    if (!sdi) return alert('generated falsy sdi answer: ' + JSON.stringify(sdi));
     await pc2.setLocalDescription(sdi)
 
     // send answer
