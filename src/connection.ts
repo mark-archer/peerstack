@@ -11,6 +11,11 @@ export interface ISDIExchange {
   user?: IUser
 }
 
+export interface IDeviceRegistration {
+  deviceId: string
+  user: IUser
+}
+
 export interface IDeviceConnection extends IConnection  {
   id: string
   pc: RTCPeerConnection
@@ -21,63 +26,108 @@ export interface IDeviceConnection extends IConnection  {
   remoteUser?: IUser
 }
 
-export const deviceId = newid(); // TODO this should probably be persisted with local storage
-
+let deviceId: string = null;
+let user: IUser = null;
+let io;
 let connections: IDeviceConnection[] = [];
 
-const server: {
-  getIceServers: () => Promise<RTCIceServer[]>
-  sendIceCandidate: (data: ISDIExchange) => Promise<void>
-} = ({} as any)
+export function init(_deviceId: string, _user: IUser) {
+  console.log('initializing peerIO')
+  deviceId = _deviceId;
+  user = _user;
 
+  io = require('socket.io-client')();
 
-type SocketEvent = 'offer' | 'answer' | 'iceCandidate'
-const socket: {
-  emit: (eventName: SocketEvent, sdi: ISDIExchange) => Promise<void>
-  on: (eventName: SocketEvent, handler: ((sdi: ISDIExchange) => Promise<void>)) => void
-} = ({} as any)
+  io.on('connect', async () => {
+    console.log('connected to server', io.id);
+    registerDevice({ deviceId, user });
+  });
+  // io.on('reconnect', async () => {
+  //   console.log('reconnected to server');
+  //   registerDevice({ deviceId, user });
+  // });
+  io.on('disconnect', async () => {
+    console.log('disconnected from server');
+  })
 
-async function signalOffer(offer: ISDIExchange) {
-  // // TODO try to do it through peers first
-  // for (const c of openConnections) {
-  //   const success = await remoteCall(c, {
-  //     type: "offer",
-  //     id: newid(),
-  //     data: offer,
-  //   })
-  //   if (success) break;
-  // }
+  io.on('offer', (offer: ISDIExchange) => handelOffer(offer));
 
-  // do it through the server
-  socket.emit('offer', offer);
+  io.on('answer', (answer: ISDIExchange) => handelAnswer(answer));
+
+  io.on('iceCandidate', async (iceCandidate: ISDIExchange) => {
+    console.log('received ice candidate', iceCandidate.iceCandidates);
+    const conn = connections.find(c => c.id == iceCandidate.connectionId)
+    if (!conn) {
+      console.warn('no connection found for iceCandidate', iceCandidate);
+      return;
+    }
+    try {
+      for (const ic of iceCandidate.iceCandidates) {
+        await conn.pc.addIceCandidate(ic)
+      }
+    } catch (err) {
+      console.log('error adding ice candidate', iceCandidate.iceCandidates, err);
+    }
+  });
 }
 
-async function signalAnswer(answer: ISDIExchange) {
-  // MAYBE try to do it through peers first
-  socket.emit('answer', answer);
+async function registerDevice(registration: IDeviceRegistration) {
+  // TODO try to do it through peers first
+  return new Promise((resolve, reject) => {
+    console.log('registration request')
+    io.emit('register-device', registration, (err, res) => {
+      console.log('registration response', { err, res })
+      if (err) return reject(err);
+      resolve(res);
+    })
+  })
 }
 
-async function connectToDevice(toDeviceId) {
+async function sendOffer(offer: ISDIExchange) {
+  // TODO try to do it through peers first
+  await io.emit('offer', offer);
+}
+
+async function sendAnswer(answer: ISDIExchange) {
+  // TODO try to do it through peers first
+  await io.emit('answer', answer);
+}
+
+async function sendIceCandidate(iceCandidate: ISDIExchange) {
+  // TODO try to do it through peers first
+  io.emit('iceCandidate', iceCandidate)
+}
+
+async function getIceServers() {
+  let iceServers: RTCIceServer[] = [
+    {
+      urls: [
+        "stun:stun.l.google.com:19302",
+        "stun:stun1.l.google.com:19302",
+        "stun:stun2.l.google.com:19302",
+        "stun:stun3.l.google.com:19302",
+        "stun:stun4.l.google.com:19302",
+      ],
+    }
+  ]
   try {
+    // TODO try to do it through peers first
+    iceServers = await io.emit('getIceServers');
+  } catch (err) { 
+    console.warn('failed to get iceServers, using fallback', err)
+  }
+  return iceServers;
+}
+
+export async function connectToDevice(toDeviceId) {
+  try {
+    const existingConnection = connections.find(c => c.remoteDeviceId === toDeviceId);
+    if (existingConnection) return existingConnection;
+
     const connectionId = newid();
 
-    // get seed ice servers
-    let iceServers: RTCIceServer[] = [
-      {
-        urls: [
-          "stun:stun.l.google.com:19302",
-          "stun:stun1.l.google.com:19302",
-          "stun:stun2.l.google.com:19302",
-          "stun:stun3.l.google.com:19302",
-          "stun:stun4.l.google.com:19302",
-        ],
-      }
-    ]
-    try {
-      iceServers = await server.getIceServers();
-    } catch (err) { 
-      // iceServers = [];
-    }
+    // get ice servers
+    const iceServers: RTCIceServer[] = await getIceServers();
   
     let rtcConfig: RTCConfiguration = {
       peerIdentity: connectionId,
@@ -98,7 +148,7 @@ async function connectToDevice(toDeviceId) {
     pc.onicecandidate = e => {
       if (!e.candidate) return;
       iceCandidates.push(e.candidate)
-      server.sendIceCandidate({
+      sendIceCandidate({
         connectionId,
         fromDevice: deviceId,
         toDevice: toDeviceId,
@@ -138,7 +188,7 @@ async function connectToDevice(toDeviceId) {
   
     // send offer
     console.log('ice candidates at offer time', iceCandidates)
-    signalOffer({
+    sendOffer({
       connectionId,
       fromDevice: deviceId,
       toDevice: toDeviceId,
@@ -158,6 +208,8 @@ async function connectToDevice(toDeviceId) {
 
     // connection is now established
     console.log(`connection to peer established!`, connectionId, { connections })
+
+    return connection;
   }
   catch (err) {
     console.error('error connecting to device', toDeviceId, err);
@@ -168,11 +220,10 @@ async function connectToDevice(toDeviceId) {
 async function handelOffer(offer: ISDIExchange) {
   try {
     // build answer connection
-    let pc2 = new RTCPeerConnection();
+    const pc2 = new RTCPeerConnection();
 
     // add connection to list
-    let connection: IDeviceConnection;
-    connection = {
+    const connection: IDeviceConnection = {
       id: offer.connectionId,
       remoteDeviceId: offer.fromDevice,
       send: null,
@@ -212,7 +263,7 @@ async function handelOffer(offer: ISDIExchange) {
 
     // send answer
     console.log('ice candidates at answer time', iceCandidates)
-    signalAnswer({
+    sendAnswer({
       connectionId: offer.connectionId,
       fromDevice: deviceId,
       toDevice: offer.fromDevice,
@@ -246,29 +297,3 @@ async function handelAnswer(answer: ISDIExchange) {
   if (connection) connection.onAnswer(answer);
   else console.log('could not find connection for answer', answer);
 }
-
-function sendIceCandidate(iceCandidate: ISDIExchange) {
-  console.log('sending ice candidate', iceCandidate.iceCandidates);
-  socket.emit('iceCandidate', iceCandidate)
-}
-
-socket.on('offer', (offer: ISDIExchange) => handelOffer(offer));
-
-socket.on('answer', (answer: ISDIExchange) => handelAnswer(answer));
-
-socket.on('iceCandidate', async (iceCandidate: ISDIExchange) => {
-  console.log('received ice candidate', iceCandidate.iceCandidates);
-  const conn = connections.find(c => c.id == iceCandidate.connectionId)
-  if (!conn) {
-    console.log('no connection found for iceCandidate', iceCandidate);
-    alert('no connection found for iceCandidate');
-    return;
-  }
-  try {
-    for (const ic of iceCandidate.iceCandidates) {
-      await conn.pc.addIceCandidate(ic)
-    }
-  } catch (err) {
-    console.log('error adding ice candidate', iceCandidate.iceCandidates, err);
-  }
-});
