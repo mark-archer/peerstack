@@ -1,3 +1,4 @@
+import * as _ from 'lodash';
 import { newid } from "./common";
 import { IUser } from "./user";
 import { onPeerMessage, IConnection } from "./remote-calls";
@@ -71,7 +72,36 @@ export function init(_deviceId: string, _user: IUser) {
     }
   });
 
-  
+  // // TODO this isn't working so commenting it out at the moment
+  // const heartBeatInterval = _.random(2000, 3000); // more than this leaves them hanging around for some reason
+  // console.log('heartbeat interval', heartBeatInterval)
+  // const maxAck = heartBeatInterval * 3;
+  // const heartbeat = setInterval(() => {
+  //   console.log('heartbeat', connections.length)
+  //   connections = connections.filter(c => {
+  //     // if (['closed' || 'closing'].includes(c.dc.readyState) || (Date.now() - c.lastAck) > maxAck) {
+  //     //   console.log('closing connection', c.device)
+  //     //   c.dc.close();
+  //     //   c.pc.close();
+  //     //   return false;
+  //     // }    
+  //     // if (c.dc.readyState === 'open') c.dc.send('ack');
+  //     // else c.lastAck = Date.now() // wait for the connection to open before starting Ack timer
+  //     if (c.dc && c.dc.readyState.match(/closed|closing/i))
+  //     // || ['disconnected', 'failed'].includes(c.pc.iceConnectionState)) 
+  //     {
+  //       console.log('connection closed, removing from list', c)
+  //       c.dc.close();
+  //       c.pc.close();
+  //       return false;
+  //     } else if(c.dc.readyState === 'open') {
+  //       c.dc.send('ack');        
+  //     } else {
+  //       console.log('other state', c);
+  //     }
+  //     return true;
+  //   })
+  // }, heartBeatInterval);
 }
 
 async function registerDevice(registration: IDeviceRegistration) {
