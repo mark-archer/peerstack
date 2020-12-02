@@ -2,7 +2,7 @@ import { newid } from "./common";
 import { IMe, IUser, signObject, verifySignedObject } from "./user";
 import * as _ from "lodash";
 
-export type txfn = <T>(data: (string | IRemoteData)) => Promise<T | void>
+export type txfn = <T>(data: (string | IRemoteData)) => Promise<T | void> | void
 
 export interface IConnection {
   id: string
@@ -139,6 +139,9 @@ async function handelRemoteCall(connection: IConnection, remoteCall: IRemoteCall
 const messageChunks = {};
 export function onPeerMessage(connection: IConnection, message: string | IRemoteData) {
   connection.lastAck = Date.now();
+  if (message === 'ping') return connection.send('pong');
+  if (message === 'pong') return console.log('pong!', connection);
+  console.log({ connection, message })
   if (message === 'ack') return;
   if (typeof message === 'string') {
     message = JSON.parse(message);

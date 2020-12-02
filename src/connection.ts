@@ -209,7 +209,7 @@ export async function connectToDevice(toDeviceId) {
     let connection: IDeviceConnection = {
       id: connectionId,
       remoteDeviceId: toDeviceId,
-      send: null,
+      send: data => dc.send(data as any),
       receive: null,
       pc,
       dc,
@@ -320,6 +320,7 @@ async function handelOffer(offer: ISDIExchange) {
     pc2.ondatachannel = e => {
       let dc2: RTCDataChannel = e.channel;
       connection.dc = dc2;
+      connection.send = data => dc2.send(data as any);
       dc2.onmessage = e => onPeerMessage(connection, e.data);
       dc2.onopen = e => {
         console.log('dc2 connection open to', offer.fromDevice)
@@ -342,3 +343,6 @@ async function handelAnswer(answer: ISDIExchange) {
   if (connection) connection.onAnswer(answer);
   else console.log('could not find connection for answer', answer);
 }
+
+// @ts-ignore
+if(typeof window !== 'undefined') window.connections = connections;
