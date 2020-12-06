@@ -1,7 +1,7 @@
-import * as _ from 'lodash';
-import { newid } from "./common";
-import { IUser } from "./user";
-import { receiveMessage, IConnection } from "./remote-calls";
+import * as connections from 'lodash';
+import { newid, toJSON } from "./common";
+import { IMe, IUser } from "./user";
+import { onRemoteMessage, IConnection } from "./remote-calls";
 
 export interface ISDIExchange {
   connectionId: string
@@ -28,17 +28,19 @@ export interface IDeviceConnection extends IConnection {
 }
 
 let deviceId: string = null;
+let me: IMe = null;
 let user: IUser = null;
 let io;
 let connections: IDeviceConnection[] = [];
 
 let initialized = false;
-export function init(_deviceId: string, _user: IUser) {
+export function init(_deviceId: string, _me: IMe) {
   if (initialized) throw new Error('initialized should only be called once');
   initialized = true;
   console.log('initializing peerIO')
   deviceId = _deviceId;
-  user = _user;
+  me = _me;
+  user = Object.assign({}, me, { secretKey: undefined });
 
   io = require('socket.io-client')();
 
@@ -123,6 +125,7 @@ async function registerDevice(registration: IDeviceRegistration) {
   const otherDevices = await getAvailableDevices();
   console.log('availableDevices', otherDevices);
   otherDevices.forEach(device => connectToDevice(device.deviceId))
+  otherDevices.forEach(device => eventHandlers.onDeviceDiscovered(device.deviceId));
 }
 
 export async function getAvailableDevices(): Promise<IDeviceRegistration[]> {
@@ -154,7 +157,6 @@ async function getIceServers() {
     iceServers = await new Promise((resolve, reject) =>
       io.emit('getIceServers', {}, (err, res) => err ? reject(err) : resolve(res)));
     _iceServers = iceServers;
-    console.log({iceServers});
   } catch (err) {
     console.warn('failed to get iceServers, using fallback', err)
   }
@@ -174,6 +176,15 @@ async function sendAnswer(answer: ISDIExchange) {
 async function sendIceCandidate(iceCandidate: ISDIExchange) {
   // TODO try to do it through peers first
   io.emit('iceCandidate', iceCandidate)
+}
+
+export const eventHandlers = {
+  onDeviceDiscovered: async (deviceId: string) => {
+    // placeholder
+  },
+  onDeviceConnected: async (connection: IDeviceConnection) => {
+    // placeholder
+  },
 }
 
 export async function connectToDevice(toDeviceId) {
@@ -221,18 +232,22 @@ export async function connectToDevice(toDeviceId) {
     let connection: IDeviceConnection = {
       id: connectionId,
       remoteDeviceId: toDeviceId,
-      send: data => dc.send(data as any),
+      send: data => dc.send(JSON.stringify(toJSON(data))),
       pc,
       dc,
       lastAck: Date.now(),
       onAnswer,
       handlers: {},
+      me
     }
     connections.push(connection);
 
-    dc.onmessage = e => receiveMessage(connection, e.data);
+    let resolveConnectionOpen;
+    const connectionOpenPromise = new Promise(resolve => resolveConnectionOpen = resolve);
+    dc.onmessage = e => onRemoteMessage(connection, e.data);
     dc.onopen = e => {
       console.log('dc connection open to', toDeviceId)
+      resolveConnectionOpen();
     }
     dc.onclose = e => {
       console.log("dc.onclose")
@@ -262,8 +277,12 @@ export async function connectToDevice(toDeviceId) {
     if (!answer.sdi) return alert('sdi falsy on received answer')
     await pc.setRemoteDescription(answer.sdi)
 
-    // connection is now established
+    await connectionOpenPromise;
+
+    // connection is now established and data connection ready to use
     console.log(`connection to peer established!`, connectionId, { connections })
+
+    eventHandlers.onDeviceConnected(connection);
 
     return connection;
   }
@@ -288,7 +307,8 @@ async function handelOffer(offer: ISDIExchange) {
       lastAck: Date.now(),
       onAnswer: null,
       handlers: {},
-      remoteUser: offer.user
+      remoteUser: offer.user,
+      me: me,
     }
     connections.push(connection);
 
@@ -328,14 +348,15 @@ async function handelOffer(offer: ISDIExchange) {
 
     // listen for data connections
     pc2.ondatachannel = e => {
-      let dc2: RTCDataChannel = e.channel;
-      connection.dc = dc2;
-      connection.send = data => dc2.send(data as any);
-      dc2.onmessage = e => receiveMessage(connection, e.data);
-      dc2.onopen = e => {
+      let dc: RTCDataChannel = e.channel;
+      connection.dc = dc;
+      connection.send = data => dc.send(JSON.stringify(toJSON(data))),
+        dc.onmessage = e => onRemoteMessage(connection, e.data);
+      dc.onopen = e => {
         console.log('dc2 connection open to', offer.fromDevice)
+        eventHandlers.onDeviceConnected(connection);
       }
-      dc2.onclose = e => {
+      dc.onclose = e => {
         console.log("dc2.onclose")
         pc2.close();
         connections = connections.filter(c => c != connection)
@@ -355,4 +376,4 @@ async function handelAnswer(answer: ISDIExchange) {
 }
 
 // @ts-ignore
-if(typeof window !== 'undefined') window.connections = connections;
+if (typeof window !== 'undefined') window.connections = connections;

@@ -1,5 +1,5 @@
 import { newid } from "./common";
-import { IConnection, testError, IRemoteChunk, newConnection, RPC, ping, IRemoteData, receiveMessage, IRemoteCall } from "./remote-calls";
+import { IConnection, testError, IRemoteChunk, newConnection, RPC, ping, IRemoteData, onPeerMessage, IRemoteCall } from "./remote-calls";
 import { newMe, signMessage, signObject } from "./user";
 import { should } from 'should';
 
@@ -26,18 +26,18 @@ describe('connection', () => {
 
     connLocal.send = async data => {
       await new Promise(resolve => setTimeout(resolve));
-      receiveMessage(connRemote, JSON.parse(JSON.stringify(data)));
+      onPeerMessage(connRemote, JSON.parse(JSON.stringify(data)));
     }
     connRemote.send = async data => {
       await new Promise(resolve => setTimeout(resolve));
-      receiveMessage(connLocal, JSON.parse(JSON.stringify(data)));
+      onPeerMessage(connLocal, JSON.parse(JSON.stringify(data)));
     }
   });
   
   describe('RPC with sync channels', () => {
     beforeEach(() => {
-      connLocal.send = data => receiveMessage(connRemote, JSON.parse(JSON.stringify(data)));
-      connRemote.send = data => receiveMessage(connLocal, JSON.parse(JSON.stringify(data)));
+      connLocal.send = data => onPeerMessage(connRemote, JSON.parse(JSON.stringify(data)));
+      connRemote.send = data => onPeerMessage(connLocal, JSON.parse(JSON.stringify(data)));
     });
     
     it('should work with ping', async () => {
@@ -54,9 +54,9 @@ describe('connection', () => {
     beforeEach(() => {
       connLocal.send = (data: IRemoteCall) => {
         data.fnName = 'tampered with';
-        return receiveMessage(connRemote, JSON.parse(JSON.stringify(data))) 
+        return onPeerMessage(connRemote, JSON.parse(JSON.stringify(data))) 
       }
-      connRemote.send = data => receiveMessage(connLocal, JSON.parse(JSON.stringify(data))) 
+      connRemote.send = data => onPeerMessage(connLocal, JSON.parse(JSON.stringify(data))) 
     });
   
     it('should return an error message', async () => {
@@ -104,8 +104,8 @@ describe('connection', () => {
 
   describe('onPeerMessage', () => {
     beforeEach(() => {
-      connLocal.send = data => receiveMessage(connRemote, JSON.stringify(data));
-      connRemote.send = data => receiveMessage(connLocal, JSON.stringify(data));
+      connLocal.send = data => onPeerMessage(connRemote, JSON.stringify(data));
+      connRemote.send = data => onPeerMessage(connLocal, JSON.stringify(data));
     });
     
     it('should parse as string as JSON', async () => {
@@ -130,7 +130,7 @@ describe('connection', () => {
             chunk,
             signature: undefined
           }
-          receiveMessage(connRemote, JSON.stringify(chunkPayload));   
+          onPeerMessage(connRemote, JSON.stringify(chunkPayload));   
         }
       }
       const response = await RPC(connLocal, ping)(1, '1');

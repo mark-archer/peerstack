@@ -1,5 +1,5 @@
-import { newid } from "./common";
-import { IMe, IUser, signObject, verifySignedObject } from "./user";
+import { fromJSON, isid, newid } from "./common";
+import { IMe, IUser, newMe, openMessage, signMessage, signObject, verifySignedObject } from "./user";
 import * as _ from "lodash";
 
 export type txfn = <T>(data: (string | IRemoteData)) => Promise<T | void> | void
@@ -12,6 +12,7 @@ export interface IConnection {
   send: txfn
   me?: IMe
   remoteUser?: IUser
+  remoteUserVerified?: boolean
 }
 
 export interface IRemoteData {
@@ -47,7 +48,7 @@ export function newConnection(remoteDeviceId: string, send: txfn): IConnection {
     handlers: {},
     lastAck: Date.now(),
     send,
-    receive: data => receiveMessage(conn, data) 
+    receive: data => onRemoteMessage(conn, data) 
   }
   return conn
 }
@@ -66,9 +67,33 @@ export async function testError(msg: string) {
   throw new Error(msg);
 }
 
+async function proveIdentity(idToSign: string) {
+  if (!isid(idToSign)) {
+    throw new Error('For security purposes, identity proof is only done with single ids');
+  }
+  return signMessage(idToSign, currentConnection.me.secretKey);
+}
+
+export async function verifyRemoteUser(connection: IConnection) {
+  const idToSign = newid();
+  let openedId: string;
+  const failedVerificationError = new Error('remote user failed verification');
+  try {
+    const signedId = await RPC(connection, proveIdentity)(idToSign);  
+    openedId = openMessage(signedId, connection.remoteUser.publicKey);
+  } catch (err) {
+    throw failedVerificationError
+  }  
+  if (openedId !== idToSign) {
+    throw failedVerificationError
+  }
+  connection.remoteUserVerified = true;
+}
+
 export const remotelyCallableFunctions: { [key: string]: Function } = {
-  [ping.name]: ping,  
-  [testError.name]: testError
+  ping,  
+  testError,
+  proveIdentity,
 }
 
 export async function makeRemoteCall(connection: IConnection, fnName: string, args: any[]) {
@@ -105,7 +130,7 @@ async function sendRemoteError(connection: IConnection, callId: string, error: s
   connection.send(response);
 }
 
-
+let currentConnection: IConnection;
 async function handelRemoteCall(connection: IConnection, remoteCall: IRemoteCall) {
   const { id, fnName, args } = remoteCall;
   try {
@@ -116,6 +141,11 @@ async function handelRemoteCall(connection: IConnection, remoteCall: IRemoteCall
       error = `${fnName} is not a remotely callable function`;
     } else {
       try {
+        if (!connection.remoteUserVerified && fn != proveIdentity) {
+          await verifyRemoteUser(connection);
+          console.log('remote user verified', connection);
+        }        
+        currentConnection = connection; // this is a pretty hacky
         result = await fn(...args);
       } catch (err) {
         error = String(err);
@@ -136,20 +166,18 @@ async function handelRemoteCall(connection: IConnection, remoteCall: IRemoteCall
 }
 
 const messageChunks = {};
-export function receiveMessage(connection: IConnection, message: string | IRemoteData): void {
-  connection.lastAck = Date.now();
-  if (message === 'ping') { 
-    connection.send('pong');
-    return
-  }
-  if (message === 'pong') return console.log('pong!', connection);
+export function onRemoteMessage(connection: IConnection, message: string | IRemoteData): void {
   console.log({ connection, message })
+  message = fromJSON(JSON.parse(message as any));
+  connection.lastAck = Date.now();
   if (message === 'ack') return;
-  if (typeof message === 'string') {
-    message = JSON.parse(message);
+  if (message == 'ping') { 
+    connection.send('pong');
+    return;
   }
+  if (message == 'pong') return console.log('pong!', connection);
   const msgObj = message as IRemoteCall | IRemoteResponse | IRemoteChunk;
-
+  
   if (msgObj.type === 'chunk') {
     // validate chunk size, iChunk, and total size, to prevent remote attacker filling up memory 
     if (msgObj.totalChunks * msgObj.chunk.length > 1e9) {
@@ -162,7 +190,7 @@ export function receiveMessage(connection: IConnection, message: string | IRemot
     chunks[msgObj.iChunk] = msgObj.chunk;
     if (_.compact(chunks).length === msgObj.totalChunks) {
       delete messageChunks[msgObj.id];
-      receiveMessage(connection, chunks.join(''));
+      onRemoteMessage(connection, chunks.join(''));
     }
     return;
   }

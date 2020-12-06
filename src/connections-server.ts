@@ -2,7 +2,7 @@ import * as _ from 'lodash';
 import { Socket } from 'socket.io';
 import { IMe, IUser, verifySignedObject } from './user';
 import { Server } from 'http';
-import { IDeviceRegistration, ISDIExchange } from './connection';
+import { IDeviceRegistration, ISDIExchange } from './connections';
 
 
 export function init(server: Server, TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN) {
