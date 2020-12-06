@@ -1,4 +1,4 @@
-import * as connections from 'lodash';
+import * as _ from 'lodash';
 import { newid, toJSON } from "./common";
 import { IMe, IUser } from "./user";
 import { onRemoteMessage, IConnection } from "./remote-calls";
