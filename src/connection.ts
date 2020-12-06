@@ -1,7 +1,7 @@
 import * as _ from 'lodash';
 import { newid } from "./common";
 import { IUser } from "./user";
-import { onPeerMessage, IConnection } from "./remote-calls";
+import { receiveMessage, IConnection } from "./remote-calls";
 
 export interface ISDIExchange {
   connectionId: string
@@ -32,16 +32,22 @@ let user: IUser = null;
 let io;
 let connections: IDeviceConnection[] = [];
 
+let initialized = false;
 export function init(_deviceId: string, _user: IUser) {
+  if (initialized) throw new Error('initialized should only be called once');
+  initialized = true;
   console.log('initializing peerIO')
   deviceId = _deviceId;
   user = _user;
 
   io = require('socket.io-client')();
 
+  let resolveConnected;
+  const connectedPromise = new Promise(resolve => resolveConnected = resolve);
   io.on('connect', async () => {
     console.log('connected to server', io.id);
-    registerDevice({ deviceId, user });
+    await registerDevice({ deviceId, user })
+    resolveConnected();
   });
   // // reconnect is called in addition to connect so redundant for now
   // io.on('reconnect', async () => {
@@ -72,7 +78,7 @@ export function init(_deviceId: string, _user: IUser) {
     }
   });
 
-  // // TODO this isn't working so commenting it out at the moment
+  // // TODO this isn't working so commenting it out for now
   // const heartBeatInterval = _.random(2000, 3000); // more than this leaves them hanging around for some reason
   // console.log('heartbeat interval', heartBeatInterval)
   // const maxAck = heartBeatInterval * 3;
@@ -102,6 +108,8 @@ export function init(_deviceId: string, _user: IUser) {
   //     return true;
   //   })
   // }, heartBeatInterval);
+
+  return connectedPromise;
 }
 
 async function registerDevice(registration: IDeviceRegistration) {
@@ -127,8 +135,10 @@ export async function getAvailableDevices(): Promise<IDeviceRegistration[]> {
   })
 }
 
+let iceServers: RTCIceServer[] = null;
 async function getIceServers() {
-  let iceServers: RTCIceServer[] = [
+  if (iceServers) return iceServers;
+  let _iceServers: RTCIceServer[] = [
     {
       urls: [
         "stun:stun.l.google.com:19302",
@@ -143,6 +153,8 @@ async function getIceServers() {
     // TODO try to do it through peers first
     iceServers = await new Promise((resolve, reject) =>
       io.emit('getIceServers', {}, (err, res) => err ? reject(err) : resolve(res)));
+    _iceServers = iceServers;
+    console.log({iceServers});
   } catch (err) {
     console.warn('failed to get iceServers, using fallback', err)
   }
@@ -210,7 +222,6 @@ export async function connectToDevice(toDeviceId) {
       id: connectionId,
       remoteDeviceId: toDeviceId,
       send: data => dc.send(data as any),
-      receive: null,
       pc,
       dc,
       lastAck: Date.now(),
@@ -219,7 +230,7 @@ export async function connectToDevice(toDeviceId) {
     }
     connections.push(connection);
 
-    dc.onmessage = e => onPeerMessage(connection, e.data);
+    dc.onmessage = e => receiveMessage(connection, e.data);
     dc.onopen = e => {
       console.log('dc connection open to', toDeviceId)
     }
@@ -272,7 +283,6 @@ async function handelOffer(offer: ISDIExchange) {
       id: offer.connectionId,
       remoteDeviceId: offer.fromDevice,
       send: null,
-      receive: null,
       pc: pc2,
       dc: null,
       lastAck: Date.now(),
@@ -321,7 +331,7 @@ async function handelOffer(offer: ISDIExchange) {
       let dc2: RTCDataChannel = e.channel;
       connection.dc = dc2;
       connection.send = data => dc2.send(data as any);
-      dc2.onmessage = e => onPeerMessage(connection, e.data);
+      dc2.onmessage = e => receiveMessage(connection, e.data);
       dc2.onopen = e => {
         console.log('dc2 connection open to', offer.fromDevice)
       }

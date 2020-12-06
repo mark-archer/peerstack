@@ -10,7 +10,6 @@ export interface IConnection {
   lastAck: number //time
   handlers: { [key: string]: ((err: any, result: any) => void) }
   send: txfn
-  receive: txfn
   me?: IMe
   remoteUser?: IUser
 }
@@ -48,7 +47,7 @@ export function newConnection(remoteDeviceId: string, send: txfn): IConnection {
     handlers: {},
     lastAck: Date.now(),
     send,
-    receive: data => onPeerMessage(conn, data) 
+    receive: data => receiveMessage(conn, data) 
   }
   return conn
 }
@@ -137,9 +136,12 @@ async function handelRemoteCall(connection: IConnection, remoteCall: IRemoteCall
 }
 
 const messageChunks = {};
-export function onPeerMessage(connection: IConnection, message: string | IRemoteData) {
+export function receiveMessage(connection: IConnection, message: string | IRemoteData): void {
   connection.lastAck = Date.now();
-  if (message === 'ping') return connection.send('pong');
+  if (message === 'ping') { 
+    connection.send('pong');
+    return
+  }
   if (message === 'pong') return console.log('pong!', connection);
   console.log({ connection, message })
   if (message === 'ack') return;
@@ -160,7 +162,7 @@ export function onPeerMessage(connection: IConnection, message: string | IRemote
     chunks[msgObj.iChunk] = msgObj.chunk;
     if (_.compact(chunks).length === msgObj.totalChunks) {
       delete messageChunks[msgObj.id];
-      onPeerMessage(connection, chunks.join(''));
+      receiveMessage(connection, chunks.join(''));
     }
     return;
   }
