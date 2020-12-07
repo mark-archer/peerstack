@@ -275,6 +275,7 @@ export function toJSON(obj: any) {
   obj = recurse(obj);
   return obj;
 }
+
 export function fromJSON(obj: any, externalReferences?: any) {
   //console.log('fromJSON');
   var dup_refs: any = {};
@@ -359,6 +360,23 @@ export function fromJSON(obj: any, externalReferences?: any) {
   }
   obj = recurse(obj);
   return obj;
+}
+
+export function diff(main: any, second: any) {
+  const diffs: any = {};
+  function diffLvl(main: any, second: any, prefix: string) {
+    let names = _.union(_.keys(main), _.keys(second));
+    for (let k of names) {
+      const v1 = main[k];
+      const v2 = second[k];
+      if (!_.isEqual(v1, v2)) {
+        if (typeof v1 == "object" && typeof v2 == "object") diffLvl(v1, v2, prefix + k + ".");
+        else diffs[prefix + k] = [String(v1), String(v2)]
+      }
+    }
+  }
+  diffLvl(main, second, "")
+  return diffs;
 }
 
 // @ts-ignore
