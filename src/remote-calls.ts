@@ -17,8 +17,7 @@ export interface IConnection {
 
 export interface IRemoteData {
   type: 'call' | 'response' | 'chunk'
-  id: string,
-  signature: string
+  id: string
 }
 
 export interface IRemoteCall extends IRemoteData {
@@ -108,8 +107,7 @@ export async function makeRemoteCall(connection: IConnection, fnName: string, ar
       type: 'call',
       id,
       fnName,
-      args,
-      signature: undefined
+      args
     }
     remoteCall = signObject(remoteCall, connection.me.secretKey);
     connection.send(remoteCall);
@@ -123,10 +121,8 @@ async function sendRemoteError(connection: IConnection, callId: string, error: s
   let response: IRemoteResponse = {
     type: 'response',
     id: callId,
-    error,
-    signature: undefined
-  }
-  response = signObject(response, connection.me.secretKey);
+    error
+  }  
   connection.send(response);
 }
 
@@ -155,10 +151,8 @@ async function handelRemoteCall(connection: IConnection, remoteCall: IRemoteCall
       type: 'response',
       id,
       result,
-      error,
-      signature: undefined
+      error
     }
-    response = signObject(response, connection.me.secretKey);
     connection.send(response);
   } catch (err) {
     sendRemoteError(connection, id, 'unhandled error in handelRemoteCall: ' + err);
@@ -192,13 +186,6 @@ export function onRemoteMessage(connection: IConnection, message: string | IRemo
       delete messageChunks[msgObj.id];
       onRemoteMessage(connection, chunks.join(''));
     }
-    return;
-  }
-
-  try {
-    verifySignedObject(msgObj, connection.remoteUser.publicKey)
-  } catch (err) {
-    sendRemoteError(connection, msgObj.id, 'verification of remote message failed');
     return;
   }
 
