@@ -5,9 +5,9 @@ import { hashObject } from './common';
 export interface IData extends ISigned {
   id: string,
   group: string,
-  type?: 'Group' | 'any' | string,
+  type: 'Group' | 'any' | string,
   owner: string,
-  modified?: number,
+  modified: number,
   [key: string]: any
 }
 
@@ -91,6 +91,7 @@ export async function getIndexedDB(
     if (!isArray(data)) {
       data = [data];
     }
+    validateData(data);
     const transaction = db.transaction(['data'], 'readwrite');
     transaction.onerror = evt => reject(evt);
     const objectStore = transaction.objectStore('data');
@@ -105,6 +106,7 @@ export async function getIndexedDB(
     if (!isArray(data)) {
       data = [data];
     }
+    validateData(data);
     const transaction = db.transaction(['data'], 'readwrite');
     transaction.onerror = evt => reject(evt);
     const objectStore = transaction.objectStore('data');
@@ -174,6 +176,15 @@ export async function getIndexedDB(
   return baseOps;
 }
 
+export function validateData(data: IData[]) {
+  data.forEach(d => {
+    const requiredFields = ['modified', 'type', 'group', 'id', 'owner'];
+    requiredFields.forEach(f => {
+      if (!d[f]) throw new Error(`'${f}' is required on all data but was not found on ${JSON.stringify(d,null,2)}`);
+    })
+  })
+}
+
 export let dbHashes: {
   [groupId: string]: {
     [level: string]: {
@@ -181,9 +192,29 @@ export let dbHashes: {
     }
   }
 }
-const DAY_MS = 60e3 * 60 * 24; // 1 day
+export const BLOCK_SIZE = 60e3 * 60 * 24; // 1 day
 
-console.log('buildStateIndex')
+export function getBlockId(modified: number) {
+  return 'B' + Math.floor(modified / BLOCK_SIZE)
+}
+
+export async function getBlock(group: string, level0BlockId: string) {
+  const db = await getIndexedDB();
+  const blockNum = Number(level0BlockId.substr(1));
+  const lowerTime = blockNum * BLOCK_SIZE;
+  const upperTime = lowerTime + BLOCK_SIZE;
+  return db.find(IDBKeyRange.bound([group, lowerTime], [group, upperTime]), 'group-modified');
+}
+
+// @ts-ignore
+window.peerdb = module.exports;
+
+export async function getGroupDBHash(groupId: string, level: string = 'L0') {
+  const hashes = await buildDBHashes();
+  const hash = hashes[groupId]?.[level] || {};
+  return hash;
+}
+
 export async function buildDBHashes() {
   if (dbHashes) return dbHashes;
   dbHashes = {};
@@ -193,42 +224,49 @@ export async function buildDBHashes() {
   const minTime = (await db.openCursor(null, 'modified')).value.modified;
   
   // populate level 0
-  let interval = DAY_MS * 100;
+  let interval = BLOCK_SIZE * 100;
   let lowerTime = maxTime - (maxTime % interval);
   let upperTime = lowerTime + interval;
   while (minTime < upperTime) {
     const data = await db.find(IDBKeyRange.bound(lowerTime, upperTime), 'modified');
+    // const data = await db.find(IDBKeyRange.bound(['9c9ba93245d849c593947212b6c2fc11',lowerTime], ['9c9ba93245d849c593947212b6c2fc11',upperTime]), 'group-modified');
     lowerTime -= interval;
     upperTime -= interval;
     if (!data.length) continue;
-    const grouped = groupBy(data, d => d.group + '.L0.B' + Math.round(d.modified / DAY_MS));
+    const grouped = groupBy(data, d => d.group + '.L0.' + getBlockId(d.modified));
     Object.keys(grouped).forEach(key => {
       set(dbHashes, key, hashObject(grouped[key]));
     })
   }
 
-  // populate higher levels
-  let level = 0;
-  while (DAY_MS * level ** 10 < maxTime) {
-    level++;
-    Object.keys(dbHashes).forEach(group => {
-      const blocks = Object.keys(dbHashes[group][`L${level-1}`]).sort();
-      let currentHigherBlock = blocks[0].substr(0, blocks[0].length - 1);
-      let hashes = [];
-      blocks.forEach(block => {
-        let higherBlock = block.substr(0, block.length - 1);
-        if (higherBlock != currentHigherBlock && hashes.length) {
-          set(dbHashes, `${group}.L${level}.${currentHigherBlock}`, hashObject(hashes));
-          hashes.length = 0;
-          currentHigherBlock = higherBlock;
-        }
-        hashes.push(dbHashes[group][`L${level-1}`][block]);
-      })
-      if (hashes.length) {
-        set(dbHashes, `${group}.L${level}.${currentHigherBlock}`, hashObject(hashes));
-      }
-    });
-  }
+  // const dataLower = await db.find(IDBKeyRange.upperBound(minTime), 'modified');
+  // const dataUpper = await db.find(IDBKeyRange.lowerBound(maxTime), 'modified');
+  // const dataNull = await db.find(null, 'modified');
+  // console.log({ dataLower, dataUpper, dataNull });
+    
+
+  // // populate higher block levels
+  // let level = 0;
+  // while (BLOCK_SIZE * level ** 10 < maxTime) {
+  //   level++;
+  //   Object.keys(dbHashes).forEach(group => {
+  //     const blocks = Object.keys(dbHashes[group][`L${level-1}`]).sort();
+  //     let currentHigherBlock = blocks[0].substr(0, blocks[0].length - 1);
+  //     let hashes = [];
+  //     blocks.forEach(block => {
+  //       let higherBlock = block.substr(0, block.length - 1);
+  //       if (higherBlock != currentHigherBlock && hashes.length) {
+  //         set(dbHashes, `${group}.L${level}.${currentHigherBlock}`, hashObject(hashes));
+  //         hashes.length = 0;
+  //         currentHigherBlock = higherBlock;
+  //       }
+  //       hashes.push(dbHashes[group][`L${level-1}`][block]);
+  //     })
+  //     if (hashes.length) {
+  //       set(dbHashes, `${group}.L${level}.${currentHigherBlock}`, hashObject(hashes));
+  //     }
+  //   });
+  // }
 
   return dbHashes;
 }

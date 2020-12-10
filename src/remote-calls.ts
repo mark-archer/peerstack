@@ -1,7 +1,7 @@
 import { fromJSON, isid, newid } from "./common";
 import { IMe, IUser, newMe, openMessage, signMessage, signObject, verifySignedObject } from "./user";
 import * as _ from "lodash";
-import { getIndexedDB, buildDBHashes } from "./db";
+import { getIndexedDB, buildDBHashes, getBlock, getBlockId, getGroupDBHash } from "./db";
 
 export type txfn = <T>(data: (string | IRemoteData)) => Promise<T | void> | void
 
@@ -48,7 +48,7 @@ export function newConnection(remoteDeviceId: string, send: txfn): IConnection {
     handlers: {},
     lastAck: Date.now(),
     send,
-    receive: data => onRemoteMessage(conn, data) 
+    receive: data => onRemoteMessage(conn, data)
   }
   return conn
 }
@@ -79,11 +79,11 @@ export async function verifyRemoteUser(connection: IConnection) {
   let openedId: string;
   const failedVerificationError = new Error('remote user failed verification');
   try {
-    const signedId = await RPC(connection, proveIdentity)(idToSign);  
+    const signedId = await RPC(connection, proveIdentity)(idToSign);
     openedId = openMessage(signedId, connection.remoteUser.publicKey);
   } catch (err) {
     throw failedVerificationError
-  }  
+  }
   if (openedId !== idToSign) {
     throw failedVerificationError
   }
@@ -94,38 +94,76 @@ export async function getRemoteGroups() {
   const connection: IConnection = currentConnection;
   const db = await getIndexedDB();
   const groups = await db.find('Group', 'type');
-  // todo limit groups by what user has read permissions to 
+  // TODO limit groups by what user has read permissions to 
   return groups;
 }
 
-export async function syncDBs(connection: IConnection) {  
-  const remoteGroups = await RPC(connection, getRemoteGroups)();
-  const hashes = await buildDBHashes();
-  for (const group of remoteGroups) {
-    const level = 'L1';
-    const groupHashes = hashes[group.id]?.[level] || {};
-    const remoteGroupHashes = await RPC(connection, getGroupDBHash)(group.id, level);
-    const blocks = _.uniq([...Object.keys(groupHashes), ...Object.keys(remoteGroupHashes)]);
-    // reverse because we want to do newest first, it may automatically resolve discrepancies in older blocks
-    blocks.sort().reverse(); 
-    console.log({blocks});
-    return;
-  }
+export async function getRemoteBlock(group: string, level0BlockId: string) {
+  const connection: IConnection = currentConnection;
+  // TODO verify user has read permissions
+  return getBlock(group, level0BlockId);
 }
 
-export async function getGroupDBHash(groupId: string, level: string = 'L0') {
+export async function getRemoteGroupDBHash(groupId: string, level: string = 'L0') {
   const connection: IConnection = currentConnection;
-  // todo verify user has read permissions to group
-  const hashes = await buildDBHashes();
-  return hashes[groupId]?.[level] || {};
+  // TODO verify user has read permissions to group
+  return getGroupDBHash(groupId, level);
+}
+
+console.log('syncDBs');
+export async function syncDBs(connection: IConnection) {
+  const remoteGroups = await RPC(connection, getRemoteGroups)();
+  if (connection.me.id === connection.remoteUser.id) {
+    const myId = connection.me.id;
+    remoteGroups.push({ type: 'Group', id: myId, group: myId, owner: myId, title: 'Personal', modified: Date.now() })
+  }
+  const db = await getIndexedDB();
+  let updatesFound = false;
+  for (const group of remoteGroups) {
+    const level = 'L0';
+    const remoteHashes = await RPC(connection, getRemoteGroupDBHash)(group.id, level);
+    const localHashes = await getGroupDBHash(group.id, level);
+    const blockIds = _.uniq([...Object.keys(localHashes), ...Object.keys(remoteHashes)]);
+    // reverse because we want to do newest first, it may automatically resolve discrepancies in older blocks
+    blockIds.sort().reverse();
+    const skipBlocks = [];
+    for (const blockId of blockIds) {
+      if (skipBlocks.includes(blockId)) {
+        continue;
+      }
+      if (localHashes[blockId] != remoteHashes[blockId]) {
+        // console.log('found hash diff', {groupId: group.id, blockId, localHash: localHashes[blockId], remoteHash: remoteHashes[blockId], })
+        const remoteBlock = await RPC(connection, getRemoteBlock)(group.id, blockId);
+        for (const remoteData of remoteBlock) {
+          const localData = await db.get(remoteData.id);
+          if (!localData || localData.modified < remoteData.modified) {
+            // console.log('found data diff', { localData, remoteData });
+            if (localData) {
+              updatesFound = true;
+              db.update(remoteData);
+              skipBlocks.push(getBlockId(localData.modified))
+            } else {
+              db.insert(remoteData);
+            }
+          }
+        }
+      }
+    }
+    console.log(`finished syncing group: ${group.title}`);
+  }
+  // TODO: this creates an infinite loop, we need to invalidate the prior hashes 
+  // if (updatesFound) {
+  //   await syncDBs(connection);
+  // }
 }
 
 export const remotelyCallableFunctions: { [key: string]: Function } = {
-  ping,  
+  ping,
   testError,
   proveIdentity,
   getRemoteGroups,
-  getGroupDBHash
+  getRemoteGroupDBHash,
+  getRemoteBlock
 }
 
 export async function makeRemoteCall(connection: IConnection, fnName: string, args: any[]) {
@@ -155,7 +193,7 @@ async function sendRemoteError(connection: IConnection, callId: string, error: s
     type: 'response',
     id: callId,
     error
-  }  
+  }
   connection.send(response);
 }
 
@@ -173,7 +211,7 @@ async function handelRemoteCall(connection: IConnection, remoteCall: IRemoteCall
         if (!connection.remoteUserVerified && fn != proveIdentity) {
           await verifyRemoteUser(connection);
           console.log('remote user verified', connection);
-        }        
+        }
         currentConnection = connection; // this is a pretty hacky
         result = await fn(...args);
       } catch (err) {
@@ -198,13 +236,13 @@ export function onRemoteMessage(connection: IConnection, message: string | IRemo
   message = fromJSON(JSON.parse(message as any));
   connection.lastAck = Date.now();
   if (message === 'ack') return;
-  if (message == 'ping') { 
+  if (message == 'ping') {
     connection.send('pong');
     return;
   }
   if (message == 'pong') return console.log('pong!', connection);
   const msgObj = message as IRemoteCall | IRemoteResponse | IRemoteChunk;
-  
+
   if (msgObj.type === 'chunk') {
     // validate chunk size, iChunk, and total size, to prevent remote attacker filling up memory 
     if (msgObj.totalChunks * msgObj.chunk.length > 1e9) {
@@ -232,7 +270,7 @@ export function onRemoteMessage(connection: IConnection, message: string | IRemo
         handler(msgObj.error, msgObj.result);
         delete connection.handlers[msgObj.id];
       } else {
-        /* istanbul ignore next */ 
+        /* istanbul ignore next */
         console.error('no handler for remote response', connection, msgObj)
       }
       break;

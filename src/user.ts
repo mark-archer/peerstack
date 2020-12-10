@@ -6,7 +6,8 @@ export interface IUser extends ISigned {
   type: 'User',
   id: string,
   displayName: string,
-  publicKey: string
+  publicKey: string,
+  modified: number
 }
 
 export interface IMe extends IUser {
@@ -22,6 +23,7 @@ export function newMe(displayName?: string): IMe {
     displayName: displayName || userId,
     secretKey: encodeUint8ArrayToBaseN(newKey.secretKey),
     publicKey: encodeUint8ArrayToBaseN(newKey.publicKey),
+    modified: Date.now(),
   }
 }
 

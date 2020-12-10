@@ -127,8 +127,7 @@ describe('connection', () => {
             id,
             iChunk: i / strChunkSize,
             totalChunks,
-            chunk,
-            signature: undefined
+            chunk
           }
           onRemoteMessage(connRemote, JSON.stringify(chunkPayload));   
         }
