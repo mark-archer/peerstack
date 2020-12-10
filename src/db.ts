@@ -1,13 +1,14 @@
-import { get, set, isArray } from 'lodash';
+import { get, set, isArray, groupBy } from 'lodash';
 import { verifySignedObject, ISigned } from './user';
+import { hashObject } from './common';
 
 export interface IData extends ISigned {
   id: string,
   group: string,
-  type?: 'group' | 'any' | string,
+  type?: 'Group' | 'any' | string,
   owner: string,
   modified?: number,
-  [key:string]: any
+  [key: string]: any
 }
 
 // export const GROUPS_GROUP_ID = 'groups';
@@ -40,24 +41,25 @@ export interface IData extends ISigned {
 // }
 
 export type indexes = 'group' | 'type' | 'owner' | 'modified'
-  | 'group-modified' | 'type-modified' | 'owner-modified' 
+  | 'group-modified' | 'type-modified' | 'owner-modified'
   | 'group-type-modified' | 'group-owner-modified';
 
 export interface IDB {
-  insert: (data: IData | IData[]) => Promise<void> 
-  update: (data: IData | IData[]) => Promise<void> 
-  delete: (id: string) => Promise<void> 
-  get: (id: string) => Promise<IData> 
-  find: (query?: string | IDBKeyRange, index?: indexes) => Promise<IData[]> 
+  db: IDBDatabase
+  insert: (data: IData | IData[]) => Promise<void>
+  update: (data: IData | IData[]) => Promise<void>
+  delete: (id: string) => Promise<void>
+  get: (id: string) => Promise<IData>
+  find: (query?: string | number | IDBKeyRange | ArrayBuffer | Date | ArrayBufferView | IDBArrayKey, index?: indexes) => Promise<IData[]>
+  openCursor: (query?: string | number | IDBKeyRange | ArrayBuffer | Date | ArrayBufferView | IDBArrayKey, index?: indexes, direction?: IDBCursorDirection) => Promise<IDBCursorWithValue>
 }
 
 
 export async function getIndexedDB(
-  dbName: string = 'peerstack', 
-  dbVersion: number = 1, 
+  dbName: string = 'peerstack',
+  dbVersion: number = 1,
   onUpgrade?: ((evt: IDBVersionChangeEvent) => Promise<void>)
-): Promise<IDB> 
-{
+): Promise<IDB> {
   if (typeof window === 'undefined' || !window.indexedDB) {
     throw new Error('indexedDB is not currently available')
   }
@@ -78,12 +80,12 @@ export async function getIndexedDB(
         dataStore.createIndex("group-modified", ['group', 'modified'], { unique: false })
         dataStore.createIndex("type-modified", ['type', 'modified'], { unique: false })
         dataStore.createIndex("owner-modified", ['owner', 'modified'], { unique: false })
-        
+
         dataStore.createIndex("group-type-modified", ['group', 'type', 'modified'], { unique: false })
         dataStore.createIndex("group-owner-modified", ['group', 'owner', 'modified'], { unique: false })
       }
     }
-  });  
+  });
 
   const insert = (data: IData | IData[]): Promise<any> => new Promise(async (resolve, reject) => {
     if (!isArray(data)) {
@@ -95,7 +97,7 @@ export async function getIndexedDB(
     for (const d of data) {
       const request = objectStore.add(d);
       request.onerror = evt => reject(evt);
-    }    
+    }
     transaction.oncomplete = evt => resolve((evt.target as any).result);
   });
 
@@ -109,7 +111,7 @@ export async function getIndexedDB(
     for (const d of data) {
       const request = objectStore.put(d);
       request.onerror = evt => reject(evt);
-    }    
+    }
     transaction.oncomplete = evt => resolve((evt.target as any).result);
   });
 
@@ -129,9 +131,8 @@ export async function getIndexedDB(
     request.onsuccess = evt => resolve((evt.target as any).result);
   });
 
-  const find = (query?: string | IDBKeyRange, index?: indexes): Promise<IData[]> => 
+  const find = (query?: string | number | IDBKeyRange | ArrayBuffer | Date | ArrayBufferView | IDBArrayKey, index?: indexes): Promise<IData[]> =>
     new Promise(async (resolve, reject) => {
-      // WIP
       const transaction = db.transaction(['data'], 'readwrite');
       transaction.onerror = evt => reject(evt);
       const dataStore = transaction.objectStore('data');
@@ -145,22 +146,99 @@ export async function getIndexedDB(
       request.onsuccess = evt => resolve((evt.target as any).result);
     });
 
+  const openCursor = (query?: string | number | IDBKeyRange | ArrayBuffer | Date | ArrayBufferView | IDBArrayKey, index?: indexes, direction?: IDBCursorDirection): Promise<IDBCursorWithValue> =>
+    new Promise(async (resolve, reject) => {
+      const transaction = db.transaction(['data'], 'readwrite');
+      transaction.onerror = evt => reject(evt);
+      const dataStore = transaction.objectStore('data');
+      let request: IDBRequest;
+      if (index) {
+        request = dataStore.index(index).openCursor(query, direction);
+      } else {
+        request = dataStore.openCursor(query, direction);
+      }
+      request.onerror = evt => reject(evt);
+      request.onsuccess = evt => resolve((evt.target as any).result);
+    });
+
   const baseOps: IDB = {
+    db,
     insert,
     update,
     delete: deleteOp,
     get,
     find,
+    openCursor,
   }
-  
+
   return baseOps;
 }
+
+export let dbHashes: {
+  [groupId: string]: {
+    [level: string]: {
+      [block: string]: string
+    }
+  }
+}
+const DAY_MS = 60e3 * 60 * 24; // 1 day
+
+console.log('buildStateIndex')
+export async function buildDBHashes() {
+  if (dbHashes) return dbHashes;
+  dbHashes = {};
+  const db = await getIndexedDB();
+  
+  const maxTime = Date.now();
+  const minTime = (await db.openCursor(null, 'modified')).value.modified;
+  
+  // populate level 0
+  let interval = DAY_MS * 100;
+  let lowerTime = maxTime - (maxTime % interval);
+  let upperTime = lowerTime + interval;
+  while (minTime < upperTime) {
+    const data = await db.find(IDBKeyRange.bound(lowerTime, upperTime), 'modified');
+    lowerTime -= interval;
+    upperTime -= interval;
+    if (!data.length) continue;
+    const grouped = groupBy(data, d => d.group + '.L0.B' + Math.round(d.modified / DAY_MS));
+    Object.keys(grouped).forEach(key => {
+      set(dbHashes, key, hashObject(grouped[key]));
+    })
+  }
+
+  // populate higher levels
+  let level = 0;
+  while (DAY_MS * level ** 10 < maxTime) {
+    level++;
+    Object.keys(dbHashes).forEach(group => {
+      const blocks = Object.keys(dbHashes[group][`L${level-1}`]).sort();
+      let currentHigherBlock = blocks[0].substr(0, blocks[0].length - 1);
+      let hashes = [];
+      blocks.forEach(block => {
+        let higherBlock = block.substr(0, block.length - 1);
+        if (higherBlock != currentHigherBlock && hashes.length) {
+          set(dbHashes, `${group}.L${level}.${currentHigherBlock}`, hashObject(hashes));
+          hashes.length = 0;
+          currentHigherBlock = higherBlock;
+        }
+        hashes.push(dbHashes[group][`L${level-1}`][block]);
+      })
+      if (hashes.length) {
+        set(dbHashes, `${group}.L${level}.${currentHigherBlock}`, hashObject(hashes));
+      }
+    });
+  }
+
+  return dbHashes;
+}
+
 
 // export function getMemoryDB(): IDB {
 //   const memoryDB: {
 //     [id: string]: IData
 //   } = {}
-  
+
 //   const baseOps: IDB = {    
 //     insert: async data => memoryDB[data.id] = JSON.parse(JSON.stringify(data)),
 //     update: async data => memoryDB[data.id] = JSON.parse(JSON.stringify(data)),
@@ -236,12 +314,12 @@ export async function getIndexedDB(
 //         groupObjectStore.createIndex('type', 'type', { unique: false })
 //         groupObjectStore.createIndex('createMS', 'createMS', { unique: false })
 //         groupObjectStore.createIndex('updateMS', 'updateMS', { unique: false })
-        
+
 //       }
 //       resolve(db);
 //     }    
 //   });
-  
+
 //   baseOps.get = (group: string, id: string): Promise<IData> => new Promise(async (resolve, reject) => {
 //     resolve(null)
 //     // const db = await openDb();
@@ -302,7 +380,7 @@ export async function getIndexedDB(
 
 //   const exists = Boolean(await baseOps.get('groups', data.id));
 //   if (!member && group.allowPublicViewers && group.allowViewerComments) {
-    
+
 //   }
 
 //   if (!member && !(group.allowPublicViewers && group.allowViewerComments)) {
@@ -316,7 +394,7 @@ export async function getIndexedDB(
 //     throw new Error(`Member does not have write permissions to the group`);
 //   }
 //   verifySignedObject(data, member.publicKey);
-  
+
 //   if (exists) {
 //     return baseOps.update(data);
 //   } else {

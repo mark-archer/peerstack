@@ -1,6 +1,7 @@
 import { fromJSON, isid, newid } from "./common";
 import { IMe, IUser, newMe, openMessage, signMessage, signObject, verifySignedObject } from "./user";
 import * as _ from "lodash";
+import { getIndexedDB, buildDBHashes } from "./db";
 
 export type txfn = <T>(data: (string | IRemoteData)) => Promise<T | void> | void
 
@@ -89,10 +90,42 @@ export async function verifyRemoteUser(connection: IConnection) {
   connection.remoteUserVerified = true;
 }
 
+export async function getRemoteGroups() {
+  const connection: IConnection = currentConnection;
+  const db = await getIndexedDB();
+  const groups = await db.find('Group', 'type');
+  // todo limit groups by what user has read permissions to 
+  return groups;
+}
+
+export async function syncDBs(connection: IConnection) {  
+  const remoteGroups = await RPC(connection, getRemoteGroups)();
+  const hashes = await buildDBHashes();
+  for (const group of remoteGroups) {
+    const level = 'L1';
+    const groupHashes = hashes[group.id]?.[level] || {};
+    const remoteGroupHashes = await RPC(connection, getGroupDBHash)(group.id, level);
+    const blocks = _.uniq([...Object.keys(groupHashes), ...Object.keys(remoteGroupHashes)]);
+    // reverse because we want to do newest first, it may automatically resolve discrepancies in older blocks
+    blocks.sort().reverse(); 
+    console.log({blocks});
+    return;
+  }
+}
+
+export async function getGroupDBHash(groupId: string, level: string = 'L0') {
+  const connection: IConnection = currentConnection;
+  // todo verify user has read permissions to group
+  const hashes = await buildDBHashes();
+  return hashes[groupId]?.[level] || {};
+}
+
 export const remotelyCallableFunctions: { [key: string]: Function } = {
   ping,  
   testError,
   proveIdentity,
+  getRemoteGroups,
+  getGroupDBHash
 }
 
 export async function makeRemoteCall(connection: IConnection, fnName: string, args: any[]) {
@@ -161,7 +194,7 @@ async function handelRemoteCall(connection: IConnection, remoteCall: IRemoteCall
 
 const messageChunks = {};
 export function onRemoteMessage(connection: IConnection, message: string | IRemoteData): void {
-  console.log({ connection, message })
+  // console.log({ connection, message })
   message = fromJSON(JSON.parse(message as any));
   connection.lastAck = Date.now();
   if (message === 'ack') return;
