@@ -1,7 +1,7 @@
 import { fromJSON, isid, newid } from "./common";
 import { IMe, IUser, newMe, openMessage, signMessage, signObject, verifySignedObject } from "./user";
 import * as _ from "lodash";
-import { getIndexedDB, buildDBHashes, getBlock, getBlockId, getGroupDBHash } from "./db";
+import { getIndexedDB, getBlockData, getBlockId, getBlockHashes, IData } from "./db";
 
 export type txfn = <T>(data: (string | IRemoteData)) => Promise<T | void> | void
 
@@ -98,63 +98,67 @@ export async function getRemoteGroups() {
   return groups;
 }
 
-export async function getRemoteBlock(group: string, level0BlockId: string) {
+export async function getRemoteBlockData(group: string, level0BlockId: string) {
   const connection: IConnection = currentConnection;
   // TODO verify user has read permissions
-  return getBlock(group, level0BlockId);
+  return getBlockData(group, level0BlockId);
 }
 
-export async function getRemoteGroupDBHash(groupId: string, level: string = 'L0') {
+export async function getRemoteBlockHash(groupId: string, level: string = 'L0') {
   const connection: IConnection = currentConnection;
   // TODO verify user has read permissions to group
-  return getGroupDBHash(groupId, level);
+  return getBlockHashes(groupId, level);
+}
+
+export const eventHandlers = {
+  onRemoteDataInserted: (data: IData) => {
+    // placeholder
+  },
+  onRemoteDataUpdated: (data: IData) => {
+    // placeholder
+  }
 }
 
 console.log('syncDBs');
 export async function syncDBs(connection: IConnection) {
-  const remoteGroups = await RPC(connection, getRemoteGroups)();
+  let remoteGroups = await RPC(connection, getRemoteGroups)();
+  remoteGroups = _.shuffle(remoteGroups); 
   if (connection.me.id === connection.remoteUser.id) {
     const myId = connection.me.id;
-    remoteGroups.push({ type: 'Group', id: myId, group: myId, owner: myId, title: 'Personal', modified: Date.now() })
+    remoteGroups.unshift({ type: 'Group', id: myId, group: myId, owner: myId, title: 'Personal', modified: Date.now() })
   }
   const db = await getIndexedDB();
-  let updatesFound = false;
-  for (const group of remoteGroups) {
+  const groupPromises = remoteGroups.map(async group => {
+    const newData = [];
+    const startTime = Date.now();
     const level = 'L0';
-    const remoteHashes = await RPC(connection, getRemoteGroupDBHash)(group.id, level);
-    const localHashes = await getGroupDBHash(group.id, level);
+    const remoteHashes = await RPC(connection, getRemoteBlockHash)(group.id, level);
+    const localHashes = await getBlockHashes(group.id, level);
     const blockIds = _.uniq([...Object.keys(localHashes), ...Object.keys(remoteHashes)]);
-    // reverse because we want to do newest first, it may automatically resolve discrepancies in older blocks
+    // console.log({ blockIds, localHashes, remoteHashes })
+    // reverse because we want to do newest first
     blockIds.sort().reverse();
-    const skipBlocks = [];
     for (const blockId of blockIds) {
-      if (skipBlocks.includes(blockId)) {
-        continue;
-      }
       if (localHashes[blockId] != remoteHashes[blockId]) {
         // console.log('found hash diff', {groupId: group.id, blockId, localHash: localHashes[blockId], remoteHash: remoteHashes[blockId], })
-        const remoteBlock = await RPC(connection, getRemoteBlock)(group.id, blockId);
-        for (const remoteData of remoteBlock) {
+        const remoteBlockData = await RPC(connection, getRemoteBlockData)(group.id, blockId);
+        for (const remoteData of remoteBlockData) {
           const localData = await db.get(remoteData.id);
           if (!localData || localData.modified < remoteData.modified) {
             // console.log('found data diff', { localData, remoteData });
+            newData.push(remoteData);
             if (localData) {
-              updatesFound = true;
-              db.update(remoteData);
-              skipBlocks.push(getBlockId(localData.modified))
+              db.update(remoteData).then(() => eventHandlers.onRemoteDataUpdated(remoteData));              
             } else {
-              db.insert(remoteData);
+              db.insert(remoteData).then(() => eventHandlers.onRemoteDataInserted(remoteData));
             }
           }
         }
       }
     }
-    console.log(`finished syncing group: ${group.title}`);
-  }
-  // TODO: this creates an infinite loop, we need to invalidate the prior hashes 
-  // if (updatesFound) {
-  //   await syncDBs(connection);
-  // }
+    console.log(`finished syncing ${group.title} in ${Date.now() - startTime}ms`);
+  })
+  await Promise.all(groupPromises);
 }
 
 export const remotelyCallableFunctions: { [key: string]: Function } = {
@@ -162,8 +166,8 @@ export const remotelyCallableFunctions: { [key: string]: Function } = {
   testError,
   proveIdentity,
   getRemoteGroups,
-  getRemoteGroupDBHash,
-  getRemoteBlock
+  getRemoteBlockHash,
+  getRemoteBlockData,
 }
 
 export async function makeRemoteCall(connection: IConnection, fnName: string, args: any[]) {

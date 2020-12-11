@@ -99,7 +99,9 @@ export async function getIndexedDB(
       const request = objectStore.add(d);
       request.onerror = evt => reject(evt);
     }
-    transaction.oncomplete = evt => resolve((evt.target as any).result);
+    transaction.oncomplete = evt => {
+      resolve((evt.target as any).result);
+    };
   });
 
   const update = (data: IData | IData[]): Promise<any> => new Promise(async (resolve, reject) => {
@@ -114,7 +116,9 @@ export async function getIndexedDB(
       const request = objectStore.put(d);
       request.onerror = evt => reject(evt);
     }
-    transaction.oncomplete = evt => resolve((evt.target as any).result);
+    transaction.oncomplete = evt => {
+      resolve((evt.target as any).result);
+    };
   });
 
   const deleteOp = (id): Promise<any> => new Promise(async (resolve, reject) => {
@@ -122,7 +126,9 @@ export async function getIndexedDB(
     transaction.onerror = evt => reject(evt);
     const request = transaction.objectStore('data').delete(id);
     request.onerror = evt => reject(evt);
-    request.onsuccess = evt => resolve((evt.target as any).result);
+    request.onsuccess = evt => { 
+      resolve((evt.target as any).result);
+    };
   });
 
   const get = (id: string): Promise<IData> => new Promise(async (resolve, reject) => {
@@ -185,91 +191,102 @@ export function validateData(data: IData[]) {
   })
 }
 
-export let dbHashes: {
-  [groupId: string]: {
-    [level: string]: {
-      [block: string]: string
-    }
-  }
-}
 export const BLOCK_SIZE = 60e3 * 60 * 24; // 1 day
 
 export function getBlockId(modified: number) {
   return 'B' + Math.floor(modified / BLOCK_SIZE)
 }
 
-export async function getBlock(group: string, level0BlockId: string) {
+export async function getBlockData(group: string, level0BlockId: string) {
   const db = await getIndexedDB();
   const blockNum = Number(level0BlockId.substr(1));
   const lowerTime = blockNum * BLOCK_SIZE;
   const upperTime = lowerTime + BLOCK_SIZE;
-  return db.find(IDBKeyRange.bound([group, lowerTime], [group, upperTime]), 'group-modified');
+  const blockData = await db.find(IDBKeyRange.bound([group, lowerTime], [group, upperTime]), 'group-modified');
+  return blockData;
 }
 
-// @ts-ignore
-window.peerdb = module.exports;
-
-export async function getGroupDBHash(groupId: string, level: string = 'L0') {
-  const hashes = await buildDBHashes();
-  const hash = hashes[groupId]?.[level] || {};
-  return hash;
-}
-
-export async function buildDBHashes() {
-  if (dbHashes) return dbHashes;
-  dbHashes = {};
+export async function getBlockHashes(groupId: string, level: string = 'L0') {
   const db = await getIndexedDB();
   
   const maxTime = Date.now();
-  const minTime = (await db.openCursor(null, 'modified')).value.modified;
-  
+  const oldestDataResult = await db.openCursor(null, 'modified');
+  const minTime = oldestDataResult?.value?.modified || Date.now();
+  const blockHashes = {};
+
   // populate level 0
-  let interval = BLOCK_SIZE * 100;
+  let interval = BLOCK_SIZE * 1000;
   let lowerTime = maxTime - (maxTime % interval);
   let upperTime = lowerTime + interval;
   while (minTime < upperTime) {
-    const data = await db.find(IDBKeyRange.bound(lowerTime, upperTime), 'modified');
-    // const data = await db.find(IDBKeyRange.bound(['9c9ba93245d849c593947212b6c2fc11',lowerTime], ['9c9ba93245d849c593947212b6c2fc11',upperTime]), 'group-modified');
+    const data = await db.find(IDBKeyRange.bound([groupId, lowerTime], [groupId, upperTime]), 'group-modified');
     lowerTime -= interval;
     upperTime -= interval;
     if (!data.length) continue;
-    const grouped = groupBy(data, d => d.group + '.L0.' + getBlockId(d.modified));
+    const grouped = groupBy(data, d => getBlockId(d.modified));
     Object.keys(grouped).forEach(key => {
-      set(dbHashes, key, hashObject(grouped[key]));
+      set(blockHashes, key, hashObject(grouped[key]));
     })
   }
+  return blockHashes;
+}
 
-  // const dataLower = await db.find(IDBKeyRange.upperBound(minTime), 'modified');
-  // const dataUpper = await db.find(IDBKeyRange.lowerBound(maxTime), 'modified');
-  // const dataNull = await db.find(null, 'modified');
-  // console.log({ dataLower, dataUpper, dataNull });
+// export async function buildDBHashes() {
+//   if (blockHashes) return blockHashes;
+//   modifiedBlockIds = {};
+//   blockHashes = {};
+//   const db = await getIndexedDB();
+  
+//   const maxTime = Date.now();
+//   const minTime = (await db.openCursor(null, 'modified')).value.modified;
+  
+//   // populate level 0
+//   let interval = BLOCK_SIZE * 100;
+//   let lowerTime = maxTime - (maxTime % interval);
+//   let upperTime = lowerTime + interval;
+//   while (minTime < upperTime) {
+//     const data = await db.find(IDBKeyRange.bound(lowerTime, upperTime), 'modified');
+//     // const data = await db.find(IDBKeyRange.bound(['9c9ba93245d849c593947212b6c2fc11',lowerTime], ['9c9ba93245d849c593947212b6c2fc11',upperTime]), 'group-modified');
+//     lowerTime -= interval;
+//     upperTime -= interval;
+//     if (!data.length) continue;
+//     const grouped = groupBy(data, d => d.group + '.L0.' + getBlockId(d.modified));
+//     Object.keys(grouped).forEach(key => {
+//       set(blockHashes, key, hashObject(grouped[key]));
+//     })
+//   }
+
+//   const dataLower = await db.find(IDBKeyRange.upperBound(minTime), 'modified');
+//   const dataUpper = await db.find(IDBKeyRange.lowerBound(maxTime), 'modified');
+//   const dataNull = await db.find(null, 'modified');
+//   console.log({ dataLower, dataUpper, dataNull });
     
 
-  // // populate higher block levels
-  // let level = 0;
-  // while (BLOCK_SIZE * level ** 10 < maxTime) {
-  //   level++;
-  //   Object.keys(dbHashes).forEach(group => {
-  //     const blocks = Object.keys(dbHashes[group][`L${level-1}`]).sort();
-  //     let currentHigherBlock = blocks[0].substr(0, blocks[0].length - 1);
-  //     let hashes = [];
-  //     blocks.forEach(block => {
-  //       let higherBlock = block.substr(0, block.length - 1);
-  //       if (higherBlock != currentHigherBlock && hashes.length) {
-  //         set(dbHashes, `${group}.L${level}.${currentHigherBlock}`, hashObject(hashes));
-  //         hashes.length = 0;
-  //         currentHigherBlock = higherBlock;
-  //       }
-  //       hashes.push(dbHashes[group][`L${level-1}`][block]);
-  //     })
-  //     if (hashes.length) {
-  //       set(dbHashes, `${group}.L${level}.${currentHigherBlock}`, hashObject(hashes));
-  //     }
-  //   });
-  // }
+//   // populate higher block levels
+//   let level = 0;
+//   while (BLOCK_SIZE * level ** 10 < maxTime) {
+//     level++;
+//     Object.keys(blockHashes).forEach(group => {
+//       const blocks = Object.keys(blockHashes[group][`L${level-1}`]).sort();
+//       let currentHigherBlock = blocks[0].substr(0, blocks[0].length - 1);
+//       let hashes = [];
+//       blocks.forEach(block => {
+//         let higherBlock = block.substr(0, block.length - 1);
+//         if (higherBlock != currentHigherBlock && hashes.length) {
+//           set(blockHashes, `${group}.L${level}.${currentHigherBlock}`, hashObject(hashes));
+//           hashes.length = 0;
+//           currentHigherBlock = higherBlock;
+//         }
+//         hashes.push(blockHashes[group][`L${level-1}`][block]);
+//       })
+//       if (hashes.length) {
+//         set(blockHashes, `${group}.L${level}.${currentHigherBlock}`, hashObject(hashes));
+//       }
+//     });
+//   }
 
-  return dbHashes;
-}
+//   return blockHashes;
+// }
 
 
 // export function getMemoryDB(): IDB {
@@ -489,3 +506,5 @@ export async function buildDBHashes() {
 // }
 
 
+// @ts-ignore
+if (typeof window !== 'undefined') window.peerdb = module.exports;
