@@ -40,19 +40,6 @@ export interface IRemoteChunk extends IRemoteData {
   chunk: string,
 }
 
-export function newConnection(remoteDeviceId: string, send: txfn): IConnection {
-  let conn;
-  conn = {
-    id: newid(),
-    remoteDeviceId,
-    handlers: {},
-    lastAck: Date.now(),
-    send,
-    receive: data => onRemoteMessage(conn, data)
-  }
-  return conn
-}
-
 export function RPC<T extends Function>(connection: IConnection, fn: T): T {
   return <any>function (...args) {
     return makeRemoteCall(connection, fn.name as any, args);
@@ -128,7 +115,8 @@ export async function syncDBs(connection: IConnection) {
     remoteGroups.unshift({ type: 'Group', id: myId, group: myId, owner: myId, title: 'Personal', modified: Date.now() })
   }
   const db = await getIndexedDB();
-  const groupPromises = remoteGroups.map(async group => {
+  // const groupPromises = remoteGroups.map(async group => {
+  for (const group of remoteGroups) {
     const newData = [];
     const startTime = Date.now();
     const level = 'L0';
@@ -157,8 +145,8 @@ export async function syncDBs(connection: IConnection) {
       }
     }
     console.log(`finished syncing ${group.title} in ${Date.now() - startTime}ms`);
-  })
-  await Promise.all(groupPromises);
+  }
+  // }); await Promise.all(groupPromises);
 }
 
 export const remotelyCallableFunctions: { [key: string]: Function } = {

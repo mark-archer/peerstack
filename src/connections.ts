@@ -186,6 +186,39 @@ export const eventHandlers = {
     // placeholder
   },
 }
+export interface IRemoteChunk {
+  type: 'chunk',
+  id: string,
+  iChunk: number,
+  totalChunks: number
+  chunk: string,
+}
+
+const chunkSize = 16384; // this is the safe maximum size but many devices can handle much larger sizes
+const strChunkSize = Math.floor(chunkSize / 7);
+async function dcSend(connection, data) {
+  const id = data?.id || newid();
+  const strData = JSON.stringify(toJSON(data));
+  if (strData.length < strChunkSize) {
+    connection.dc.send(strData);
+  } else {
+    const totalChunks = Math.ceil(strData.length / strChunkSize);
+    for (var i = 0; i < strData.length; i += strChunkSize) {
+      // console.log(`sending chunk ${i/strChunkSize} of ${totalChunks}`)
+      const chunk = strData.substr(i, strChunkSize);
+      const chunkPayload: IRemoteChunk = {
+        type: 'chunk',
+        id,
+        iChunk: i / strChunkSize,
+        totalChunks,
+        chunk
+      }
+      connection.dc.send(JSON.stringify(chunkPayload));
+      if ((chunkPayload.iChunk % 2) === 0)
+        await new Promise(resolve => setTimeout(resolve, 1));
+    }
+  }
+}
 
 export async function connectToDevice(toDeviceId) {
   try {
@@ -232,7 +265,7 @@ export async function connectToDevice(toDeviceId) {
     let connection: IDeviceConnection = {
       id: connectionId,
       remoteDeviceId: toDeviceId,
-      send: data => dc.send(JSON.stringify(toJSON(data))),
+      send: data => dcSend(connection, data),
       pc,
       dc,
       lastAck: Date.now(),
@@ -350,7 +383,7 @@ async function handelOffer(offer: ISDIExchange) {
     pc2.ondatachannel = e => {
       let dc: RTCDataChannel = e.channel;
       connection.dc = dc;
-      connection.send = data => dc.send(JSON.stringify(toJSON(data))),
+      connection.send = data => dcSend(connection, data),
         dc.onmessage = e => onRemoteMessage(connection, e.data);
       dc.onopen = e => {
         console.log('dc2 connection open to', offer.fromDevice)

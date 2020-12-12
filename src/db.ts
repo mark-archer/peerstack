@@ -5,7 +5,7 @@ import { hashObject } from './common';
 export interface IData extends ISigned {
   id: string,
   group: string,
-  type: 'Group' | 'any' | string,
+  type: 'Group' | 'any' | 'Deleted' | string,
   owner: string,
   modified: number,
   [key: string]: any
