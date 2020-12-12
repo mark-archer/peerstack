@@ -31,7 +31,7 @@ let deviceId: string = null;
 let me: IMe = null;
 let user: IUser = null;
 let io;
-let connections: IDeviceConnection[] = [];
+export let connections: IDeviceConnection[] = [];
 
 let initialized = false;
 export function init(_deviceId: string, _me: IMe) {

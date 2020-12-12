@@ -14,6 +14,7 @@ export interface IConnection {
   me?: IMe
   remoteUser?: IUser
   remoteUserVerified?: boolean
+  groups?: string[]
 }
 
 export interface IRemoteData {
@@ -106,7 +107,6 @@ export const eventHandlers = {
   }
 }
 
-console.log('syncDBs');
 export async function syncDBs(connection: IConnection) {
   let remoteGroups = await RPC(connection, getRemoteGroups)();
   remoteGroups = _.shuffle(remoteGroups); 
@@ -114,6 +114,7 @@ export async function syncDBs(connection: IConnection) {
     const myId = connection.me.id;
     remoteGroups.unshift({ type: 'Group', id: myId, group: myId, owner: myId, title: 'Personal', modified: Date.now() })
   }
+  connection.groups = remoteGroups.map(g => g.id);
   const db = await getIndexedDB();
   // const groupPromises = remoteGroups.map(async group => {
   for (const group of remoteGroups) {
@@ -149,6 +150,20 @@ export async function syncDBs(connection: IConnection) {
   // }); await Promise.all(groupPromises);
 }
 
+export async function pushData(data: IData) {
+  const connection: IConnection = currentConnection;
+  // TODO verify signed data 
+  const db = await getIndexedDB();
+  const dbData = await db.get(data.id);
+  if (!dbData) {
+    await db.insert(data);
+    eventHandlers.onRemoteDataInserted(data);
+  } else if (dbData.modified < data.modified) {
+    await db.update(data);
+    eventHandlers.onRemoteDataUpdated(data);
+  }
+}
+
 export const remotelyCallableFunctions: { [key: string]: Function } = {
   ping,
   testError,
@@ -156,6 +171,7 @@ export const remotelyCallableFunctions: { [key: string]: Function } = {
   getRemoteGroups,
   getRemoteBlockHash,
   getRemoteBlockData,
+  pushData,
 }
 
 export async function makeRemoteCall(connection: IConnection, fnName: string, args: any[]) {
