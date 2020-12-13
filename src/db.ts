@@ -5,7 +5,7 @@ import { hashObject } from './common';
 export interface IData extends ISigned {
   id: string,
   group: string,
-  type: 'Group' | 'any' | 'Deleted' | string,
+  type: 'Group' | 'Deleted' | 'User' | 'any' | string,
   owner: string,
   modified: number,
   [key: string]: any
@@ -13,21 +13,23 @@ export interface IData extends ISigned {
 
 // export const GROUPS_GROUP_ID = 'groups';
 
-// export interface IGroup extends IData {
-//   type: 'group',
-//   name: string,
-//   members: {
-//     userId: string,
-//     publicKey: string,
-//     isAdmin?: boolean,
-//     isEditor?: boolean,
-//     isViewer?: boolean,
-//     expireMS?: number,
-//   }[],
-//   blockedUserIds: string[],
-//   allowPublicViewers?: boolean,
-//   allowViewerComments?: boolean,
-// }
+export interface IGroup extends IData {
+  type: 'Group',
+  name: string,
+  members: {
+    userId: string,
+    publicKey: string,
+    read?: boolean,
+    create?: boolean,
+    update?: boolean,
+    delete?: boolean,
+    admin?: boolean,
+    expireMS?: number,
+  }[],
+  blockedUserIds: string[],
+  allowPublicViewers?: boolean,
+  allowViewerComments?: boolean,
+}
 
 // export interface IDataEvent extends ISigned {
 //   id: string

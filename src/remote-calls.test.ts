@@ -1,5 +1,5 @@
 import { newid } from "./common";
-import { IConnection, testError, IRemoteChunk, newConnection, RPC, ping, IRemoteData, onRemoteMessage, IRemoteCall } from "./remote-calls";
+import { IConnection, testError, IRemoteChunk, RPC, ping, IRemoteData, onRemoteMessage, IRemoteCall } from "./remote-calls";
 import { newMe, signMessage, signObject } from "./user";
 import { should } from 'should';
 
@@ -16,13 +16,13 @@ describe('connection', () => {
   const fakeFn = () => 1;
 
   beforeEach(() => {
-    connLocal = newConnection(remoteDeviceId, null);
-    connLocal.me = me;
-    connLocal.remoteUser = remoteUser;
+    // connLocal = newConnection(remoteDeviceId, null);
+    // connLocal.me = me;
+    // connLocal.remoteUser = remoteUser;
     
-    connRemote = newConnection(localDeviceId, null);
-    connRemote.me = remoteUser;
-    connRemote.remoteUser = me;
+    // connRemote = newConnection(localDeviceId, null);
+    // connRemote.me = remoteUser;
+    // connRemote.remoteUser = me;
 
     connLocal.send = async data => {
       await new Promise(resolve => setTimeout(resolve));
