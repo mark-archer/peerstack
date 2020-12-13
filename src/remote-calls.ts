@@ -1,7 +1,7 @@
 import { fromJSON, isid, newid } from "./common";
 import { IMe, IUser, newMe, openMessage, signMessage, signObject, verifySignedObject } from "./user";
 import * as _ from "lodash";
-import { getIndexedDB, getBlockData, getBlockId, getBlockHashes, IData } from "./db";
+import { getIndexedDB, getBlockData, getBlockHashes, IData, BlockHashLevel } from "./db";
 
 export type txfn = <T>(data: (string | IRemoteData)) => Promise<T | void> | void
 
@@ -55,25 +55,11 @@ export async function testError(msg: string) {
   throw new Error(msg);
 }
 
-async function proveIdentity(idToSign: string) {
-  if (!isid(idToSign)) {
-    throw new Error('For security purposes, identity proof is only done with single ids');
-  }
-  return signMessage(idToSign, currentConnection.me.secretKey);
-}
-
-export async function verifyRemoteUser(connection: IConnection) {
-  const idToSign = newid();
-  let openedId: string;
-  const failedVerificationError = new Error('remote user failed verification');
+export function verifyRemoteUser(connection: IConnection) {
   try {
-    const signedId = await RPC(connection, proveIdentity)(idToSign);
-    openedId = openMessage(signedId, connection.remoteUser.publicKey);
+    verifySignedObject(connection.remoteUser, connection.remoteUser.publicKey);    
   } catch (err) {
-    throw failedVerificationError
-  }
-  if (openedId !== idToSign) {
-    throw failedVerificationError
+    throw new Error('remote user failed verification');
   }
   connection.remoteUserVerified = true;
 }
@@ -92,7 +78,7 @@ export async function getRemoteBlockData(group: string, level0BlockId: string) {
   return getBlockData(group, level0BlockId);
 }
 
-export async function getRemoteBlockHash(groupId: string, level: string = 'L0') {
+export async function getRemoteBlockHashes(groupId: string, level: BlockHashLevel = 'L0') {
   const connection: IConnection = currentConnection;
   // TODO verify user has read permissions to group
   return getBlockHashes(groupId, level);
@@ -118,10 +104,14 @@ export async function syncDBs(connection: IConnection) {
   const db = await getIndexedDB();
   // const groupPromises = remoteGroups.map(async group => {
   for (const group of remoteGroups) {
+    const l1LocalHash = await getBlockHashes(group.id, 'L1');
+    const l1RemoteHash = await RPC(connection, getRemoteBlockHashes)(group.id, 'L1');
+    if (l1LocalHash == l1RemoteHash) continue;
+
     const newData = [];
     const startTime = Date.now();
     const level = 'L0';
-    const remoteHashes = await RPC(connection, getRemoteBlockHash)(group.id, level);
+    const remoteHashes = await RPC(connection, getRemoteBlockHashes)(group.id, level);
     const localHashes = await getBlockHashes(group.id, level);
     const blockIds = _.uniq([...Object.keys(localHashes), ...Object.keys(remoteHashes)]);
     // console.log({ blockIds, localHashes, remoteHashes })
@@ -167,9 +157,8 @@ export async function pushData(data: IData) {
 export const remotelyCallableFunctions: { [key: string]: Function } = {
   ping,
   testError,
-  proveIdentity,
   getRemoteGroups,
-  getRemoteBlockHash,
+  getRemoteBlockHashes,
   getRemoteBlockData,
   pushData,
 }
@@ -216,8 +205,8 @@ async function handelRemoteCall(connection: IConnection, remoteCall: IRemoteCall
       error = `${fnName} is not a remotely callable function`;
     } else {
       try {
-        if (!connection.remoteUserVerified && fn != proveIdentity) {
-          await verifyRemoteUser(connection);
+        if (!connection.remoteUserVerified) {
+          verifyRemoteUser(connection);
           console.log('remote user verified', connection);
         }
         currentConnection = connection; // this is a pretty hacky

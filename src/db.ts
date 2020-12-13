@@ -102,6 +102,7 @@ export async function getIndexedDB(
       request.onerror = evt => reject(evt);
     }
     transaction.oncomplete = evt => {
+      data.forEach((d: IData) => clearHashCache(d.group));
       resolve((evt.target as any).result);
     };
   });
@@ -119,16 +120,20 @@ export async function getIndexedDB(
       request.onerror = evt => reject(evt);
     }
     transaction.oncomplete = evt => {
+      data.forEach((d: IData) => clearHashCache(d.group));
       resolve((evt.target as any).result);
     };
   });
 
   const deleteOp = (id): Promise<any> => new Promise(async (resolve, reject) => {
+    const dbData = await get(id);
+    if (!dbData) return resolve();
     const transaction = db.transaction(['data'], 'readwrite');
     transaction.onerror = evt => reject(evt);
     const request = transaction.objectStore('data').delete(id);
     request.onerror = evt => reject(evt);
     request.onsuccess = evt => { 
+      clearHashCache(dbData.group);
       resolve((evt.target as any).result);
     };
   });
@@ -208,7 +213,28 @@ export async function getBlockData(group: string, level0BlockId: string) {
   return blockData;
 }
 
-export async function getBlockHashes(groupId: string, level: string = 'L0') {
+export type BlockHashLevel = 'L0' | 'L1';
+
+export const L0BlockHashes: {
+  [l1Hash: string]: { [blockId: string]: string }
+} = {}
+
+export const L1BlockHashes: {
+  [groupId: string]: string
+} = {}
+
+function clearHashCache(groupId: string) {
+  delete L0BlockHashes[L1BlockHashes[groupId]];
+  delete L1BlockHashes[groupId];
+}
+
+export async function getBlockHashes(groupId: string, level: BlockHashLevel = 'L0') {
+  if (level == 'L1' && L1BlockHashes[groupId]) {
+    return L1BlockHashes[groupId];
+  }
+  if (level == 'L0' && L1BlockHashes[groupId] && L0BlockHashes[L1BlockHashes[groupId]]) {
+    return L0BlockHashes[L1BlockHashes[groupId]]
+  }
   const db = await getIndexedDB();
   
   const maxTime = Date.now();
@@ -230,6 +256,12 @@ export async function getBlockHashes(groupId: string, level: string = 'L0') {
       set(blockHashes, key, hashObject(grouped[key]));
     })
   }
+  L1BlockHashes[groupId] = hashObject(blockHashes);
+  L0BlockHashes[L1BlockHashes[groupId]] = blockHashes;
+  // setTimeout(() => {
+  //   clearGroupHashCache(groupId);
+  //   console.log({ ...L0BlockHashes, ...L1BlockHashes })
+  // }, 30e3);
   return blockHashes;
 }
 
