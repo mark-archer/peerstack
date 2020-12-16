@@ -13,19 +13,20 @@ export interface IData extends ISigned {
 
 // export const GROUPS_GROUP_ID = 'groups';
 
+export interface IGroupMember {
+  userId: string,
+  read?: boolean,
+  create?: boolean,
+  update?: boolean,
+  delete?: boolean,
+  admin?: boolean,
+  expireMS?: number,
+}
+
 export interface IGroup extends IData {
   type: 'Group',
   name: string,
-  members: {
-    userId: string,
-    publicKey: string,
-    read?: boolean,
-    create?: boolean,
-    update?: boolean,
-    delete?: boolean,
-    admin?: boolean,
-    expireMS?: number,
-  }[],
+  members: IGroupMember[],
   blockedUserIds: string[],
   allowPublicViewers?: boolean,
   allowViewerComments?: boolean,
