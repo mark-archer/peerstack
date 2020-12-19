@@ -15,7 +15,7 @@ describe('user', () => {
 
   test('sign object and verify signature', () => {
     const obj = { name: 'mark', date: new Date() }
-    const signedObj = signObject(obj, me.secretKey);
+    const signedObj = signObject(obj, me.secretKey, me.id);
     expect(signedObj.signature).toBeTruthy();
     expect(() => verifySignedObject(signedObj, me.publicKey)).not.toThrow(/.*/);
     expect(() => verifySignedObject(signedObj, newMe().publicKey)).toThrow(/Object signature verification failed/);
@@ -24,7 +24,7 @@ describe('user', () => {
 
   test('object verification error', () => {
     const obj = { name: 'mark', date: new Date() }
-    const signedObj = signObject(obj, me.secretKey);
+    const signedObj = signObject(obj, me.secretKey, me.id);
     signedObj.name = 'some other name'
     expect(() => verifySignedObject(signedObj, me.publicKey)).toThrow(/signature hash does not match/)
   })

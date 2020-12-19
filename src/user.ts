@@ -1,8 +1,14 @@
 import { newid, encodeUint8ArrayToBaseN, decodeUint8ArrayFromBaseN, hashObject, anyObject } from './common';
 import * as nacl from 'tweetnacl';
 import * as naclUtil from 'tweetnacl-util';
+import { IData } from './db';
 
-export interface IUser extends ISigned {
+export interface ISigned {
+  signature?: string
+  signer?: string
+}
+
+export interface IUser extends ISigned, IData {
   type: 'User',
   id: string,
   displayName: string,
@@ -18,8 +24,10 @@ export function newMe(displayName?: string): IMe {
   const userId = newid();
   const newKey = nacl.sign.keyPair();
   return {
-    type: 'User',
     id: userId,
+    owner: userId,
+    group: 'users',
+    type: 'User',
     displayName: displayName || userId,
     secretKey: encodeUint8ArrayToBaseN(newKey.secretKey),
     publicKey: encodeUint8ArrayToBaseN(newKey.publicKey),
@@ -41,13 +49,10 @@ export function openMessage(signedMsg: string, publicKey: (Uint8Array | string))
   return naclUtil.encodeUTF8(msgOpened);
 }
 
-export interface ISigned {
-  signature?: string
-}
-
-export function signObject<T>(obj: T, secretKey: string): T & ISigned {
+export function signObject<T>(obj: T, secretKey: string, signerId: string): T & ISigned {
   const signedObj = obj as T & ISigned;
   delete signedObj.signature;
+  signedObj.signer = signerId;
   const hash = hashObject(signedObj);
   signedObj.signature = signMessage(hash, secretKey);
   return signedObj;

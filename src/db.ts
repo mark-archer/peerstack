@@ -1,5 +1,5 @@
 import { get, set, isArray, groupBy } from 'lodash';
-import { verifySignedObject, ISigned } from './user';
+import { verifySignedObject, ISigned, IUser } from './user';
 import { hashObject } from './common';
 
 export interface IData extends ISigned {
@@ -30,6 +30,16 @@ export interface IGroup extends IData {
   blockedUserIds: string[],
   allowPublicViewers?: boolean,
   allowViewerComments?: boolean,
+}
+
+export const usersGroup: IGroup = { type: 'Group', id: 'users', group: 'users', owner: 'users', name: 'Users', modified: Date.now(), members: [], blockedUserIds: []};
+
+let _personalGroup: IGroup;
+export function getPersonalGroup(myId: string) {
+  if (!_personalGroup || _personalGroup.id != myId) {
+    _personalGroup = { type: 'Group', id: myId, group: myId, owner: myId, name: 'Personal', modified: Date.now(), members: [], blockedUserIds: [] };
+  }  
+  return _personalGroup;
 }
 
 // export interface IDataEvent extends ISigned {
@@ -94,7 +104,7 @@ export async function getIndexedDB(
     if (!isArray(data)) {
       data = [data];
     }
-    validateData(data);
+    await validateData(baseOps, data);
     const transaction = db.transaction(['data'], 'readwrite');
     transaction.onerror = evt => reject(evt);
     const objectStore = transaction.objectStore('data');
@@ -112,7 +122,7 @@ export async function getIndexedDB(
     if (!isArray(data)) {
       data = [data];
     }
-    validateData(data);
+    await validateData(baseOps, data);
     const transaction = db.transaction(['data'], 'readwrite');
     transaction.onerror = evt => reject(evt);
     const objectStore = transaction.objectStore('data');
@@ -190,13 +200,79 @@ export async function getIndexedDB(
   return baseOps;
 }
 
-export function validateData(data: IData[]) {
-  data.forEach(d => {
-    const requiredFields = ['modified', 'type', 'group', 'id', 'owner'];
+export const checkPermission = (function <T extends Function>(hasPermission: T): T {
+  return <any>async function (...args) {
+    const hasPerm = await hasPermission(...args);
+    if (!hasPerm) {
+      throw new Error('user does not have permissions')
+    }
+  };
+})(hasPermission)
+
+export async function hasPermission(userId: string, group: string | IGroup, accessLevel: 'read' | 'create' | 'update' | 'delete' | 'admin', db?: IDB): Promise<boolean> {
+  if (group === 'users' && accessLevel === 'read') {
+    return true;
+  }
+  if (userId == group || (typeof group === 'object' && userId == group.id)) {
+    return true;
+  }
+  if (typeof group === 'string') {
+    if (!db) {
+      db = await getIndexedDB()
+    }
+    group = (await db.get(group)) as IGroup;
+  }
+  if (group?.type !== 'Group') {
+    throw new Error('invalid group specified');
+  }
+  if (group.owner == userId) {
+    return true;
+  }
+  const memberWithAccess = group.members.find(m => m.userId === userId && (m[accessLevel] || m.admin));
+  return Boolean(memberWithAccess);
+}
+
+export async function validateData(db: IDB, datas: IData[]) {
+  const requiredFields = ['modified', 'type', 'group', 'id', 'owner', 'signature', 'signer'];
+  const users: { [userId: string]: IUser } = {}
+  // const groups: { [groupId: string]: IGroup } = {}
+  for (const data of datas) {
     requiredFields.forEach(f => {
-      if (!d[f]) throw new Error(`'${f}' is required on all data but was not found on ${JSON.stringify(d,null,2)}`);
+      if (!data[f]) throw new Error(`'${f}' is required on all data but was not found on ${JSON.stringify(data,null,2)}`);
     })
-  })
+    const user = data.id == data.signer && (data as IUser) ||  users[data.signer] || await db.get(data.signer) as IUser;
+    try {
+      users[user.id] = user;
+    } catch (err) {
+      throw new Error(`Could not identify signer: ${JSON.stringify(data, null, 2)}`);
+    }
+    try {
+      verifySignedObject(data, user.publicKey);
+    } catch (err) {
+      throw new Error(`Could not verify object signature: ${JSON.stringify({ user, data }, null, 2)}`)
+    }
+    if (data.type == 'User' && data.group === 'users' && data.signer == data.id) {
+      // users are always allowed to create or update themselves 
+      continue;
+    }
+    try {
+      if (data.id === data.group && data.type === 'Group') {
+        await hasPermission(user.id, data as IGroup, 'admin');
+      } else {
+        const dbData = await db.get(data.id);
+        const group = data.id == data.group && (data as IGroup) || data.group;
+        if (dbData && dbData.signature != data.signature) {
+          const hasUpdate = await hasPermission(user.id, group, 'update', db);
+          if (!hasUpdate) throw new Error(`Signer ${user.id} does not have update permissions in group ${group}`);
+        } else {
+          const hasCreate = await hasPermission(user.id, group, 'create', db);
+          if (!hasCreate) throw new Error(`Signer ${user.id} does not have create permissions in group ${group}`);
+        }
+      } 
+    } catch (err) {
+      throw new Error(`Permissions error: ${err} \n ${JSON.stringify(data, null, 2)}`)
+    }
+  }
 }
 
 export const BLOCK_SIZE = 60e3 * 60 * 24; // 1 day
@@ -236,6 +312,7 @@ export async function getBlockHashes(groupId: string, level: BlockHashLevel = 'L
   if (level == 'L0' && L1BlockHashes[groupId] && L0BlockHashes[L1BlockHashes[groupId]]) {
     return L0BlockHashes[L1BlockHashes[groupId]]
   }
+  console.log(`building hash for group ${groupId}`)
   const db = await getIndexedDB();
   
   const maxTime = Date.now();
@@ -243,7 +320,7 @@ export async function getBlockHashes(groupId: string, level: BlockHashLevel = 'L
   const minTime = oldestDataResult?.value?.modified || Date.now();
   const blockHashes = {};
 
-  // populate level 0
+  // populate L0 hashes
   let interval = BLOCK_SIZE * 1000;
   let lowerTime = maxTime - (maxTime % interval);
   let upperTime = lowerTime + interval;
@@ -259,11 +336,11 @@ export async function getBlockHashes(groupId: string, level: BlockHashLevel = 'L
   }
   L1BlockHashes[groupId] = hashObject(blockHashes);
   L0BlockHashes[L1BlockHashes[groupId]] = blockHashes;
-  // setTimeout(() => {
-  //   clearGroupHashCache(groupId);
-  //   console.log({ ...L0BlockHashes, ...L1BlockHashes })
-  // }, 30e3);
-  return blockHashes;
+  if (level === 'L1') {
+    return L1BlockHashes[groupId]
+  } else {
+    return blockHashes
+  }
 }
 
 // export async function buildDBHashes() {
