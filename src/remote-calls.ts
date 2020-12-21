@@ -55,9 +55,29 @@ export async function testError(msg: string) {
   throw new Error(msg);
 }
 
-export function verifyRemoteUser(connection: IConnection) {
+export async function verifyRemoteUser(connection: IConnection) {
   try {
     verifySignedObject(connection.remoteUser, connection.remoteUser.publicKey);    
+    const db = await getIndexedDB();
+    const dbUser = await db.get(connection.remoteUser.id) as IUser;
+    if (dbUser && dbUser.publicKey !== connection.remoteUser.publicKey) {
+      // TODO allow public keys to change 
+      //    this will have to happen if a user's private key is compromised so we need to plan for it
+      //    The obvious solution to to use some server as a source of truth but that kind of violates the p2p model
+      throw new Error('Public keys do not match');
+      // IDEA use previously known devices to try to do multi-factor authentication 
+      //    If the user has two or more devices they regularly use, we can ask as many of those devices
+      //    as we can connect with, which is the correct public key for their user.
+      //    we can reject the new public key until all available devices belonging to the user are in consensus. 
+    }
+    if (!dbUser) {
+      // TODO protect from users stealing other users' ids
+      //    this can happen if user1 has never seen user2 before, and user3 creates a user object
+      //    with user2's id but a new public/private key, then gives that to user1
+      await db.insert(dbUser);
+    } else if (dbUser.modified < connection.remoteUser.modified) {
+      await db.update(connection.remoteUser);
+    }
   } catch (err) {
     throw new Error('remote user failed verification');
   }
@@ -127,7 +147,7 @@ export async function syncGroup(connection: IConnection, remoteGroup: IGroup, db
   console.log({ blockIds, localHashes, remoteHashes })
   for (const blockId of blockIds) {
     if (localHashes[blockId] != remoteHashes[blockId]) {
-      console.log('found hash diff', {groupId: remoteGroup.id, blockId, localHash: localHashes[blockId], remoteHash: remoteHashes[blockId], })
+      // console.log('found hash diff', {groupId: remoteGroup.id, blockId, localHash: localHashes[blockId], remoteHash: remoteHashes[blockId], })
       const remoteBlockData = await RPC(connection, getRemoteBlockData)(remoteGroup.id, blockId);
       for (const remoteData of remoteBlockData) {
         const localData = await db.get(remoteData.id);
@@ -231,7 +251,7 @@ async function handelRemoteCall(connection: IConnection, remoteCall: IRemoteCall
     } else {
       try {
         if (!connection.remoteUserVerified) {
-          verifyRemoteUser(connection);
+          await verifyRemoteUser(connection);
           console.log('remote user verified', connection);
         }
         currentConnection = connection; // this is a pretty hacky

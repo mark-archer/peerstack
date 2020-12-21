@@ -2,6 +2,7 @@ import * as _ from 'lodash';
 import { newid, toJSON } from "./common";
 import { IMe, IUser } from "./user";
 import { onRemoteMessage, IConnection } from "./remote-calls";
+import { getIndexedDB, IGroup } from './db';
 
 export interface ISDIExchange {
   connectionId: string
@@ -14,7 +15,8 @@ export interface ISDIExchange {
 
 export interface IDeviceRegistration {
   deviceId: string
-  user: IUser
+  user: IUser,
+  groups: string[],
 }
 
 export interface IDeviceConnection extends IConnection {
@@ -48,7 +50,11 @@ export function init(_deviceId: string, _me: IMe) {
   const connectedPromise = new Promise(resolve => resolveConnected = resolve);
   io.on('connect', async () => {
     console.log('connected to server', io.id);
-    await registerDevice({ deviceId, user })
+    const db = await getIndexedDB();
+    const allGroups = (await db.find('Group', 'type')) as IGroup[];
+    const allGroupIds = allGroups.map(g => g.id);
+    allGroupIds.push(_me.id);
+    await registerDevice({ deviceId, user, groups: allGroupIds  })
     resolveConnected();
   });
   // // reconnect is called in addition to connect so redundant for now
@@ -383,8 +389,8 @@ async function handelOffer(offer: ISDIExchange) {
     pc2.ondatachannel = e => {
       let dc: RTCDataChannel = e.channel;
       connection.dc = dc;
-      connection.send = data => dcSend(connection, data),
-        dc.onmessage = e => onRemoteMessage(connection, e.data);
+      connection.send = data => dcSend(connection, data);
+      dc.onmessage = e => onRemoteMessage(connection, e.data);
       dc.onopen = e => {
         console.log('dc2 connection open to', offer.fromDevice)
         eventHandlers.onDeviceConnected(connection);

@@ -209,6 +209,7 @@ export const checkPermission = (function <T extends Function>(hasPermission: T):
   };
 })(hasPermission)
 
+const groups: { [groupId: string]: IGroup } = {}
 export async function hasPermission(userId: string, group: string | IGroup, accessLevel: 'read' | 'create' | 'update' | 'delete' | 'admin', db?: IDB): Promise<boolean> {
   if (group === 'users' && accessLevel === 'read') {
     return true;
@@ -217,39 +218,47 @@ export async function hasPermission(userId: string, group: string | IGroup, acce
     return true;
   }
   if (typeof group === 'string') {
-    if (!db) {
-      db = await getIndexedDB()
+    if (!groups[group]) {
+      if (!db) {
+        db = await getIndexedDB()
+      }
+      group = (await db.get(group)) as IGroup;
+    } else {
+      group = groups[group];
     }
-    group = (await db.get(group)) as IGroup;
   }
+  group = group as IGroup;
   if (group?.type !== 'Group') {
     throw new Error('invalid group specified');
   }
+  groups[group.id] = group;
   if (group.owner == userId) {
+    // TODO verify user did not set themselves as the owner
     return true;
   }
   const memberWithAccess = group.members.find(m => m.userId === userId && (m[accessLevel] || m.admin));
   return Boolean(memberWithAccess);
 }
 
+const users: { [userId: string]: IUser } = {};
 export async function validateData(db: IDB, datas: IData[]) {
   const requiredFields = ['modified', 'type', 'group', 'id', 'owner', 'signature', 'signer'];
-  const users: { [userId: string]: IUser } = {}
   // const groups: { [groupId: string]: IGroup } = {}
   for (const data of datas) {
     requiredFields.forEach(f => {
       if (!data[f]) throw new Error(`'${f}' is required on all data but was not found on ${JSON.stringify(data,null,2)}`);
     })
+    // TODO if data is user, verify public key is not changing from record in db
     const user = data.id == data.signer && (data as IUser) ||  users[data.signer] || await db.get(data.signer) as IUser;
+    try {
+      verifySignedObject(data, user.publicKey);
+    } catch (err) {
+      throw new Error(`Could not verify object signature: ${JSON.stringify({ data, user }, null, 2)}`)
+    }
     try {
       users[user.id] = user;
     } catch (err) {
       throw new Error(`Could not identify signer: ${JSON.stringify(data, null, 2)}`);
-    }
-    try {
-      verifySignedObject(data, user.publicKey);
-    } catch (err) {
-      throw new Error(`Could not verify object signature: ${JSON.stringify({ user, data }, null, 2)}`)
     }
     if (data.type == 'User' && data.group === 'users' && data.signer == data.id) {
       // users are always allowed to create or update themselves 

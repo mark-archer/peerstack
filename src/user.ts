@@ -72,3 +72,6 @@ export function verifySignedObject(obj: ISigned, publicKey: string) {
     throw new Error('Object signature verification failed: ' + String(err));
   }
 }
+
+// @ts-ignore
+if (typeof window !== 'undefined') window.peerUser = module.exports;

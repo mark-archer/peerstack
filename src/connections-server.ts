@@ -1,12 +1,11 @@
 import * as _ from 'lodash';
 import { Socket } from 'socket.io';
-import { IMe, IUser, verifySignedObject } from './user';
+import { IUser, verifySignedObject } from './user';
 import { Server } from 'http';
 import { IDeviceRegistration, ISDIExchange } from './connections';
 
 
 export function init(server: Server, TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN) {
-  
   let token;
   try {
     const client = require('twilio')(TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN);
@@ -60,9 +59,13 @@ export function init(server: Server, TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN) {
 
     socket.on('get-available-devices', async (na, callback: Function) => {
       try {
-        const availableDevices =
-          devices.filter(d => d.user.id === user.id && d.deviceId !== deviceId);
-          //devices.filter(d => d.device !== deviceId);  
+        const myDevice = devices.find(device => device.deviceId == deviceId);
+        // any devices that have at least one of my groups
+        let availableDevices = devices.filter(device => {
+          if (device.deviceId == deviceId) return false;
+          return device.groups.some(groupId => myDevice.groups.includes(groupId))
+        });
+        availableDevices = _.uniq(availableDevices).reverse(); // reverse so newest first
         callback(null, availableDevices);
       } catch (err) {
         console.error('getAvailableDevices failed', err);
@@ -72,6 +75,7 @@ export function init(server: Server, TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN) {
 
     socket.on('register-device', async (registration: IDeviceRegistration, callback: Function) => {
       try {
+        // TODO: this is doing nothing to verify the userId is owned by the current user since they are also sending us the public key
         verifySignedObject(registration.user as any, registration.user.publicKey);
         user = registration.user;
         deviceSocket[registration.deviceId] = socket;
