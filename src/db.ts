@@ -32,13 +32,13 @@ export interface IGroup extends IData {
   allowViewerComments?: boolean,
 }
 
-export const usersGroup: IGroup = { type: 'Group', id: 'users', group: 'users', owner: 'users', name: 'Users', modified: Date.now(), members: [], blockedUserIds: []};
+export const usersGroup: IGroup = { type: 'Group', id: 'users', group: 'users', owner: 'users', name: 'Users', modified: Date.now(), members: [], blockedUserIds: [] };
 
 let _personalGroup: IGroup;
 export function getPersonalGroup(myId: string) {
   if (!_personalGroup || _personalGroup.id != myId) {
     _personalGroup = { type: 'Group', id: myId, group: myId, owner: myId, name: 'Personal', modified: Date.now(), members: [], blockedUserIds: [] };
-  }  
+  }
   return _personalGroup;
 }
 
@@ -143,7 +143,7 @@ export async function getIndexedDB(
     transaction.onerror = evt => reject(evt);
     const request = transaction.objectStore('data').delete(id);
     request.onerror = evt => reject(evt);
-    request.onsuccess = evt => { 
+    request.onsuccess = evt => {
       clearHashCache(dbData.group);
       resolve((evt.target as any).result);
     };
@@ -204,7 +204,8 @@ export const checkPermission = (function <T extends Function>(hasPermission: T):
   return <any>async function (...args) {
     const hasPerm = await hasPermission(...args);
     if (!hasPerm) {
-      throw new Error('user does not have permissions')
+      const [userId, group, accessLevel] = args;
+      throw new Error(`Signer ${userId} does not have ${accessLevel} permissions in group ${group && group.id || group}`)
     }
   };
 })(hasPermission)
@@ -243,41 +244,59 @@ export async function hasPermission(userId: string, group: string | IGroup, acce
 const users: { [userId: string]: IUser } = {};
 export async function validateData(db: IDB, datas: IData[]) {
   const requiredFields = ['modified', 'type', 'group', 'id', 'owner', 'signature', 'signer'];
-  // const groups: { [groupId: string]: IGroup } = {}
   for (const data of datas) {
     requiredFields.forEach(f => {
-      if (!data[f]) throw new Error(`'${f}' is required on all data but was not found on ${JSON.stringify(data,null,2)}`);
+      if (!data[f]) throw new Error(`'${f}' is required on all data but was not found on ${JSON.stringify(data, null, 2)}`);
     })
-    // TODO if data is user, verify public key is not changing from record in db
-    const user = data.id == data.signer && (data as IUser) ||  users[data.signer] || await db.get(data.signer) as IUser;
+    if (data.type === 'Group') {
+      if (data.id !== data.group) {
+        throw new Error(`All groups must have their group set to themselves`)
+      }
+    }
+    else if (data.type === 'User') {
+      if (data.group !== 'users') {
+        throw new Error(`All users must have their group set to 'users'`);
+      }
+      if (data.owner !== data.id) {
+        throw new Error(`The owner of a user must be that same user`);
+      }
+      if (data.signer !== data.id) {
+        throw new Error(`The signer of a user must be that same user`)
+      }
+      const dbUser = users[data.id] || await db.get(data.id) as IUser;
+      if (dbUser && (data as IUser).publicKey !== dbUser.publicKey) {
+        throw new Error(`An attempt was made to update a user but the public keys do not match`);
+      }
+    }
+    const user = data.type === 'User' && (data as IUser) || users[data.signer] || await db.get(data.signer) as IUser;
+    if (!user?.id) {
+      throw new Error(`Could not identify signer: ${JSON.stringify(data, null, 2)}`);
+    }
     try {
       verifySignedObject(data, user.publicKey);
     } catch (err) {
       throw new Error(`Could not verify object signature: ${JSON.stringify({ data, user }, null, 2)}`)
     }
-    try {
-      users[user.id] = user;
-    } catch (err) {
-      throw new Error(`Could not identify signer: ${JSON.stringify(data, null, 2)}`);
-    }
-    if (data.type == 'User' && data.group === 'users' && data.signer == data.id) {
+    users[user.id] = user;
+    if (data.type == 'User') {
       // users are always allowed to create or update themselves 
       continue;
     }
     try {
-      if (data.id === data.group && data.type === 'Group') {
+      if (data.type === 'Group') {
         await hasPermission(user.id, data as IGroup, 'admin');
       } else {
         const dbData = await db.get(data.id);
-        const group = data.id == data.group && (data as IGroup) || data.group;
-        if (dbData && dbData.signature != data.signature) {
-          const hasUpdate = await hasPermission(user.id, group, 'update', db);
-          if (!hasUpdate) throw new Error(`Signer ${user.id} does not have update permissions in group ${group}`);
+        if (dbData && dbData.group != data.group) {
+          await checkPermission(user.id, dbData.group, 'delete');
+          await checkPermission(user.id, data.group, 'create');
+          // } if (dbData && dbData.signature != data.signature) {
+        } if (dbData) {
+          await checkPermission(user.id, data.group, 'update')
         } else {
-          const hasCreate = await hasPermission(user.id, group, 'create', db);
-          if (!hasCreate) throw new Error(`Signer ${user.id} does not have create permissions in group ${group}`);
+          await checkPermission(user.id, data.group, 'create')
         }
-      } 
+      }
     } catch (err) {
       throw new Error(`Permissions error: ${err} \n ${JSON.stringify(data, null, 2)}`)
     }
@@ -323,7 +342,7 @@ export async function getBlockHashes(groupId: string, level: BlockHashLevel = 'L
   }
   console.log(`building hash for group ${groupId}`)
   const db = await getIndexedDB();
-  
+
   const maxTime = Date.now();
   const oldestDataResult = await db.openCursor(null, 'modified');
   const minTime = oldestDataResult?.value?.modified || Date.now();
@@ -357,10 +376,10 @@ export async function getBlockHashes(groupId: string, level: BlockHashLevel = 'L
 //   modifiedBlockIds = {};
 //   blockHashes = {};
 //   const db = await getIndexedDB();
-  
+
 //   const maxTime = Date.now();
 //   const minTime = (await db.openCursor(null, 'modified')).value.modified;
-  
+
 //   // populate level 0
 //   let interval = BLOCK_SIZE * 100;
 //   let lowerTime = maxTime - (maxTime % interval);
@@ -381,7 +400,7 @@ export async function getBlockHashes(groupId: string, level: BlockHashLevel = 'L
 //   const dataUpper = await db.find(IDBKeyRange.lowerBound(maxTime), 'modified');
 //   const dataNull = await db.find(null, 'modified');
 //   console.log({ dataLower, dataUpper, dataNull });
-    
+
 
 //   // populate higher block levels
 //   let level = 0;
