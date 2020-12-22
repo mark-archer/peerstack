@@ -2,6 +2,7 @@ import { fromJSON, isid, newid } from "./common";
 import { IMe, IUser, newMe, openMessage, signMessage, signObject, verifySignedObject } from "./user";
 import * as _ from "lodash";
 import { getIndexedDB, getBlockData, getBlockHashes, IData, BlockHashLevel, IGroup, hasPermission, checkPermission, IDB, usersGroup, getPersonalGroup } from "./db";
+import { connections } from "./connections";
 
 export type txfn = <T>(data: (string | IRemoteData)) => Promise<T | void> | void
 
@@ -186,7 +187,17 @@ export async function syncDBs(connection: IConnection) {
 // @ts-ignore
 window.syncDBs = syncDBs
 
+const pushDataAlreadySeen: {
+  [idPlusModified: string]: true
+} = {}
 export async function pushData(data: IData) {
+  const idPlusModified = data.id + data.modified;
+  if (pushDataAlreadySeen[idPlusModified]) {
+    // console.log('already seen so not saving or forwarding data', data);
+    return;
+  }
+  // console.log('starting data save', data);
+  pushDataAlreadySeen[idPlusModified] = true;
   const connection: IConnection = currentConnection;
   const db = await getIndexedDB();
   const dbData = await db.get(data.id);
@@ -197,6 +208,16 @@ export async function pushData(data: IData) {
     await db.update(data);
     eventHandlers.onRemoteDataUpdated(data);
   }
+  connections.forEach(_connection => {
+    // this data was probably pushed from the current connection so resist forwarding it to that one but if it's the only connection available push it to try to get it propagating 
+    if (connection == _connection && connections.length > 1) {
+      return;
+    }
+    if (_connection.groups?.some(groupId => groupId == data.group)) {
+      // console.log('forwarding data to connection', { data, conn: _connection });
+      RPC(_connection, pushData)(data);
+    }
+  });
 }
 
 export const remotelyCallableFunctions: { [key: string]: Function } = {

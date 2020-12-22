@@ -229,8 +229,10 @@ async function dcSend(connection, data) {
 export async function connectToDevice(toDeviceId) {
   try {
     const existingConnection = connections.find(c => c.remoteDeviceId === toDeviceId);
-    if (existingConnection) return existingConnection;
-
+    if (existingConnection) {
+      // console.log('already have a connection to this device so just returning that')
+      return existingConnection;
+    }
     const connectionId = newid();
 
     // get ice servers

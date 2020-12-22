@@ -63,7 +63,7 @@ export function init(server: Server, TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN) {
         // any devices that have at least one of my groups
         let availableDevices = devices.filter(device => {
           if (device.deviceId == deviceId) return false;
-          return device.groups.some(groupId => myDevice.groups.includes(groupId))
+          return device.groups?.some(groupId => myDevice.groups.includes(groupId))
         });
         availableDevices = _.uniq(availableDevices).reverse(); // reverse so newest first
         callback(null, availableDevices);
@@ -82,7 +82,7 @@ export function init(server: Server, TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN) {
         deviceId = registration.deviceId
         devices = devices.filter(d => d.deviceId != deviceId);
         devices.push(registration);
-        console.log('device registered', user.id);
+        console.log('device registered', deviceId);
         if (callback) callback(null, 'success');
       } catch (err) {
         console.error('device registration failed', err);        
