@@ -60,7 +60,7 @@ export type indexes = 'group' | 'type' | 'owner' | 'modified'
 export interface IDB {
   db: IDBDatabase
   insert: (data: IData | IData[]) => Promise<void>
-  update: (data: IData | IData[]) => Promise<void>
+  update: (data: IData | IData[], skipValidation?: boolean) => Promise<void>
   delete: (id: string) => Promise<void>
   get: (id: string) => Promise<IData>
   find: (query?: string | number | IDBKeyRange | ArrayBuffer | Date | ArrayBufferView | IDBArrayKey, index?: indexes) => Promise<IData[]>
@@ -118,11 +118,13 @@ export async function getIndexedDB(
     };
   });
 
-  const update = (data: IData | IData[]): Promise<any> => new Promise(async (resolve, reject) => {
+  const update = (data: IData | IData[], skipValidation: boolean = false): Promise<any> => new Promise(async (resolve, reject) => {
     if (!isArray(data)) {
       data = [data];
     }
-    await validateData(baseOps, data);
+    if (!skipValidation) {
+      await validateData(baseOps, data);
+    }
     const transaction = db.transaction(['data'], 'readwrite');
     transaction.onerror = evt => reject(evt);
     const objectStore = transaction.objectStore('data');
@@ -340,7 +342,7 @@ export async function getBlockHashes(groupId: string, level: BlockHashLevel = 'L
   if (level == 'L0' && L1BlockHashes[groupId] && L0BlockHashes[L1BlockHashes[groupId]]) {
     return L0BlockHashes[L1BlockHashes[groupId]]
   }
-  console.log(`building hash for group ${groupId}`)
+  // console.log(`building hash for group ${groupId}`)
   const db = await getIndexedDB();
 
   const maxTime = Date.now();
