@@ -220,13 +220,14 @@ export async function pushData(data: IData) {
   });
 }
 
+// these names have to be typed out so they persisted through code minification 
 export const remotelyCallableFunctions: { [key: string]: Function } = {
-  ping,
-  testError,
-  getRemoteGroups,
-  getRemoteBlockHashes,
-  getRemoteBlockData,
-  pushData,
+  "ping": ping,
+  "testError": testError,
+  "getRemoteGroups": getRemoteGroups,
+  "getRemoteBlockHashes": getRemoteBlockHashes,
+  "getRemoteBlockData": getRemoteBlockData,
+  "pushData": pushData,
 }
 
 export async function makeRemoteCall(connection: IConnection, fnName: string, args: any[]) {
