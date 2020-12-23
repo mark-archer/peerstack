@@ -140,7 +140,7 @@ export async function getIndexedDB(
 
   const deleteOp = (id): Promise<any> => new Promise(async (resolve, reject) => {
     const dbData = await get(id);
-    if (!dbData) return resolve();
+    if (!dbData) return resolve(true);
     const transaction = db.transaction(['data'], 'readwrite');
     transaction.onerror = evt => reject(evt);
     const request = transaction.objectStore('data').delete(id);
