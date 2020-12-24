@@ -42,12 +42,6 @@ export interface IRemoteChunk extends IRemoteData {
   chunk: string,
 }
 
-export function RPC<T extends Function>(connection: IConnection, fn: T): T {
-  return <any>function (...args) {
-    return makeRemoteCall(connection, fn.name as any, args);
-  };
-}
-
 export async function ping(n: number, s: string) {
   return ['pong', ...arguments];
 }
@@ -58,18 +52,18 @@ export async function testError(msg: string) {
 
 export async function verifyRemoteUser(connection: IConnection) {
   try {
-    verifySignedObject(connection.remoteUser, connection.remoteUser.publicKey);    
+    verifySignedObject(connection.remoteUser, connection.remoteUser.publicKey);
     const db = await getIndexedDB();
     const dbUser = await db.get(connection.remoteUser.id) as IUser;
     if (dbUser && dbUser.publicKey !== connection.remoteUser.publicKey) {
-      // TODO allow public keys to change 
+      // TODO allow public keys to change
       //    this will have to happen if a user's private key is compromised so we need to plan for it
       //    The obvious solution to to use some server as a source of truth but that kind of violates the p2p model
       throw new Error('Public keys do not match');
-      // IDEA use previously known devices to try to do multi-factor authentication 
+      // IDEA use previously known devices to try to do multi-factor authentication
       //    If the user has two or more devices they regularly use, we can ask as many of those devices
       //    as we can connect with, which is the correct public key for their user.
-      //    we can reject the new public key until all available devices belonging to the user are in consensus. 
+      //    we can reject the new public key until all available devices belonging to the user are in consensus.
     }
     if (!dbUser) {
       // TODO protect from users stealing other users' ids
@@ -87,7 +81,6 @@ export async function verifyRemoteUser(connection: IConnection) {
 
 export async function getRemoteGroups() {
   const connection: IConnection = currentConnection;
-  if (!connection.remoteUserVerified) throw new Error('remote user not verified')
   const db = await getIndexedDB();
   const allGroups = (await db.find('Group', 'type')) as IGroup[];
   const readGroups: IGroup[] = []
@@ -123,25 +116,26 @@ export const eventHandlers = {
 export async function syncGroup(connection: IConnection, remoteGroup: IGroup, db: IDB) {
   if (remoteGroup.id !== connection.me.id && remoteGroup.id !== 'users') {
     const localGroup = await db.get(remoteGroup.id);
-    if (remoteGroup.signature !== localGroup?.signature) {
+    if (!localGroup) {
+      await db.insert(remoteGroup);
+      eventHandlers.onRemoteDataInserted(remoteGroup);
+    } else if (remoteGroup.modified > localGroup.modified) {
       await db.update(remoteGroup);
+      eventHandlers.onRemoteDataUpdated(remoteGroup);
     }
   }
   const l1LocalHash = await getBlockHashes(remoteGroup.id, 'L1');
   const l1RemoteHash = await RPC(connection, getRemoteBlockHashes)(remoteGroup.id, 'L1');
   if (l1LocalHash == l1RemoteHash) {
     // console.log(`L1 hashes match ${l1RemoteHash} so skipping L0 sync: ${group.title || group.name}`);
-    // continue;
     return;
-  } else {
-    console.log(`L1 hashes different so continuing with L0 sync: ${remoteGroup.title || remoteGroup.name} ${JSON.stringify({l1LocalHash, l1RemoteHash}, null, 2)}`);
   }
+  console.log(`L1 hashes different so continuing with L0 sync: ${remoteGroup.title || remoteGroup.name} ${JSON.stringify({l1LocalHash, l1RemoteHash}, null, 2)}`);
 
-  const newData = [];
   const startTime = Date.now();
-  const level = 'L0';
-  const remoteHashes = await RPC(connection, getRemoteBlockHashes)(remoteGroup.id, level);
-  const localHashes = await getBlockHashes(remoteGroup.id, level);
+  const blockHashLevel = 'L0';
+  const remoteHashes = await RPC(connection, getRemoteBlockHashes)(remoteGroup.id, blockHashLevel);
+  const localHashes = await getBlockHashes(remoteGroup.id, blockHashLevel);
   // const blockIds = _.uniq([...Object.keys(localHashes), ...Object.keys(remoteHashes)]);
   const blockIds = Object.keys(remoteHashes);
   blockIds.sort().reverse(); // reverse because we want to do newest first
@@ -154,9 +148,8 @@ export async function syncGroup(connection: IConnection, remoteGroup: IGroup, db
         const localData = await db.get(remoteData.id);
         if (!localData || localData.modified < remoteData.modified) {
           // console.log('found data diff', { localData, remoteData });
-          newData.push(remoteData);
           if (localData) {
-            db.update(remoteData).then(() => eventHandlers.onRemoteDataUpdated(remoteData));              
+            db.update(remoteData).then(() => eventHandlers.onRemoteDataUpdated(remoteData));
           } else {
             db.insert(remoteData).then(() => eventHandlers.onRemoteDataInserted(remoteData));
           }
@@ -173,15 +166,15 @@ export async function syncDBs(connection: IConnection) {
 
   await _syncGroup(usersGroup);
   let remoteGroups = await RPC(connection, getRemoteGroups)();
-  remoteGroups = _.shuffle(remoteGroups); 
+  remoteGroups = _.shuffle(remoteGroups);  // randomize order to try to spread traffic around
   if (connection.me.id === connection.remoteUser.id) {
     remoteGroups.unshift(getPersonalGroup(connection.me.id));
-  }  
+  }
   console.log({ remoteGroups })
   connection.groups = remoteGroups.map(g => g.id);
-  
+
   await Promise.all(remoteGroups.map(_syncGroup));
-  // for (const remoteGroup of remoteGroups) await await _syncGroup(remoteGroup);
+  // for (const remoteGroup of remoteGroups) await _syncGroup(remoteGroup);
 }
 
 // @ts-ignore
@@ -209,10 +202,11 @@ export async function pushData(data: IData) {
     eventHandlers.onRemoteDataUpdated(data);
   }
   connections.forEach(_connection => {
-    // this data was probably pushed from the current connection so resist forwarding it to that one but if it's the only connection available push it to try to get it propagating 
+    // this data was probably pushed from the current connection so resist forwarding it to that one but if it's the only connection available push it to try to get it propagating
     if (connection == _connection && connections.length > 1) {
       return;
     }
+    // TODO make sure we have verified user has read permission to this group otherwise this is a security hole
     if (_connection.groups?.some(groupId => groupId == data.group)) {
       // console.log('forwarding data to connection', { data, conn: _connection });
       RPC(_connection, pushData)(data);
@@ -220,7 +214,7 @@ export async function pushData(data: IData) {
   });
 }
 
-// these names have to be done this way so they persisted through code minification 
+// these names have to be done this way so they persist through code minification
 export const remotelyCallableFunctions: { [key: string]: Function } = {
   [ping.name]: ping,
   [testError.name]: testError,
@@ -228,6 +222,12 @@ export const remotelyCallableFunctions: { [key: string]: Function } = {
   [getRemoteBlockHashes.name]: getRemoteBlockHashes,
   [getRemoteBlockData.name]: getRemoteBlockData,
   [pushData.name]: pushData,
+}
+
+export function RPC<T extends Function>(connection: IConnection, fn: T): T {
+  return <any>function (...args) {
+    return makeRemoteCall(connection, fn.name as any, args);
+  };
 }
 
 export async function makeRemoteCall(connection: IConnection, fnName: string, args: any[]) {
@@ -297,6 +297,7 @@ async function handelRemoteCall(connection: IConnection, remoteCall: IRemoteCall
 const messageChunks = {};
 export function onRemoteMessage(connection: IConnection, message: string | IRemoteData): void {
   // console.log({ connection, message })
+  // TODO check if fromJSON calls eval, if so this is a security hole
   message = fromJSON(JSON.parse(message as any));
   connection.lastAck = Date.now();
   if (message === 'ack') return;
@@ -308,9 +309,9 @@ export function onRemoteMessage(connection: IConnection, message: string | IRemo
   const msgObj = message as IRemoteCall | IRemoteResponse | IRemoteChunk;
 
   if (msgObj.type === 'chunk') {
-    // validate chunk size, iChunk, and total size, to prevent remote attacker filling up memory 
+    // validate size to prevent remote attacker filling up memory
     if (msgObj.totalChunks * msgObj.chunk.length > 1e9) {
-
+      throw new Error(`Message larger than maximum allowed size of ${1e8} (~100Mb)`)
     }
     if (!messageChunks[msgObj.id]) {
       messageChunks[msgObj.id] = [];
