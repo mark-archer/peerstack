@@ -58,7 +58,7 @@ export async function verifyRemoteUser(connection: IConnection) {
     if (dbUser && dbUser.publicKey !== connection.remoteUser.publicKey) {
       // TODO allow public keys to change
       //    this will have to happen if a user's private key is compromised so we need to plan for it
-      //    The obvious solution to to use some server as a source of truth but that kind of violates the p2p model
+      //    The obvious solution is to use some server as a source of truth but that kind of violates the p2p model
       throw new Error('Public keys do not match');
       // IDEA use previously known devices to try to do multi-factor authentication
       //    If the user has two or more devices they regularly use, we can ask as many of those devices
@@ -276,8 +276,12 @@ async function handelRemoteCall(connection: IConnection, remoteCall: IRemoteCall
           await verifyRemoteUser(connection);
           console.log('remote user verified', connection);
         }
-        currentConnection = connection; // this is a pretty hacky
-        result = await fn(...args);
+        // make the current connection available to the fn when it is called
+        currentConnection = connection;
+        const resultPromise = fn(...args);
+        // unset current connection as soon as the function returns to prevent weird usage
+        currentConnection = null;
+        result = await resultPromise;
       } catch (err) {
         error = String(err);
       }
