@@ -1,7 +1,8 @@
 {
   "name": "peerstack",
   "version": "1.0.21",
-  "main": "index.js",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
   "repository": "https://github.com/mark-archer/peerstack",
   "author": "Mark Archer",
   "license": "UNLICENSED",
@@ -9,7 +10,8 @@
   "scripts": {
     "test": "jest --coverage --no-cache",
     "build": "tsc",
-    "deploy": "npm version patch; npm publish ."
+    "predeploy": "tsc",
+    "deploy": "predeploy; npm version patch; npm publish ."
   },
   "devDependencies": {
     "@types/jest": "^26.0.15",
