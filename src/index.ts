@@ -1,4 +1,4 @@
-export * as common from './common';
+export * from './common';
 export * as connectionsServer from './connections-server'
 export * as connections from './connections'
 export * as db from './db'
