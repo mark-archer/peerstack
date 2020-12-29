@@ -36,7 +36,7 @@ let socket;
 export let connections: IDeviceConnection[] = [];
 
 let initialized = false;
-export function init(_deviceId: string, _me: IMe) {
+export function init(_deviceId: string, _me: IMe, serverUrl?: string) {
   if (initialized) throw new Error('initialized should only be called once');
   initialized = true;
   console.log('initializing peerIO')
@@ -44,7 +44,11 @@ export function init(_deviceId: string, _me: IMe) {
   me = _me;
   user = Object.assign({}, me, { secretKey: undefined });
 
-  socket = require('socket.io-client')();
+  if (serverUrl) {
+    socket = require('socket.io-client')(serverUrl, { secure: true, rejectUnauthorized: false });
+  } else {
+    socket = require('socket.io-client')();
+  }
 
   let resolveConnected;
   const connectedPromise = new Promise(resolve => resolveConnected = resolve);
