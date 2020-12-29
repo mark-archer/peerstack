@@ -28,7 +28,7 @@
     "fingerprintjs2": "1.8.1",
     "js-sha256": "^0.9.0",
     "lodash": "^4.17.20",
-    "socket.io": "^3.0.4",
+    "socket.io": "2.3.0",
     "ts-jest": "^26.4.3",
     "tweetnacl": "^1.0.3",
     "tweetnacl-util": "^0.15.1",
