@@ -9,7 +9,7 @@
   "scripts": {
     "test": "jest --coverage --no-cache",
     "build": "tsc",
-    "publish": "npm version patch && git cm 'version' && npm publish ."
+    "publish": "npm version patch && npm publish ."
   },
   "devDependencies": {
     "@types/jest": "^26.0.15",
