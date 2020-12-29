@@ -32,7 +32,7 @@ export interface IDeviceConnection extends IConnection {
 let deviceId: string = null;
 let me: IMe = null;
 let user: IUser = null;
-let io;
+let socket;
 export let connections: IDeviceConnection[] = [];
 
 let initialized = false;
@@ -44,12 +44,12 @@ export function init(_deviceId: string, _me: IMe) {
   me = _me;
   user = Object.assign({}, me, { secretKey: undefined });
 
-  io = require('socket.io-client')();
+  socket = require('socket.io-client')();
 
   let resolveConnected;
   const connectedPromise = new Promise(resolve => resolveConnected = resolve);
-  io.on('connect', async () => {
-    console.log('connected to server', io.id);
+  socket.on('connect', async () => {
+    console.log('connected to server', socket.id);
     const db = await getIndexedDB();
     const allGroups = (await db.find('Group', 'type')) as IGroup[];
     const allGroupIds = allGroups.map(g => g.id);
@@ -62,15 +62,15 @@ export function init(_deviceId: string, _me: IMe) {
   //   console.log('reconnected to server');
   //   registerDevice({ deviceId, user });
   // });
-  io.on('disconnect', async () => {
+  socket.on('disconnect', async () => {
     console.log('disconnected from server');
   })
 
-  io.on('offer', (offer: ISDIExchange) => handelOffer(offer));
+  socket.on('offer', (offer: ISDIExchange) => handelOffer(offer));
 
-  io.on('answer', (answer: ISDIExchange) => handelAnswer(answer));
+  socket.on('answer', (answer: ISDIExchange) => handelAnswer(answer));
 
-  io.on('iceCandidate', async (iceCandidate: ISDIExchange) => {
+  socket.on('iceCandidate', async (iceCandidate: ISDIExchange) => {
     console.log('received ice candidate', iceCandidate.iceCandidates);
     const conn = connections.find(c => c.id == iceCandidate.connectionId)
     if (!conn) {
@@ -123,7 +123,7 @@ export function init(_deviceId: string, _me: IMe) {
 async function registerDevice(registration: IDeviceRegistration) {
   // TODO try to do it through peers first
   await new Promise((resolve, reject) => {
-    io.emit('register-device', registration, (err, res) => {
+    socket.emit('register-device', registration, (err, res) => {
       if (err) reject(err);
       else resolve(res);
     })
@@ -137,7 +137,7 @@ async function registerDevice(registration: IDeviceRegistration) {
 export async function getAvailableDevices(): Promise<IDeviceRegistration[]> {
   // TODO try to do it through peers first
   return new Promise((resolve, reject) => {
-    io.emit('get-available-devices', {}, (err, res) => {
+    socket.emit('get-available-devices', {}, (err, res) => {
       if (err) reject(err)
       else resolve(res)
     })
@@ -161,7 +161,7 @@ async function getIceServers() {
   try {
     // TODO try to do it through peers first
     iceServers = await new Promise((resolve, reject) =>
-      io.emit('getIceServers', {}, (err, res) => err ? reject(err) : resolve(res)));
+      socket.emit('getIceServers', {}, (err, res) => err ? reject(err) : resolve(res)));
     _iceServers = iceServers;
   } catch (err) {
     console.warn('failed to get iceServers, using fallback', err)
@@ -171,17 +171,17 @@ async function getIceServers() {
 
 async function sendOffer(offer: ISDIExchange) {
   // TODO try to do it through peers first
-  await io.emit('offer', offer);
+  await socket.emit('offer', offer);
 }
 
 async function sendAnswer(answer: ISDIExchange) {
   // TODO try to do it through peers first
-  await io.emit('answer', answer);
+  await socket.emit('answer', answer);
 }
 
 async function sendIceCandidate(iceCandidate: ISDIExchange) {
   // TODO try to do it through peers first
-  io.emit('iceCandidate', iceCandidate)
+  socket.emit('iceCandidate', iceCandidate)
 }
 
 export const eventHandlers = {

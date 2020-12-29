@@ -250,9 +250,12 @@ export async function validateData(db: IDB, datas: IData[]) {
     requiredFields.forEach(f => {
       if (!data[f]) throw new Error(`'${f}' is required on all data but was not found on ${JSON.stringify(data, null, 2)}`);
     })
+    if (data.modified > Date.now()) {
+      throw new Error(`modified timestamp cannot be in the future`);
+    }
     if (data.type === 'Group') {
       if (data.id !== data.group) {
-        throw new Error(`All groups must have their group set to themselves`)
+        throw new Error(`All groups must have their group set to themselves`);
       }
     }
     else if (data.type === 'User') {
