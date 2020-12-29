@@ -177,9 +177,6 @@ export async function syncDBs(connection: IConnection) {
   // for (const remoteGroup of remoteGroups) await _syncGroup(remoteGroup);
 }
 
-// @ts-ignore
-window.syncDBs = syncDBs
-
 const pushDataAlreadySeen: {
   [idPlusModified: string]: true
 } = {}
