@@ -3,7 +3,37 @@ A library for building decentralized, peer-to-peer web applications.
 
 ## Motivations
 
-Censorship, data ownership, robust infrastructure, power to the people.
+Robust infrastructure, users own their data, prevent censorship, democratic web, power to the people.
+
+## Example
+
+### App Code
+```javascript
+const { connections, newid, remoteCalls, user } = require('peerstack');
+const me = user.newMe(); // this creates a new user, normally you'd use an existing user
+const deviceId = newid();
+connections.init(deviceId, me, yourServerUrl || "https://peers.app/");
+connections.eventHandlers.onDeviceConnected = async connection => {    
+  remoteCalls.syncDBs(connection); // syncs data between both devices
+  // whatever else you want to do between this device and the remote device
+}
+```
+
+This is all you need to get your web app connecting to other devices running peerstack.  Currently devices will only connect to other devices with the same user or where the user is one or more of the same [groups](#groups) as the current user.
+
+### Server Code (optional)
+```javascript
+import http from 'http';
+import * as connectionsServer from 'peerstack/dist/connections-server';
+import { TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN } from './config';
+const server = http.createServer();
+connectionsServer.init(server, TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN);
+const port = process.env.PORT || 3333;
+server.listen(port);
+console.log(`app running at http://localhost:${port}/`)
+```
+
+Your own server is not necessary. You're free to use `https://peers.app/` as your signaling server but that may change in the future depending on usage and the evolution of [peerhost](#peer-host).
 
 ## How It Works
 
@@ -20,6 +50,14 @@ Note that signed data is not encrypted.  So even though data can come from untru
 Peer-to-peer connections are made via WebRTC data connections.  To establish these connections we still need a signalling channel.  That is currently done with a server using web sockets.  For the sake of simplicity and to get things up and running this has been baked into the library.  There is no reason the signalling (or the entire connection) can't be done via other methods.  This is just the most practical method for web apps right now.  I fully plan to add more options for connecting to other peers as they become feasible in the web ecosystem.
 
 If a native app is made, many more options for finding peers, establishing connections, and transferring data become available.  As long as they use the same method for verifying identity and signatures, they can all work together to create a rich, robust, ubiquitous network of peers.
+
+## Groups
+
+Groups are used to define who has access to what data.  A natural side effect of this is it defines how to shard the data across devices. All data must have a group.
+
+For every user, an implicit group exists by the same id and that is the user's personal group.  Any data in that group should not be sent to another device unless it has the same user logged in.  
+
+Users can create groups and can give other users access to those groups.  This is the fundamental mechanism for determining which devices will connect to each other.  If you are not in any groups with other people, your device will only connect to your other devices.  If you're in a group with your family members, your device will connect any of your family members decides as well as your own.  This creates a network topology that matches the real world social network topology.  
 
 ## Peer Host
 
