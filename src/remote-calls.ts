@@ -213,17 +213,18 @@ export async function pushData(data: IData) {
 
 // these names have to be done this way so they persist through code minification
 export const remotelyCallableFunctions: { [key: string]: Function } = {
-  [ping.name]: ping,
-  [testError.name]: testError,
-  [getRemoteGroups.name]: getRemoteGroups,
-  [getRemoteBlockHashes.name]: getRemoteBlockHashes,
-  [getRemoteBlockData.name]: getRemoteBlockData,
-  [pushData.name]: pushData,
+  ping,
+  testError,
+  getRemoteGroups,
+  getRemoteBlockHashes,
+  getRemoteBlockData,
+  pushData,
 }
 
 export function RPC<T extends Function>(connection: IConnection, fn: T): T {
   return <any>function (...args) {
-    return makeRemoteCall(connection, fn.name as any, args);
+    const fnName = Object.keys(remotelyCallableFunctions).find(fnName => remotelyCallableFunctions[fnName] == fn);
+    return makeRemoteCall(connection, fnName as any, args);
   };
 }
 
