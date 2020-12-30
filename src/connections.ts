@@ -232,6 +232,7 @@ async function dcSend(connection, data) {
 
 export async function connectToDevice(toDeviceId) {
   try {
+    connections = connections.filter(c => !['closed', 'closing'].includes(c.dc.readyState));
     const existingConnection = connections.find(c => c.remoteDeviceId === toDeviceId);
     if (existingConnection) {
       // console.log('already have a connection to this device so just returning that')
