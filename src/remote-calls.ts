@@ -50,8 +50,22 @@ export async function testError(msg: string) {
   throw new Error(msg);
 }
 
+async function signId(id: string) {
+  const connection: IConnection = currentConnection;
+  if (!isid(id)) {
+    throw new Error('Only single ids are signed to prevent abuse');
+  }
+  return signMessage(id, connection.me.secretKey);
+}
+
 export async function verifyRemoteUser(connection: IConnection) {
   try {
+    const id = newid();
+    const signedId = await RPC(connection, signId)(id);
+    const openedId = openMessage(signedId, connection.remoteUser.publicKey);
+    if (openedId != id) {
+      throw new Error('Failed to verify possession of correct secretKey')
+    }
     verifySignedObject(connection.remoteUser, connection.remoteUser.publicKey);
     const db = await getIndexedDB();
     const dbUser = await db.get(connection.remoteUser.id) as IUser;
@@ -219,6 +233,7 @@ export const remotelyCallableFunctions: { [key: string]: Function } = {
   getRemoteBlockHashes,
   getRemoteBlockData,
   pushData,
+  signId,
 }
 console.log('remotely callable functions', remotelyCallableFunctions)
 
@@ -271,7 +286,7 @@ async function handelRemoteCall(connection: IConnection, remoteCall: IRemoteCall
       error = `${fnName} is not a remotely callable function`;
     } else {
       try {
-        if (!connection.remoteUserVerified) {
+        if (!connection.remoteUserVerified && fn != signId) {
           await verifyRemoteUser(connection);
           console.log('remote user verified', connection);
         }
