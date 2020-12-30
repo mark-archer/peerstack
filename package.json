@@ -10,7 +10,7 @@
   "scripts": {
     "test": "jest --coverage --no-cache",
     "build": "tsc",
-    "deploy": "build; npm version patch; npm publish ."
+    "deploy": "tsc; npm version patch; npm publish ."
   },
   "devDependencies": {
     "@types/jest": "^26.0.15",
