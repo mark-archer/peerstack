@@ -220,6 +220,7 @@ export const remotelyCallableFunctions: { [key: string]: Function } = {
   getRemoteBlockData,
   pushData,
 }
+console.log('remotely callable functions', remotelyCallableFunctions)
 
 export function RPC<T extends Function>(connection: IConnection, fn: T): T {
   return <any>function (...args) {
