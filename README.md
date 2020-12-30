@@ -3,23 +3,28 @@ A library for building decentralized, peer-to-peer web applications.
 
 ## Motivations
 
-Robust infrastructure, users own their data, prevent censorship, democratic web, power to the people.
+Robust infrastructure, users own their data, prevent censorship, democratic web.
+
+Power to the people.
 
 ## Example
 
 ### App Code
 ```javascript
 const { connections, newid, remoteCalls, user } = require('peerstack');
-const me = user.newMe(); // this creates a new user, normally you'd use an existing user
+// this creates a new user, normally you'd use an existing user
+const me = user.newMe(); 
 const deviceId = newid();
 connections.init(deviceId, me, yourServerUrl || "https://peers.app/");
 connections.eventHandlers.onDeviceConnected = async connection => {    
-  remoteCalls.syncDBs(connection); // syncs data between both devices
-  // whatever else you want to do between this device and the remote device
+  // syncs data in all shared groups between both devices
+  await remoteCalls.syncDBs(connection);
+  // TODO whatever else you want to do between this and remote device
 }
 ```
 
-This is all you need to get your web app connecting to other devices running peerstack.  Currently devices will only connect to other devices with the same user or where the user is one or more of the same [groups](#groups) as the current user.
+The above is all you need to get your web app connecting to other devices running peerstack.  Currently devices will only connect to other devices with the same user or where the user is one or more of the same [groups](#groups) as the current user.
+
 
 ### Server Code (optional)
 ```javascript
@@ -33,7 +38,7 @@ server.listen(port);
 console.log(`app running at http://localhost:${port}/`)
 ```
 
-Your own server is not necessary. You're free to use `https://peers.app/` as your signaling server but that may change in the future depending on usage and the evolution of [peerhost](#peer-host).
+Your own server is not necessary. For now you're free to use `https://peers.app/` as your signaling server but that may change in the future depending on usage and the evolution of [peerhost](#peer-host).
 
 ## How It Works
 
@@ -43,9 +48,9 @@ UUIDs are used as unique identifiers to track data as it changes (the standard m
 
 User identity is done with public/private keys.  When two users want to connect, they can confirm each other's identity by signing data with their secret key and sending it to the other user who can open it with the matching public key.  A user never has to share their secret key (or any other secrets like passwords or personal information) with other users or servers.
 
-In this same way, data can be verified to be from a particular user.  The data is hashed and then the hash is signed and included with the data.  This allows the data to come from any source, including untrusted sources, but if the signature is valid other users know this data was from the user who signed it.
+In this same way, data can be verified to be from a particular user.  The data is hashed and then the hash is signed and included with the data.  This allows the data to come from any source, including untrusted sources, but if the signature is valid other users know this data was from the user who signed it and has not been altered.
 
-Note that signed data is not encrypted.  So even though data can come from untrusted sources, data should not be _sent_ to untrusted sources unless the data is meant to be shared publicly.  Non public data should only be sent across encrypted channels where the identity of the user on the other side has already been verified.
+Note that signed data is not encrypted.  So even though data can come from untrusted sources, data should not be _sent_ to untrusted sources unless the data is meant to be shared publicly.  Non public data should only be sent across encrypted channels where the identity of the user on the other side has already been verified.  If you're using peerstack as is then this is all already taken care of.
 
 Peer-to-peer connections are made via WebRTC data connections.  To establish these connections we still need a signalling channel.  That is currently done with a server using web sockets.  For the sake of simplicity and to get things up and running this has been baked into the library.  There is no reason the signalling (or the entire connection) can't be done via other methods.  This is just the most practical method for web apps right now.  I fully plan to add more options for connecting to other peers as they become feasible in the web ecosystem.
 
@@ -57,15 +62,17 @@ Groups are used to define who has access to what data.  A natural side effect of
 
 For every user, an implicit group exists by the same id and that is the user's personal group.  Any data in that group should not be sent to another device unless it has the same user logged in.  
 
-Users can create groups and can give other users access to those groups.  This is the fundamental mechanism for determining which devices will connect to each other.  If you are not in any groups with other people, your device will only connect to your other devices.  If you're in a group with your family members, your device will connect any of your family members decides as well as your own.  This creates a network topology that matches the real world social network topology.  
+Users can create groups and can give other users access to those groups.  This is the fundamental mechanism for determining which devices will connect to each other.  If you are not in any groups with other people, your device will only connect to your other devices.  If you're in a group with your family members, your device will connect any of your family members devices as well as your own, etc.  
+
+This creates a network topology that matches the real world social topology which seem ideal.
 
 ## Peer Host
 
-A supporting project is [peerhost](https://github.com/mark-archer/peerhost).  This is meant to allow users to easily instantiate sudo-servers that they own and operate.  The idea is these, although not required, would be the heavy lifters of the peers network. Operators would have more control over where and how the data is stored, and users could help ensure the availability of at least their part of the network (which is all they care about for the most part anyway).
+A supporting project is [peerhost](https://github.com/mark-archer/peerhost).  This is meant to allow users to easily instantiate sudo-servers that they own and operate.  The idea is these, although not required, would be the heavy lifters of the peers network. Operators would have more control over where and how the data is stored, and could help ensure the availability of at least their part of the network (which is all they care about for the most part anyway).
 
 An important function of a host is it can provide the signalling channel for peers to establish secure data channels with each other.  The goal is that if the host has a public ip address it could even be the initial point of connection via web sockets and provide STUN and TURN services for the WebRTC connections.  This reduces peers reliance on servers in the cloud even more and allows users to take additional ownership over the infrastructure.  
 
-Another eventual use case is that users could write custom applications and use one or more hosts to provide any necessary server type functionality.  The big advantage to this over just writing an application from scratch is the only coding that would need to be done would be the business logic and UI.  Security, authentication, targeting different platforms, establishing connections between devices, and almost every other pain point in developing and deploying a production application would already be provided by the peers network.  Application development would become as simple as declaring a javascript function. 
+Another eventual use case is that users could write custom applications and use one or more hosts to provide any necessary server type functionality.  The big advantage to this over just writing an application from scratch is the only coding that would need to be done would be the business logic and UI.  Security, authentication, targeting different platforms, establishing connections between devices, and almost every other pain point in developing and deploying a production application would already be solved by the peers network.  Application development would become as simple as declaring a javascript function. 
 
 ## Areas of Concern
 
