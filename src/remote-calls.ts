@@ -1,8 +1,8 @@
-import { fromJSON, isid, newid } from "./common";
-import { IMe, IUser, newMe, openMessage, signMessage, signObject, verifySignedObject } from "./user";
 import * as _ from "lodash";
-import { getIndexedDB, getBlockData, getBlockHashes, IData, BlockHashLevel, IGroup, hasPermission, checkPermission, IDB, usersGroup, getPersonalGroup } from "./db";
+import { fromJSON, isid, newid } from "./common";
 import { connections } from "./connections";
+import { BlockHashLevel, checkPermission, getBlockData, getBlockHashes, getIndexedDB, getPersonalGroup, hasPermission, IData, IDB, IGroup, usersGroup } from "./db";
+import { IMe, IUser, openMessage, signMessage, signObject, verifySignedObject } from "./user";
 
 export type txfn = <T>(data: (string | IRemoteData)) => Promise<T | void> | void
 
@@ -279,6 +279,7 @@ let currentConnection: IConnection;
 async function handelRemoteCall(connection: IConnection, remoteCall: IRemoteCall) {
   const { id, fnName, args } = remoteCall;
   try {
+    verifySignedObject(remoteCall as any, connection.remoteUser.publicKey);
     const fn = remotelyCallableFunctions[fnName];
     let result;
     let error;
