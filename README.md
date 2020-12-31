@@ -79,7 +79,7 @@ Another eventual use case (that I'm particularly excited about) is that users co
 
 ## Areas of Concern
 
-Keeping the user's secret key stored locally but securely is not a trivial problem.  It can be done by asking the user to encrypt it with a password but now that password is the weak link and the user also has to log in every time they reload the page.  I'm hoping there is some method the browser will give me but I haven't found it yet. 
+Keeping the user's secret key stored locally but securely is not a trivial problem but is of utmost importance.  It can be done by asking the user to encrypt it with a password but now that password is the weak link and the user also has to log in every time they reload the page.  I'm hoping there is some method the browser will give me but I haven't found it yet. 
 
 Users have ids and public keys as separate identifiers.  This is to try to plan for the situation where a user's secret key is lost or stolen. But when a user's keys change they'll have to re-sign all of their data and then via some secure and trusted channel send their new public key to all of their contacts (e.g. hand delivering it, emailing, texting, etc) and then resend all of their newly signed data to who ever needs it.  That seems like an incredibly expensive and involved operation but still doable and I think better than having no fallback if a secret key is lost or stolen.  But there is still the problem that changing a user's keys is vastly more costly than changing a password.
 
