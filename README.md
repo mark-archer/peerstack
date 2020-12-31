@@ -55,7 +55,7 @@ In this same way, data can be verified to be from a particular user.  The data i
 
 Note that signed data is not encrypted.  So even though data can come from untrusted sources, data should not be _sent_ to untrusted sources unless the data is meant to be shared publicly.  Non public data should only be sent across encrypted channels where the identity of the user on the other side has already been verified.  If you're using peerstack as is then this is all already taken care of.
 
-Peer-to-peer connections are made via WebRTC data connections.  To establish these connections we still need a [signaling channel](https://developer.mozilla.org/en-US/docs/Web/API/WebRTC_API/Signaling_and_video_calling#The_signaling_server).  That is currently done with a server using web sockets.  For the sake of simplicity and to get things up and running this has been baked into the library.  There is no reason the signalling (or the entire connection) can't be done via other methods.  This is just the most practical method for web apps right now.  I fully plan to add more options for connecting to other peers as they become feasible in the web ecosystem.
+Peer-to-peer connections are made via WebRTC data connections.  To establish these connections we still need a [signaling channel](https://developer.mozilla.org/en-US/docs/Web/API/WebRTC_API/Signaling_and_video_calling#The_signaling_server).  That is currently done with a server using web sockets.  For the sake of simplicity and to get things up and running this has been baked into the library.  There is no reason the signaling (or the entire connection) can't be done via other methods.  This is just the most practical method for web apps right now.  I fully plan to add more options for connecting to other peers as they become feasible in the web ecosystem.
 
 If a native app is made, many more options for finding peers, establishing connections, and transferring data become available.  As long as they use the same method for verifying identity and signatures, they can all work together to create a rich, robust, ubiquitous network of peers.
 
@@ -63,7 +63,7 @@ If a native app is made, many more options for finding peers, establishing conne
 
 Groups are used to define who has access to what data.  A natural side effect of this is it defines how to shard the data across devices. All data must have a group.
 
-For every user, an implicit group exists by the same id and that is the user's personal group.  Any data in that group should not be sent to another device unless it has the same user logged in.  
+For every user, an implicit group exists (via the user's own id) and that is the user's personal group.  Any data in that group should not be sent to another device unless it has the same user logged in.  
 
 Users can create groups and can give other users access to those groups.  This is the fundamental mechanism for determining which devices will connect to each other.  If you are not in any groups with other people, your device will only connect to your other devices.  If you're in a group with your family members, your device will connect any of your family members devices as well as your own, etc, etc.  
 
@@ -73,9 +73,9 @@ This creates a network topology that matches the real world social topology whic
 
 A supporting project is [peerhost](https://github.com/mark-archer/peerhost).  This is meant to allow users to easily instantiate sudo-servers that they own and operate.  The idea is these, although not required, would be the heavy lifters of the peers network. Operators would have more control over where and how the data is stored, and could help ensure the availability of at least their part of the network (which is all they care about for the most part anyway).
 
-An important function of a host is it can provide the signalling channel for peers to establish secure data channels with each other.  The goal is that if the host has a public ip address it could even be the initial point of connection via web sockets and provide STUN and TURN services for the WebRTC connections.  This reduces peers reliance on central servers even more and allows users to take additional ownership over the infrastructure.  
+An important function of a host is it can provide the signaling channel for peers to establish secure data channels with each other.  The goal is that if the host has a public ip address it could even be the initial point of connection via web sockets and provide STUN and TURN services for the WebRTC connections.  This reduces peers reliance on central servers even more and allows users to take additional ownership over the infrastructure.  
 
-Another eventual use case is that users could write custom applications and use one or more hosts to provide any necessary server type functionality.  The big advantage to this over just writing an application from scratch is the only coding that would need to be done would be the business logic and UI.  Security, authentication, targeting different platforms, establishing connections between devices, and almost every other pain point in developing and deploying a production application would already be solved by the peers network.  Application development would become as simple as declaring a javascript function. 
+Another eventual use case (that I'm particularly excited about) is that users could write custom applications and use one or more hosts to provide any necessary server type functionality.  The big advantage to this over just writing an application from scratch is the only coding that would need to be done would be the business logic and UI.  Security, authentication, targeting different platforms, establishing connections between devices, and almost every other pain point in developing and deploying a production application would already be solved by the peers network.  Application development would become as simple as declaring a javascript function. 
 
 ## Areas of Concern
 
