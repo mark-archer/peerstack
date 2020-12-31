@@ -3,9 +3,11 @@ A library for building decentralized, peer-to-peer web applications.
 
 ## Motivations
 
-Robust infrastructure, users own their data, prevent censorship, democratic web.
-
-Power to the people.
+- Robust and resilient infrastructure
+- Users own their data
+- Prevent censorship
+- Democratic web
+- Power to the people.
 
 ## Example
 
@@ -23,7 +25,7 @@ connections.eventHandlers.onDeviceConnected = async connection => {
 }
 ```
 
-The above is all you need to get your web app connecting to other devices running peerstack.  Currently devices will only connect to other devices with the same user or where the user is one or more of the same [groups](#groups) as the current user.
+The above is all you need to get your web app connecting to other devices running peerstack.  Currently devices will only connect to other devices with the same user or where the user is in one or more of the same [groups](#groups) as the current user.
 
 
 ### Server Code (optional)
@@ -62,15 +64,15 @@ Groups are used to define who has access to what data.  A natural side effect of
 
 For every user, an implicit group exists by the same id and that is the user's personal group.  Any data in that group should not be sent to another device unless it has the same user logged in.  
 
-Users can create groups and can give other users access to those groups.  This is the fundamental mechanism for determining which devices will connect to each other.  If you are not in any groups with other people, your device will only connect to your other devices.  If you're in a group with your family members, your device will connect any of your family members devices as well as your own, etc.  
+Users can create groups and can give other users access to those groups.  This is the fundamental mechanism for determining which devices will connect to each other.  If you are not in any groups with other people, your device will only connect to your other devices.  If you're in a group with your family members, your device will connect any of your family members devices as well as your own, etc, etc.  
 
-This creates a network topology that matches the real world social topology which seem ideal.
+This creates a network topology that matches the real world social topology which seems ideal.
 
 ## Peer Host
 
 A supporting project is [peerhost](https://github.com/mark-archer/peerhost).  This is meant to allow users to easily instantiate sudo-servers that they own and operate.  The idea is these, although not required, would be the heavy lifters of the peers network. Operators would have more control over where and how the data is stored, and could help ensure the availability of at least their part of the network (which is all they care about for the most part anyway).
 
-An important function of a host is it can provide the signalling channel for peers to establish secure data channels with each other.  The goal is that if the host has a public ip address it could even be the initial point of connection via web sockets and provide STUN and TURN services for the WebRTC connections.  This reduces peers reliance on servers in the cloud even more and allows users to take additional ownership over the infrastructure.  
+An important function of a host is it can provide the signalling channel for peers to establish secure data channels with each other.  The goal is that if the host has a public ip address it could even be the initial point of connection via web sockets and provide STUN and TURN services for the WebRTC connections.  This reduces peers reliance on central servers even more and allows users to take additional ownership over the infrastructure.  
 
 Another eventual use case is that users could write custom applications and use one or more hosts to provide any necessary server type functionality.  The big advantage to this over just writing an application from scratch is the only coding that would need to be done would be the business logic and UI.  Security, authentication, targeting different platforms, establishing connections between devices, and almost every other pain point in developing and deploying a production application would already be solved by the peers network.  Application development would become as simple as declaring a javascript function. 
 
@@ -80,15 +82,15 @@ Keeping the user's secret key stored locally but securely is not a trivial probl
 
 Users have ids and public keys as separate identifiers.  This is to try to plan for the situation where a user's secret key is lost or stolen. But when a user's keys change they'll have to resign all of their data and then via some secure and trusted channel send their new public key to all of their contacts (e.g. hand delivering it, emailing, texting, etc) and then resend all of their newly signed data to who ever needs it.  That seems like an incredibly expensive and involved operation but still doable and I think better than having no fallback if a private key is lost or stolen.  But there is still the problem that changing a user's keys is vastly more costly than changing a password.
 
-Because a user's id is listed as the signer, it's much more complicated to verify a signature because we have to look up the public key associated with that user id.  If we don't have access to that information at the point when we receive the data then we can't verify it and are left with the choice of rejecting the data or assuming it's valid and risk propagating bad data.
+Because value in `signer` is a user's id (not their public key), it's much more complicated to verify a signature because we have to look up the public key associated with that user id.  If we don't have that information at the point when we receive the data then we can't verify the signature and have to either reject the data or assume it's valid and risk propagating bad data.
 
-Verifying what public key belongs to what user id is still a fairly weak process.  The easiest method is just to rely on a server as the source of truth for this but that opens up a lot of the problems with centralization that peerstack is trying to solve.  This is left up to the individual apps and the hope is they'll be very thoughtful and careful about it.  A server acting as a central registrar (for the scope of that app) seems to be the most secure method. 
+Verifying what public key belongs to what user id is not taken care of by peerstack.  This is left up to the individual apps and the hope is they'll be very thoughtful and careful about it.  A server acting as a central registrar (for the scope of that app) seems to be the most secure method but that opens up some of the problems with centralization that peerstack is trying to solve.  It's possible that users will become accustom to sharing and assigning public keys in a more manual way, similar to how users share things like phone numbers and email addresses.  But for now this is an open issue.
 
-Without a central registrar of user ids, depending on the method of users learning of other new users, a malicious user could hijack another user's id in the eyes of third parties.  In other words, when two users claim the same user id but have different public keys, some method is needed to decide which one is the real user. 
+Without a central registrar of user ids, depending on the method of users learning of other new users, a malicious user could hijack another user's id in the eyes of third parties.  In other words, when two users have claimed the same user id but have different public keys, some method is needed to decide which one is the "real" user. If apps are much less promiscuous with their user discovery, stolen user ids are less likely to be a problem. For example, if users' public keys are hand delivered by the user themselves, there is almost no chance of ending up with a user id associated with the wrong public key. 
 
-If apps are much less promiscuous with their user discovery, stolen user ids are less likely to be a problem. For example, if users' public keys are hand delivered by the user themselves, there is almost no chance of ending up with a user id associated with the wrong public key. 
+Data is stored in IndexedDB in the browser.  This has awkward upper limits on the amount of data that can be stored, is not always clear about when it's full, and can easily be wiped unintentionally by the user by just clearing all their browser data. As long as at least one other peer has a copy of the data, it'll be restored as soon as those devices are connected but it's still a serious gotcha to users.  Some mechanism should probably be added to give users some visibility into how well the data has been propagated.  Just storing a record for every device a group has been synced with and the last time it has been synced would be a good first step.
 
-Data is stored in IndexedDB in the browser.  This has awkward upper limits on the amount of data that can be stored and can easily be wiped unintentionally by the user (just clearing all their browser data).
+Users need to be given a way to opt out of a group and shouldn't get added in the first place without there permission.  Currently there is no mechanism for either of these features. 
 
 ## Notes
 to publish new version to npm 
