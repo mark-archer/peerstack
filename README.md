@@ -44,7 +44,7 @@ Your own server is not necessary. For now you're free to use `https://peers.app/
 
 ## How It Works
 
-[UUIDs](https://en.wikipedia.org/wiki/Universally_unique_identifier) are used as the building block for unique identifiers to track data as it changes (the standard model of an ID).  [SHA-2](https://en.wikipedia.org/wiki/SHA-2) hashes are used to determine if two copies of data are identical.
+[UUIDs](https://en.wikipedia.org/wiki/Universally_unique_identifier) are used as the building block for identifiers to match two or more copies of data even if the data has changed.  [SHA-2](https://en.wikipedia.org/wiki/SHA-2) hashes are used to determine if two copies of data are identical.
 
 User identity is done with [public keys](https://en.wikipedia.org/wiki/Public-key_cryptography).  When two users want to connect, they can confirm each other's identity by signing data with their secret key and sending it to the other user who can open it with the matching public key.  A user never has to share their secret key (or any other secrets like passwords or personal information) with other users or servers.
 
