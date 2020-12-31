@@ -37,7 +37,7 @@ const server = http.createServer();
 connectionsServer.init(server, TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN);
 const port = process.env.PORT || 3333;
 server.listen(port);
-console.log(`app running at http://localhost:${port}/`)
+console.log(`server running at http://localhost:${port}/`)
 ```
 
 Your own server is not necessary. For now you're free to use `https://peers.app/` as your signaling server but that may change in the future depending on usage and the evolution of [peerhost](#peer-host).
