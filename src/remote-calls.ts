@@ -235,7 +235,6 @@ export const remotelyCallableFunctions: { [key: string]: Function } = {
   pushData,
   signId,
 }
-console.log('remotely callable functions', remotelyCallableFunctions)
 
 export function RPC<T extends Function>(connection: IConnection, fn: T): T {
   return <any>function (...args) {
@@ -294,7 +293,7 @@ async function handelRemoteCall(connection: IConnection, remoteCall: IRemoteCall
         // make the current connection available to the fn when it is called
         currentConnection = connection;
         const resultPromise = fn(...args);
-        // unset current connection as soon as the function returns to prevent weird usage
+        // unset current connection as soon as possible to prevent weird usage
         currentConnection = null;
         result = await resultPromise;
       } catch (err) {
