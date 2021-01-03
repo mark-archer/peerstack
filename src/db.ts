@@ -1,6 +1,6 @@
-import { get, set, isArray, groupBy } from 'lodash';
-import { verifySignedObject, ISigned, IUser } from './user';
+import { groupBy, isArray, set } from 'lodash';
 import { hashObject } from './common';
+import { ISigned, IUser, verifySignedObject } from './user';
 
 export interface IData extends ISigned {
   id: string,

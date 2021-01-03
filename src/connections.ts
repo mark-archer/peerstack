@@ -49,16 +49,14 @@ export function init(_deviceId: string, _me: IMe, serverUrl?: string) {
     socket = require('socket.io-client')();
   }
 
-  let resolveConnected;
-  const connectedPromise = new Promise(resolve => resolveConnected = resolve);
   socket.on('connect', async () => {
     console.log('connected to server', socket.id);
     const db = await getIndexedDB();
     const allGroups = (await db.find('Group', 'type')) as IGroup[];
     const allGroupIds = allGroups.map(g => g.id);
     allGroupIds.push(_me.id);
-    await registerDevice({ deviceId, user, groups: allGroupIds })
-    resolveConnected();
+    await registerDevice({ deviceId, user, groups: allGroupIds });
+    console.log('registered device', { deviceId, groups: allGroupIds })
   });
   // // reconnect is called in addition to connect so redundant for now
   // io.on('reconnect', async () => {
@@ -119,8 +117,6 @@ export function init(_deviceId: string, _me: IMe, serverUrl?: string) {
   //     return true;
   //   })
   // }, heartBeatInterval);
-
-  return connectedPromise;
 }
 
 async function registerDevice(registration: IDeviceRegistration) {
