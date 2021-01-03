@@ -1,6 +1,6 @@
-import { newid, encodeUint8ArrayToBaseN, decodeUint8ArrayFromBaseN, hashObject, anyObject } from './common';
 import * as nacl from 'tweetnacl';
 import * as naclUtil from 'tweetnacl-util';
+import { decodeUint8ArrayFromBaseN, encodeUint8ArrayToBaseN, hashObject, newid } from './common';
 import { IData } from './db';
 
 export interface ISigned {

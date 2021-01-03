@@ -1,8 +1,7 @@
-import * as _ from 'lodash';
 import { newid, toJSON } from "./common";
-import { IMe, IUser } from "./user";
-import { onRemoteMessage, IConnection } from "./remote-calls";
 import { getIndexedDB, IGroup } from './db';
+import { IConnection, onRemoteMessage } from "./remote-calls";
+import { IMe, IUser } from "./user";
 
 export interface ISDIExchange {
   connectionId: string
@@ -58,7 +57,7 @@ export function init(_deviceId: string, _me: IMe, serverUrl?: string) {
     const allGroups = (await db.find('Group', 'type')) as IGroup[];
     const allGroupIds = allGroups.map(g => g.id);
     allGroupIds.push(_me.id);
-    await registerDevice({ deviceId, user, groups: allGroupIds  })
+    await registerDevice({ deviceId, user, groups: allGroupIds })
     resolveConnected();
   });
   // // reconnect is called in addition to connect so redundant for now
@@ -356,6 +355,7 @@ async function handelOffer(offer: ISDIExchange) {
       remoteUser: offer.user,
       me: me,
     }
+    connections = connections.filter(c => !['closed', 'closing'].includes(c.dc.readyState) && c.remoteDeviceId != connection.remoteDeviceId);
     connections.push(connection);
 
     // gather ice candidates
