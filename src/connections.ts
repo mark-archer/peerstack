@@ -410,7 +410,7 @@ async function handelOffer(offer: ISDIExchange) {
     }
   }
   catch (err) {
-    console.error('error handling offer');
+    console.error('error handling offer', err);
     throw err;
   }
 }
