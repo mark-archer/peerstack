@@ -227,7 +227,7 @@ async function dcSend(connection, data) {
 
 export async function connectToDevice(toDeviceId) {
   try {
-    connections = connections.filter(c => !['closed', 'closing'].includes(c.dc.readyState));
+    connections = connections.filter(c => !['closed', 'closing'].includes(c.dc?.readyState));
     const existingConnection = connections.find(c => c.remoteDeviceId === toDeviceId);
     if (existingConnection) {
       // console.log('already have a connection to this device so just returning that')
@@ -253,7 +253,7 @@ export async function connectToDevice(toDeviceId) {
     // gather ice candidates
     const iceCandidates: RTCIceCandidate[] = [];
 
-    // send any additional ice candidates through the signalling channel
+    // send any additional ice candidates through the signaling channel
     pc.onicecandidate = e => {
       if (!e.candidate) return;
       iceCandidates.push(e.candidate)
@@ -312,10 +312,10 @@ export async function connectToDevice(toDeviceId) {
     const answer = await answerPromise;
     connection.remoteUser = answer.user;
 
-    if (answer.user) connection.remoteUser = answer.user; // TODO verify user identity with signedObject
+    if (answer.user) connection.remoteUser = answer.user;
 
     // set answer
-    if (!answer.sdi) return alert('sdi falsy on received answer')
+    if (!answer.sdi) throw new Error('sdi falsy on received answer')
     await pc.setRemoteDescription(answer.sdi)
 
     await connectionOpenPromise;
@@ -351,7 +351,7 @@ async function handelOffer(offer: ISDIExchange) {
       remoteUser: offer.user,
       me: me,
     }
-    connections = connections.filter(c => !['closed', 'closing'].includes(c.dc.readyState) && c.remoteDeviceId != connection.remoteDeviceId);
+    // connections = connections.filter(c => !['closed', 'closing'].includes(c.dc?.readyState) && c.remoteDeviceId != connection.remoteDeviceId);
     connections.push(connection);
 
     // gather ice candidates
