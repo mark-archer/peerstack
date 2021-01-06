@@ -239,7 +239,7 @@ export async function connectToDevice(toDeviceId) {
     garbageCollectConnections();
     const existingConnection = connections.find(c => c.remoteDeviceId === toDeviceId);
     if (existingConnection) {
-      // console.log('already have a connection to this device so just returning that')
+      console.log('already have a connection to this device so just returning that')
       return existingConnection;
     }
     const connectionId = newid();
