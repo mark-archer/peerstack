@@ -1,8 +1,8 @@
 /* istanbul ignore file */
 
+import { sha256 } from 'js-sha256';
 import * as _ from 'lodash';
 import * as uuid from 'uuid';
-import { sha256 } from 'js-sha256';
 
 const stableStringify = require('fast-json-stable-stringify');
 
@@ -15,7 +15,7 @@ export function newid(): string {
   return uuid.v4().replace(/-/g, '');
 }
 
-export function isid(id: any) {  
+export function isid(id: any) {
   // valid 
   //      7194ee666e4c4ab18f1f7466ec525a43
   //      7194ee666e4c4ab18f1f7466ec525a43:a
@@ -49,7 +49,7 @@ export function hashObject(obj: ({ [key: string]: any })) {
 }
 
 export function hashBlob(blob: Blob, progressUpdate?: ((a: number) => any), chunkSize: number = 4194304 /*4MB*/) {
-  return new Promise((resolve, reject) => { 
+  return new Promise((resolve, reject) => {
     let hash = sha256.create();
     const totalSize = blob.size;
     const fileReader = new FileReader();
@@ -98,7 +98,7 @@ export function encodeUint8ArrayToUTF(ary: Uint8Array) {
 
 export function decodeUint8ArrayFromUTF(strAry: string): Uint8Array {
   var ary = new Uint8Array(strAry.length);
-  for (var i=0, strLen=strAry.length; i < strLen; i++) {
+  for (var i = 0, strLen = strAry.length; i < strLen; i++) {
     ary[i] = strAry.charCodeAt(i);
   }
   return ary;
@@ -139,7 +139,7 @@ export function arrayBufferToBase64(ary: ArrayBuffer): string {
 export function blobToBase64(blob: Blob) {
   return new Promise(resolve => {
     var reader = new FileReader();
-    reader.readAsDataURL(blob); 
+    reader.readAsDataURL(blob);
     reader.onloadend = () => resolve(reader.result)
   });
 }
@@ -149,7 +149,7 @@ export const arrayBufferToObjectURL = (ary: ArrayBuffer) => URL.createObjectURL(
 export const objectToURL = (o: any) => URL.createObjectURL(o)
 
 export function arrayBufferToBlob(buffer, type) {
-  return new Blob([buffer], {type: type});
+  return new Blob([buffer], { type: type });
 }
 
 export function blobToArrayBuffer(blob) {
@@ -377,6 +377,10 @@ export function diff(main: any, second: any) {
   }
   diffLvl(main, second, "")
   return diffs;
+}
+
+export async function sleep(ms: number) {
+  return new Promise(resolve => setTimeout(resolve, ms));
 }
 
 // @ts-ignore

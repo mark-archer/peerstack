@@ -1,4 +1,4 @@
-import { newid, toJSON } from "./common";
+import { newid, sleep, toJSON } from "./common";
 import { getIndexedDB, IGroup } from './db';
 import { IConnection, onRemoteMessage } from "./remote-calls";
 import { IMe, IUser } from "./user";
@@ -32,7 +32,7 @@ let deviceId: string = null;
 let me: IMe = null;
 let user: IUser = null;
 let socket;
-export let connections: IDeviceConnection[] = [];
+export const connections: IDeviceConnection[] = [];
 
 let initialized = false;
 export function init(_deviceId: string, _me: IMe, serverUrl?: string) {
@@ -225,9 +225,18 @@ async function dcSend(connection, data) {
   }
 }
 
+function garbageCollectConnections() {
+  for (let i = connections.length - 1; i >= 0; i--) {
+    const c = connections[i];
+    if (!['closed', 'closing'].includes(c.dc?.readyState)) {
+      connections.splice(i, 1)
+    }
+  }
+}
+
 export async function connectToDevice(toDeviceId) {
   try {
-    connections = connections.filter(c => !['closed', 'closing'].includes(c.dc?.readyState));
+    garbageCollectConnections();
     const existingConnection = connections.find(c => c.remoteDeviceId === toDeviceId);
     if (existingConnection) {
       // console.log('already have a connection to this device so just returning that')
@@ -249,6 +258,7 @@ export async function connectToDevice(toDeviceId) {
     const sdi = await pc.createOffer();
     if (!sdi) return alert('generated falsy sdi offer')
     await pc.setLocalDescription(sdi);
+    await sleep(2000);
 
     // gather ice candidates
     const iceCandidates: RTCIceCandidate[] = [];
@@ -293,7 +303,7 @@ export async function connectToDevice(toDeviceId) {
     dc.onclose = e => {
       console.log("dc.onclose")
       pc.close();
-      connections = connections.filter(c => c != connection)
+      connections.splice(connections.indexOf(connection), 1);
     }
 
     // setTimeout(() => syncData(connection), 1000);
@@ -335,6 +345,7 @@ export async function connectToDevice(toDeviceId) {
 
 async function handelOffer(offer: ISDIExchange) {
   try {
+    garbageCollectConnections();
     // build answer connection
     const pc2 = new RTCPeerConnection();
 
@@ -401,7 +412,7 @@ async function handelOffer(offer: ISDIExchange) {
       dc.onclose = e => {
         console.log("dc2.onclose")
         pc2.close();
-        connections = connections.filter(c => c != connection)
+        connections.splice(connections.indexOf(connection), 1);
       };
     }
   }
