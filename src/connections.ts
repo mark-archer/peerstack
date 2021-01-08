@@ -228,7 +228,7 @@ async function dcSend(connection, data) {
 function garbageCollectConnections() {
   for (let i = connections.length - 1; i >= 0; i--) {
     const c = connections[i];
-    if (!['closed', 'closing'].includes(c.dc?.readyState)) {
+    if (['closed', 'closing'].includes(c.dc?.readyState)) {
       connections.splice(i, 1)
     }
   }
