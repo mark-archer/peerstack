@@ -247,8 +247,8 @@ export async function connectToDevice(toDeviceId) {
     // get ice servers
     const iceServers: RTCIceServer[] = await getIceServers();
 
-    let rtcConfig: RTCConfiguration = {
-      peerIdentity: connectionId,
+    const rtcConfig: RTCConfiguration = {
+      // peerIdentity: connectionId,
       iceServers
     }
 
@@ -258,7 +258,7 @@ export async function connectToDevice(toDeviceId) {
     const sdi = await pc.createOffer();
     if (!sdi) return alert('generated falsy sdi offer')
     await pc.setLocalDescription(sdi);
-    await sleep(2000);
+    // await sleep(2000);
 
     // gather ice candidates
     const iceCandidates: RTCIceCandidate[] = [];
@@ -346,8 +346,13 @@ export async function connectToDevice(toDeviceId) {
 async function handelOffer(offer: ISDIExchange) {
   try {
     garbageCollectConnections();
+
+    const rtcConfig: RTCConfiguration = {
+      // peerIdentity: offer.connectionId,
+      iceServers
+    }
     // build answer connection
-    const pc2 = new RTCPeerConnection();
+    const pc2 = new RTCPeerConnection(rtcConfig);
 
     // add connection to list
     const connection: IDeviceConnection = {
