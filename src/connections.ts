@@ -165,7 +165,7 @@ async function getIceServers() {
   } catch (err) {
     console.warn('failed to get iceServers, using fallback', err)
   }
-  return iceServers;
+  return _iceServers;
 }
 
 async function sendOffer(offer: ISDIExchange) {
@@ -247,12 +247,9 @@ export async function connectToDevice(toDeviceId) {
     }
     const connectionId = newid();
 
-    // get ice servers
-    const iceServers: RTCIceServer[] = await getIceServers();
-
     const rtcConfig: RTCConfiguration = {
       // peerIdentity: connectionId,
-      iceServers
+      iceServers: await getIceServers()
     }
 
     // prepare connection   
@@ -352,7 +349,7 @@ async function handelOffer(offer: ISDIExchange) {
 
     const rtcConfig: RTCConfiguration = {
       // peerIdentity: offer.connectionId,
-      iceServers
+      iceServers: await getIceServers()
     }
     // build answer connection
     const pc2 = new RTCPeerConnection(rtcConfig);
