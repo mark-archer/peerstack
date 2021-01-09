@@ -58,11 +58,11 @@ export function init(_deviceId: string, _me: IMe, serverUrl?: string) {
     await registerDevice({ deviceId, user, groups: allGroupIds });
     console.log('registered device', { deviceId, groups: allGroupIds })
   });
-  // // reconnect is called in addition to connect so redundant for now
-  // io.on('reconnect', async () => {
-  //   console.log('reconnected to server');
-  //   registerDevice({ deviceId, user });
-  // });
+  // reconnect is called in addition to connect so redundant for now
+  socket.on('reconnect', async () => {
+    console.log('reconnected to server');
+    eventHandlers.onSignalingReconnected();
+  });
   socket.on('disconnect', async () => {
     console.log('disconnected from server');
   })
@@ -188,6 +188,9 @@ export const eventHandlers = {
     // placeholder
   },
   onDeviceConnected: async (connection: IDeviceConnection) => {
+    // placeholder
+  },
+  onSignalingReconnected: async () => {
     // placeholder
   },
 }
