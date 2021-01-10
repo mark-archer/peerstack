@@ -1,7 +1,7 @@
-import { newid, sleep, toJSON } from "./common";
+import { newid, toJSON } from "./common";
 import { getIndexedDB, IGroup } from './db';
 import { IConnection, onRemoteMessage } from "./remote-calls";
-import { IMe, IUser } from "./user";
+import { IMe, IUser, signObject } from "./user";
 
 export interface ISDIExchange {
   connectionId: string
@@ -42,6 +42,7 @@ export function init(_deviceId: string, _me: IMe, serverUrl?: string) {
   deviceId = _deviceId;
   me = _me;
   user = Object.assign({}, me, { secretKey: undefined });
+  signObject(user, me.secretKey, me.id);
 
   if (serverUrl) {
     socket = require('socket.io-client')(serverUrl, { secure: true, rejectUnauthorized: false });
