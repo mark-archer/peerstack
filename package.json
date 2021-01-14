@@ -10,7 +10,7 @@
   "scripts": {
     "test": "jest --coverage --no-cache",
     "build": "tsc",
-    "package": "ncc build src/index.ts",
+    "package": "yarn webpack",
     "deploy": "yarn package; npm version patch; npm publish ."
   },
   "devDependencies": {
