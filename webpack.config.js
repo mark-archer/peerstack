@@ -1,4 +1,4 @@
-var CompressionPlugin = require('compression-webpack-plugin');
+// var CompressionPlugin = require('compression-webpack-plugin');
 
 module.exports = {
   entry: './src/index.ts',
@@ -7,7 +7,7 @@ module.exports = {
 
   output: {
     path: __dirname + '/dist',
-    filename: 'index.js',
+    filename: 'index.bundle.js',
     library: 'peerstack',
     libraryTarget: 'umd'
   },
@@ -24,7 +24,7 @@ module.exports = {
   },
 
   plugins: [
-    new CompressionPlugin() // gzips the bundle
+    // new CompressionPlugin() // gzips the bundle
   ],
 
   // When importing a module whose path matches one of the following, just

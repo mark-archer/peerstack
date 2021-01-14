@@ -35,6 +35,19 @@ export function newMe(displayName?: string): IMe {
   }
 }
 
+export function hydrateMe(id: string, secretKey: string, displayName?: string): IMe {
+  return {
+    id,
+    secretKey,
+    publicKey: secretKey.substr(64),
+    displayName: displayName || id,
+    group: 'users',
+    modified: 1, // don't want to overwrite data in the database with this most minimal user object
+    owner: id,
+    type: 'User',
+  }
+}
+
 export function signMessage(msg: string, secretKey: string) {
   const _secretKey = decodeUint8ArrayFromBaseN(secretKey)
   const msgDecoded = naclUtil.decodeUTF8(msg);
