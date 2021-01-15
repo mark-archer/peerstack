@@ -144,7 +144,7 @@ export async function syncGroup(connection: IConnection, remoteGroup: IGroup, db
     // console.log(`L1 hashes match ${l1RemoteHash} so skipping L0 sync: ${group.title || group.name}`);
     return;
   }
-  console.log(`L1 hashes different so continuing with L0 sync: ${remoteGroup.title || remoteGroup.name} ${JSON.stringify({l1LocalHash, l1RemoteHash}, null, 2)}`);
+  console.log(`L1 hashes different so continuing with L0 sync: ${remoteGroup.title || remoteGroup.name} ${JSON.stringify({ l1LocalHash, l1RemoteHash }, null, 2)}`);
 
   const startTime = Date.now();
   const blockHashLevel = 'L0';
@@ -320,10 +320,14 @@ export function onRemoteMessage(connection: IConnection, message: string | IRemo
   connection.lastAck = Date.now();
   if (message === 'ack') return;
   if (message == 'ping') {
+    console.log('ping!', connection)
     connection.send('pong');
     return;
   }
-  if (message == 'pong') return console.log('pong!', connection);
+  if (message == 'pong') {
+    console.log('pong!', connection);
+    return;
+  }
   const msgObj = message as IRemoteCall | IRemoteResponse | IRemoteChunk;
 
   if (msgObj.type === 'chunk') {
