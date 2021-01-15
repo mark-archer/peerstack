@@ -1,4 +1,4 @@
-import { groupBy, isArray, set } from 'lodash';
+import { groupBy, isArray, isObject, set } from 'lodash';
 import { hashObject } from './common';
 import { ISigned, IUser, verifySignedObject } from './user';
 
@@ -16,9 +16,7 @@ export interface IData extends ISigned {
 export interface IGroupMember {
   userId: string,
   read?: boolean,
-  create?: boolean,
-  update?: boolean,
-  delete?: boolean,
+  write?: boolean,
   admin?: boolean,
   expireMS?: number,
 }
@@ -59,8 +57,7 @@ export type indexes = 'group' | 'type' | 'owner' | 'modified'
 
 export interface IDB {
   db: IDBDatabase
-  insert: (data: IData | IData[]) => Promise<void>
-  update: (data: IData | IData[], skipValidation?: boolean) => Promise<void>
+  save: (data: IData | IData[], skipValidation?: boolean) => Promise<void>
   delete: (id: string) => Promise<void>
   get: (id: string) => Promise<IData>
   find: (query?: string | number | IDBKeyRange | ArrayBuffer | Date | ArrayBufferView | IDBArrayKey, index?: indexes) => Promise<IData[]>
@@ -100,25 +97,7 @@ export async function getIndexedDB(
     }
   });
 
-  const insert = (data: IData | IData[]): Promise<any> => new Promise(async (resolve, reject) => {
-    if (!isArray(data)) {
-      data = [data];
-    }
-    await validateData(baseOps, data);
-    const transaction = db.transaction(['data'], 'readwrite');
-    transaction.onerror = evt => reject(evt);
-    const objectStore = transaction.objectStore('data');
-    for (const d of data) {
-      const request = objectStore.add(d);
-      request.onerror = evt => reject(evt);
-    }
-    transaction.oncomplete = evt => {
-      data.forEach((d: IData) => clearHashCache(d.group));
-      resolve((evt.target as any).result);
-    };
-  });
-
-  const update = (data: IData | IData[], skipValidation: boolean = false): Promise<any> => new Promise(async (resolve, reject) => {
+  const save = (data: IData | IData[], skipValidation: boolean = false): Promise<any> => new Promise(async (resolve, reject) => {
     if (!isArray(data)) {
       data = [data];
     }
@@ -191,8 +170,7 @@ export async function getIndexedDB(
 
   const baseOps: IDB = {
     db,
-    insert,
-    update,
+    save,
     delete: deleteOp,
     get,
     find,
@@ -213,7 +191,7 @@ export const checkPermission = (function <T extends Function>(hasPermission: T):
 })(hasPermission)
 
 const groups: { [groupId: string]: IGroup } = {}
-export async function hasPermission(userId: string, group: string | IGroup, accessLevel: 'read' | 'create' | 'update' | 'delete' | 'admin', db?: IDB): Promise<boolean> {
+export async function hasPermission(userId: string, group: string | IGroup, accessLevel: 'read' | 'write' | 'admin', db?: IDB): Promise<boolean> {
   if (group === 'users' && accessLevel === 'read') {
     return true;
   }
@@ -247,6 +225,9 @@ const users: { [userId: string]: IUser } = {};
 export async function validateData(db: IDB, datas: IData[]) {
   const requiredFields = ['modified', 'type', 'group', 'id', 'owner', 'signature', 'signer'];
   for (const data of datas) {
+    if (!isObject(data)) {
+      throw new Error('data must be an object')
+    }
     requiredFields.forEach(f => {
       if (!data[f]) throw new Error(`'${f}' is required on all data but was not found on ${JSON.stringify(data, null, 2)}`);
     })
@@ -293,13 +274,12 @@ export async function validateData(db: IDB, datas: IData[]) {
       } else {
         const dbData = await db.get(data.id);
         if (dbData && dbData.group != data.group) {
-          await checkPermission(user.id, dbData.group, 'delete');
-          await checkPermission(user.id, data.group, 'create');
-          // } if (dbData && dbData.signature != data.signature) {
+          await checkPermission(user.id, dbData.group, 'write');
+          await checkPermission(user.id, data.group, 'write');
         } if (dbData) {
-          await checkPermission(user.id, data.group, 'update')
+          await checkPermission(user.id, data.group, 'write')
         } else {
-          await checkPermission(user.id, data.group, 'create')
+          await checkPermission(user.id, data.group, 'write')
         }
       }
     } catch (err) {

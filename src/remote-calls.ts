@@ -79,13 +79,11 @@ export async function verifyRemoteUser(connection: IConnection) {
       //    as we can connect with, which is the correct public key for their user.
       //    we can reject the new public key until all available devices belonging to the user are in consensus.
     }
-    if (!dbUser) {
+    if (!dbUser || dbUser.modified < connection.remoteUser.modified) {
       // TODO protect from users stealing other users' ids
       //    this can happen if user1 has never seen user2 before, and user3 creates a user object
       //    with user2's id but a new public/private key, then gives that to user1
-      await db.insert(dbUser);
-    } else if (dbUser.modified < connection.remoteUser.modified) {
-      await db.update(connection.remoteUser);
+      await db.save(connection.remoteUser);
     }
   } catch (err) {
     throw new Error('remote user failed verification');
@@ -119,23 +117,17 @@ export async function getRemoteBlockHashes(groupId: string, level: BlockHashLeve
 }
 
 export const eventHandlers = {
-  onRemoteDataInserted: (data: IData) => {
+  onRemoteDataSaved: (data: IData) => {
     // placeholder
   },
-  onRemoteDataUpdated: (data: IData) => {
-    // placeholder
-  }
 }
 
 export async function syncGroup(connection: IConnection, remoteGroup: IGroup, db: IDB) {
   if (remoteGroup.id !== connection.me.id && remoteGroup.id !== 'users') {
     const localGroup = await db.get(remoteGroup.id);
-    if (!localGroup) {
-      await db.insert(remoteGroup);
-      eventHandlers.onRemoteDataInserted(remoteGroup);
-    } else if (remoteGroup.modified > localGroup.modified) {
-      await db.update(remoteGroup);
-      eventHandlers.onRemoteDataUpdated(remoteGroup);
+    if (!localGroup || remoteGroup.modified > localGroup.modified) {
+      await db.save(remoteGroup);
+      eventHandlers.onRemoteDataSaved(remoteGroup);
     }
   }
   const l1LocalHash = await getBlockHashes(remoteGroup.id, 'L1');
@@ -162,11 +154,7 @@ export async function syncGroup(connection: IConnection, remoteGroup: IGroup, db
         const localData = await db.get(remoteData.id);
         if (!localData || localData.modified < remoteData.modified) {
           // console.log('found data diff', { localData, remoteData });
-          if (localData) {
-            db.update(remoteData).then(() => eventHandlers.onRemoteDataUpdated(remoteData));
-          } else {
-            db.insert(remoteData).then(() => eventHandlers.onRemoteDataInserted(remoteData));
-          }
+          db.save(remoteData).then(() => eventHandlers.onRemoteDataSaved(remoteData));
         }
       }
     }
@@ -205,12 +193,9 @@ export async function pushData(data: IData) {
   const connection: IConnection = currentConnection;
   const db = await getIndexedDB();
   const dbData = await db.get(data.id);
-  if (!dbData) {
-    await db.insert(data);
-    eventHandlers.onRemoteDataInserted(data);
-  } else if (dbData.modified < data.modified) {
-    await db.update(data);
-    eventHandlers.onRemoteDataUpdated(data);
+  if (!dbData || dbData.modified < data.modified) {
+    await db.save(data);
+    eventHandlers.onRemoteDataSaved(data);
   }
   connections.forEach(_connection => {
     // this data was probably pushed from the current connection so resist forwarding it to that one but if it's the only connection available push it to try to get it propagating

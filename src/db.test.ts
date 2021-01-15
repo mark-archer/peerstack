@@ -1,6 +1,5 @@
 import { newid } from './common';
-import { newMe, signObject } from './user';
-import { IData, getIndexedDB, /*getMemoryDB, validateAndSave, IGroup, GROUPS_GROUP_ID, validateAndGet, IDataEvent*/ } from './db';
+import { getIndexedDB, IData } from './db';
 
 describe('db', () => {
 
@@ -52,35 +51,35 @@ describe('db', () => {
     let data: IData = { type: 'any', id, group: id, owner: id, signature: null, test: 4, modified: Date.now() }
 
     // CREATE
-    await db.insert(data)
+    await db.save(data)
     const startTime = Date.now();
     data = await db.get(id);
-    console.log('insert', {data});
+    console.log('insert', { data });
     console.log(`took: ${Date.now() - startTime}ms`)
-    
+
     // UPDATE
     data.type = 'fake2'
-    let r = await db.update(data);
-    console.log({r});
+    let r = await db.save(data);
+    console.log({ r });
     data = await db.get(id);
-    console.log('update', {data})
+    console.log('update', { data })
     console.log(`took: ${Date.now() - startTime}ms`)
 
     // READ
     data.id = newid();
     const time = Date.now();
-    await db.insert(data);
+    await db.save(data);
     console.log('simple find', await db.find(id))
     console.log('find with group index - expect 2', await db.find(id, 'group'))
     console.log('find with type index - expect several', await db.find('fake2', 'type'))
     console.log('find with modified - expect 1', await db.find(IDBKeyRange.lowerBound(time), 'modified'))
     console.log(`took: ${Date.now() - startTime}ms`)
-    
+
     // DELETE
     r = await db.delete(id);
-    console.log({r});
+    console.log({ r });
     data = await db.get(id);
-    console.log('delete',{data})
+    console.log('delete', { data })
 
     console.log(`took: ${Date.now() - startTime}ms`)
   });
