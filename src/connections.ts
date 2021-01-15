@@ -191,6 +191,9 @@ export const eventHandlers = {
   onDeviceConnected: async (connection: IDeviceConnection) => {
     // placeholder
   },
+  onDeviceDisconnected: async (connection: IDeviceConnection) => {
+    // placeholder
+  },
   onSignalingReconnected: async () => {
     // placeholder
   },
@@ -304,6 +307,7 @@ export async function connectToDevice(toDeviceId): Promise<IConnection> {
       console.log("dc.onclose")
       pc.close();
       connections.splice(connections.indexOf(connection), 1);
+      eventHandlers.onDeviceDisconnected(connection);
     }
 
     // setTimeout(() => syncData(connection), 1000);
@@ -418,6 +422,7 @@ async function handelOffer(offer: ISDIExchange) {
         console.log("dc2.onclose")
         pc2.close();
         connections.splice(connections.indexOf(connection), 1);
+        eventHandlers.onDeviceDisconnected(connection);
       };
     }
   }
