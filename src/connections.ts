@@ -130,7 +130,7 @@ async function registerDevice(registration: IDeviceRegistration) {
   })
   const otherDevices = await getAvailableDevices();
   console.log('availableDevices', otherDevices);
-  otherDevices.forEach(device => connectToDevice(device.deviceId))
+  // otherDevices.forEach(device => connectToDevice(device.deviceId))
   otherDevices.forEach(device => eventHandlers.onDeviceDiscovered(device.deviceId));
 }
 
@@ -238,7 +238,7 @@ function garbageCollectConnections() {
   }
 }
 
-export async function connectToDevice(toDeviceId) {
+export async function connectToDevice(toDeviceId): Promise<IConnection> {
   try {
     garbageCollectConnections();
     const existingConnection = connections.find(c => c.remoteDeviceId === toDeviceId);
@@ -257,7 +257,6 @@ export async function connectToDevice(toDeviceId) {
     let pc = new RTCPeerConnection(rtcConfig);
     let dc = pc.createDataChannel(`${connectionId}-data`);
     const sdi = await pc.createOffer();
-    if (!sdi) return alert('generated falsy sdi offer')
     await pc.setLocalDescription(sdi);
     // await sleep(2000);
 
