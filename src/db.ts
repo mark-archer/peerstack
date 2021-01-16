@@ -96,7 +96,7 @@ export async function getIndexedDB(
     request.onsuccess = evt => resolve((evt.target as any).result as IDBDatabase)
     request.onupgradeneeded = async evt => {
       var db = (evt.target as any).result as IDBDatabase;
-      if (dbVersion <= 1) {
+      if (dbVersion >= 1) {
         const dataStore = db.createObjectStore("data", { keyPath: 'id' });
         dataStore.createIndex("group", 'group', { unique: false })
         dataStore.createIndex("type", 'type', { unique: false })
@@ -110,7 +110,7 @@ export async function getIndexedDB(
         dataStore.createIndex("group-type-modified", ['group', 'type', 'modified'], { unique: false })
         dataStore.createIndex("group-owner-modified", ['group', 'owner', 'modified'], { unique: false })
       }
-      if (dbVersion <= 2) {
+      if (dbVersion >= 2) {
         const fileStore = db.createObjectStore("files", { keyPath: 'id' });
       }
       if (onUpgrade) await onUpgrade(evt);
