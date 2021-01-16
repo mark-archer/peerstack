@@ -144,7 +144,11 @@ export async function getIndexedDB(
       transaction.onerror = evt => reject(evt);
       const request = transaction.objectStore(storeName)[op](value);
       request.onerror = evt => reject(evt);
-      transaction.oncomplete = evt => resolve((evt.target as any).result);
+      if (op == 'get') {
+        request.onsuccess = evt => resolve((evt.target as any).result);
+      } else {
+        transaction.oncomplete = evt => resolve((evt.target as any).result);
+      }
     })
   }
 
@@ -188,8 +192,8 @@ export async function getIndexedDB(
     });
 
   const saveFile = (file: IFile) => dbOp('files', 'put', file);
-  const deleteFile = (id: string) => dbOp('files', 'delete', id);
   const getFile = (id: string) => dbOp('files', 'get', id);
+  const deleteFile = (id: string) => dbOp('files', 'delete', id);
 
   const baseOps: IDB = {
     db,
