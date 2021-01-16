@@ -30,6 +30,15 @@ export interface IGroup extends IData {
   allowViewerComments?: boolean,
 }
 
+export interface IFile {
+  type: 'File'
+  id: string
+  name: string
+  fileType: string
+  size: number
+  blob: Blob
+}
+
 export const usersGroup: IGroup = { type: 'Group', id: 'users', group: 'users', owner: 'users', name: 'Users', modified: Date.now(), members: [], blockedUserIds: [] };
 
 let _personalGroup: IGroup;
@@ -58,17 +67,25 @@ export type indexes = 'group' | 'type' | 'owner' | 'modified'
 export interface IDB {
   db: IDBDatabase
   save: (data: IData | IData[], skipValidation?: boolean) => Promise<void>
-  delete: (id: string) => Promise<void>
-  get: (id: string) => Promise<IData>
   find: (query?: string | number | IDBKeyRange | ArrayBuffer | Date | ArrayBufferView | IDBArrayKey, index?: indexes) => Promise<IData[]>
+  get: (id: string) => Promise<IData>
+  delete: (id: string) => Promise<void>
   openCursor: (query?: string | number | IDBKeyRange | ArrayBuffer | Date | ArrayBufferView | IDBArrayKey, index?: indexes, direction?: IDBCursorDirection) => Promise<IDBCursorWithValue>
+  files: {
+    save: (file: IFile) => Promise<void>
+    get: (id: string) => Promise<IFile>
+    delete: (id: string) => Promise<void>
+  }
 }
 
+interface PeerstackDBOpts {
+  dbName?: string,
+  dbVersion?: number,
+  onUpgrade?: ((evt: IDBVersionChangeEvent) => Promise<void>)
+}
 
 export async function getIndexedDB(
-  dbName: string = 'peerstack',
-  dbVersion: number = 1,
-  onUpgrade?: ((evt: IDBVersionChangeEvent) => Promise<void>)
+  { dbName = 'peerstack', dbVersion = 2, onUpgrade }: PeerstackDBOpts = {}
 ): Promise<IDB> {
   if (typeof window === 'undefined' || !window.indexedDB) {
     throw new Error('indexedDB is not currently available')
@@ -77,8 +94,7 @@ export async function getIndexedDB(
     const request = window.indexedDB.open(dbName, dbVersion);
     request.onerror = evt => reject(new Error('failed to open db: ' + String(evt)));
     request.onsuccess = evt => resolve((evt.target as any).result as IDBDatabase)
-    request.onupgradeneeded = evt => {
-      if (onUpgrade) return onUpgrade(evt);
+    request.onupgradeneeded = async evt => {
       var db = (evt.target as any).result as IDBDatabase;
       if (dbVersion <= 1) {
         const dataStore = db.createObjectStore("data", { keyPath: 'id' });
@@ -94,6 +110,10 @@ export async function getIndexedDB(
         dataStore.createIndex("group-type-modified", ['group', 'type', 'modified'], { unique: false })
         dataStore.createIndex("group-owner-modified", ['group', 'owner', 'modified'], { unique: false })
       }
+      if (dbVersion <= 2) {
+        const fileStore = db.createObjectStore("files", { keyPath: 'id' });
+      }
+      if (onUpgrade) await onUpgrade(evt);
     }
   });
 
@@ -117,26 +137,25 @@ export async function getIndexedDB(
     };
   });
 
-  const deleteOp = (id): Promise<any> => new Promise(async (resolve, reject) => {
-    const dbData = await get(id);
-    if (!dbData) return resolve(true);
-    const transaction = db.transaction(['data'], 'readwrite');
-    transaction.onerror = evt => reject(evt);
-    const request = transaction.objectStore('data').delete(id);
-    request.onerror = evt => reject(evt);
-    request.onsuccess = evt => {
-      clearHashCache(dbData.group);
-      resolve((evt.target as any).result);
-    };
-  });
+  function dbOp(storeName: 'data' | 'files', op: 'put' | 'delete' | 'get', value) {
+    return new Promise<any>((resolve, reject) => {
+      const mode: IDBTransactionMode = op == 'get' ? 'readonly' : 'readwrite';
+      const transaction = db.transaction([storeName], mode);
+      transaction.onerror = evt => reject(evt);
+      const request = transaction.objectStore(storeName)[op](value);
+      request.onerror = evt => reject(evt);
+      transaction.oncomplete = evt => resolve((evt.target as any).result);
+    })
+  }
 
-  const get = (id: string): Promise<IData> => new Promise(async (resolve, reject) => {
-    const transaction = db.transaction(['data'], 'readonly');
-    transaction.onerror = evt => reject(evt);
-    const request = transaction.objectStore('data').get(id);
-    request.onerror = evt => reject(evt);
-    request.onsuccess = evt => resolve((evt.target as any).result);
-  });
+  async function deleteOp(id) {
+    const dbData = await get(id);
+    if (!dbData) return;
+    await dbOp('data', 'delete', id);
+    clearHashCache(dbData.group);
+  }
+
+  const get = (id: string) => dbOp('data', 'get', id);
 
   const find = (query?: string | number | IDBKeyRange | ArrayBuffer | Date | ArrayBufferView | IDBArrayKey, index?: indexes): Promise<IData[]> =>
     new Promise(async (resolve, reject) => {
@@ -168,6 +187,10 @@ export async function getIndexedDB(
       request.onsuccess = evt => resolve((evt.target as any).result);
     });
 
+  const saveFile = (file: IFile) => dbOp('files', 'put', file);
+  const deleteFile = (id: string) => dbOp('files', 'delete', id);
+  const getFile = (id: string) => dbOp('files', 'get', id);
+
   const baseOps: IDB = {
     db,
     save,
@@ -175,6 +198,11 @@ export async function getIndexedDB(
     get,
     find,
     openCursor,
+    files: {
+      save: saveFile,
+      get: getFile,
+      delete: deleteFile
+    }
   }
 
   return baseOps;

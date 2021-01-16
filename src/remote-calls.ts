@@ -177,6 +177,7 @@ export async function syncDBs(connection: IConnection) {
 
   await Promise.all(remoteGroups.map(_syncGroup));
   // for (const remoteGroup of remoteGroups) await _syncGroup(remoteGroup);
+  console.log(`finished syncing DB with ${connection.remoteDeviceId}`);
 }
 
 const pushDataAlreadySeen: {
@@ -260,6 +261,8 @@ async function sendRemoteError(connection: IConnection, callId: string, error: s
 }
 
 let currentConnection: IConnection;
+export const getCurrentConnection = () => currentConnection;
+
 async function handelRemoteCall(connection: IConnection, remoteCall: IRemoteCall) {
   const { id, fnName, args } = remoteCall;
   try {

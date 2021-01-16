@@ -17,7 +17,7 @@ const { connections, newid, remoteCalls, user } = require('peerstack');
 // this creates a new user, normally you'd use an existing user
 const me = user.newMe(); 
 const deviceId = newid();
-connections.init(deviceId, me, yourServerUrl || "https://peers.app/");
+connections.init(deviceId, me, yourServerUrl || "https://theque.app/");
 connections.eventHandlers.onDeviceConnected = async connection => {    
   // syncs data in all shared groups between both devices
   await remoteCalls.syncDBs(connection);
@@ -40,7 +40,7 @@ server.listen(port);
 console.log(`server running at http://localhost:${port}/`)
 ```
 
-Your own server is not necessary. For now you're free to use `https://peers.app/` as your signaling server but that may change in the future depending on usage and the evolution of [peerhost](#peer-host).
+Your own server is not necessary. For now you're free to use `https://theque.app/` as your signaling server but that may change in the future depending on usage and the evolution of [peerhost](#peer-host).
 
 ## How It Works
 
@@ -61,11 +61,11 @@ If a native app is made, many more options for finding peers, establishing conne
 
 ## Groups
 
-Groups are used to define who has access to what data.  A natural side effect of this is it defines how to shard the data across devices. All data must have a group.
+Groups are used to define who has access to what data.  A natural side effect of this is it defines how to [shard](https://en.wikipedia.org/wiki/Shard_(database_architecture)) the data across devices. All data must have a group.
 
-For every user, an implicit group exists (via the user's own id) and that is the user's personal group.  Any data in that group should not be sent to another device unless it has the same user logged in.  
+For every user, an implicit group exists (using the user's own id) and that is defined to be the user's personal group.  Any data in that group should not be sent to another device unless it has the same user logged in.  
 
-Users can create groups and can give other users access to those groups.  This is the fundamental mechanism for determining which devices will connect to each other.  If you are not in any groups with other people, your device will only connect to your other devices.  If you're in a group with your family members, your device will connect any of your family members devices as well as your own, etc, etc.  
+Users can create groups and can give other users access to those groups.  This is the default mechanism for determining which devices will connect to each other.  If you are not in any groups with other people, your device will only connect to your other devices.  If you're in a group with your family members, your device will connect any of your family members devices as well as your own, etc, etc.  
 
 This creates a network topology that matches the real world social topology which seems ideal.
 
@@ -73,7 +73,7 @@ This creates a network topology that matches the real world social topology whic
 
 A supporting project is [peerhost](https://github.com/mark-archer/peerhost).  This is meant to allow users to easily instantiate sudo-servers that they own and operate.  The idea is these, although not required, would be the heavy lifters of the peers network. Operators would have more control over where and how the data is stored, and could help ensure the availability of at least their part of the network (which is all they care about for the most part anyway).
 
-An important function of a host is it can provide the signaling channel for peers to establish secure data channels with each other.  The goal is that if the host has a public ip address it could even be the initial point of connection via web sockets and provide STUN and TURN services for the WebRTC connections.  This reduces peers reliance on central servers even more and allows users to take additional ownership over the infrastructure.  
+An important function of a host is it can provide the signaling channel for peers to establish secure data channels with each other.  The goal is that if the host has a public ip address it could even be the initial point of connection via web sockets and provide STUN and TURN services for the WebRTC connections.  This reduces peers' reliance on central servers even more and allows users to take additional ownership over the infrastructure.  
 
 Another eventual use case (that I'm particularly excited about) is that users could write custom applications and use one or more hosts to provide any necessary server type functionality.  The big advantage to this over just writing an application from scratch is the only coding that would need to be done would be the business logic and UI.  Security, authentication, targeting different platforms, establishing connections between devices, and almost every other pain point in developing and deploying a production application would already be solved by the peers network.  Application development would become as simple as declaring a javascript function. 
 

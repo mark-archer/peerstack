@@ -206,7 +206,7 @@ export interface IRemoteChunk {
   chunk: string,
 }
 
-const chunkSize = 16384; // this is the safe maximum size but many devices can handle much larger sizes
+export const chunkSize = 16384; // this is the safe maximum size but many devices can handle much larger sizes
 const strChunkSize = Math.floor(chunkSize / 7);
 async function dcSend(connection, data) {
   const id = data?.id || newid();
