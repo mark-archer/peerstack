@@ -41,7 +41,7 @@ export async function getFileFromPeers(fileId: string, updateProgress?: (percent
 async function getFile(fileId: string) {
   const connection = getCurrentConnection() as IDeviceConnection;
   // todo: validate peer should be allowed to read file
-  const db = await getIndexedDB({ dbName: 'files' })
+  const db = await getIndexedDB()
   const file = await db.files.get(fileId)
   if (!file) return;
 
@@ -58,7 +58,6 @@ async function getFile(fileId: string) {
     fileReader.addEventListener('error', error => console.error('Error reading file:', error));
     fileReader.addEventListener('abort', event => console.log('File reading aborted:', event));
     fileReader.addEventListener('load', e => {
-      // @ts-ignore
       const bytes = e.target.result as ArrayBuffer;
       dcSend.send(bytes);
       offset += bytes.byteLength;
@@ -69,7 +68,7 @@ async function getFile(fileId: string) {
     let waitCounter = 0;
     const readSlice = o => {
       if (dcSend.readyState === 'closed' || waitCounter >= 10000) {
-        return console.log('connection closed or not processing data, exiting')
+        return console.log('connection closed or not processing data, halting file transfer')
       }
       if (dcSend.bufferedAmount > chunkSize * 64) {
         waitCounter++;
