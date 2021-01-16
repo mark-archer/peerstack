@@ -163,6 +163,7 @@ export async function syncGroup(connection: IConnection, remoteGroup: IGroup, db
 }
 
 export async function syncDBs(connection: IConnection) {
+  const startTime = Date.now();
   const db = await getIndexedDB();
   const _syncGroup = (group: IGroup) => syncGroup(connection, group, db);
 
@@ -177,7 +178,7 @@ export async function syncDBs(connection: IConnection) {
 
   await Promise.all(remoteGroups.map(_syncGroup));
   // for (const remoteGroup of remoteGroups) await _syncGroup(remoteGroup);
-  console.log(`finished syncing DB with ${connection.remoteDeviceId}`);
+  console.log(`finished syncing DB with ${connection.remoteDeviceId} in ${Date.now() - startTime} ms`);
 }
 
 const pushDataAlreadySeen: {
