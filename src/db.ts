@@ -144,11 +144,11 @@ export async function getIndexedDB(
       transaction.onerror = evt => reject(evt);
       const request = transaction.objectStore(storeName)[op](value);
       request.onerror = evt => reject(evt);
-      if (op == 'get') {
-        request.onsuccess = evt => resolve((evt.target as any).result);
-      } else {
-        transaction.oncomplete = evt => resolve((evt.target as any).result);
-      }
+      // if (op == 'get') {
+      request.onsuccess = evt => resolve((evt.target as any).result);
+      // } else {
+      //   transaction.oncomplete = evt => resolve((evt.target as any).result);
+      // }
     })
   }
 
