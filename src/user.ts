@@ -10,6 +10,7 @@ export interface ISigned {
 
 export interface IUser extends ISigned, IData {
   type: 'User',
+  group: 'users',
   id: string,
   displayName: string,
   publicKey: string,
