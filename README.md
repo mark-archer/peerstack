@@ -25,7 +25,7 @@ connections.eventHandlers.onDeviceConnected = async connection => {
 }
 ```
 
-The above is all you need to get your web app connecting to other devices running peerstack.  Currently devices will only connect to other devices with the same user or where the user is in one or more of the same [groups](#groups) as the current user.  There is a much more detailed example at [peerstack-example](https://github.com/mark-archer/peerstack-example)
+The above is all you need to get your web app connecting to other devices running peerstack.  Currently devices will only connect to other devices with the same user or where the user is in one or more of the same [groups](#groups) as the current user.  There is a much more detailed example at [peerstack-example](https://github.com/mark-archer/peerstack-example).
 
 
 ### Server Code (optional)

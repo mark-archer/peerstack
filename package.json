@@ -5,7 +5,7 @@
   "types": "dist/index.d.ts",
   "repository": "https://github.com/mark-archer/peerstack",
   "author": "Mark Archer",
-  "license": "UNLICENSED",
+  "license": "MIT",
   "private": false,
   "scripts": {
     "test": "jest --coverage --no-cache",
