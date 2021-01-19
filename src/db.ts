@@ -11,8 +11,6 @@ export interface IData extends ISigned {
   [key: string]: any
 }
 
-// export const GROUPS_GROUP_ID = 'groups';
-
 export interface IGroupMember {
   userId: string,
   read?: boolean,
@@ -39,6 +37,12 @@ export interface IFile {
   blob: Blob
 }
 
+export interface IUserTrust extends ISigned {
+  type: 'UserTrust'
+  id: string  // user id
+  trustLevel: 1 | 2 | number // higher the number the less they are trusted
+}
+
 export const usersGroup: IGroup = { type: 'Group', id: 'users', group: 'users', owner: 'users', name: 'Users', modified: Date.now(), members: [], blockedUserIds: [] };
 
 let _personalGroup: IGroup;
@@ -48,17 +52,6 @@ export function getPersonalGroup(myId: string) {
   }
   return _personalGroup;
 }
-
-// export interface IDataEvent extends ISigned {
-//   id: string
-//   group: string
-//   dataId: string
-//   userId: string
-// }
-
-// export interface IComment extends IData {
-//   type: 'comment',
-// }
 
 export type indexes = 'group' | 'type' | 'owner' | 'modified'
   | 'group-modified' | 'type-modified' | 'owner-modified'
@@ -75,6 +68,12 @@ export interface IDB {
     save: (file: IFile) => Promise<void>
     get: (id: string) => Promise<IFile>
     delete: (id: string) => Promise<void>
+  },
+  userTrust: {
+    save: (userTrust: IUserTrust) => Promise<void>
+    find: (trustLevel: number) => Promise<IUserTrust[]>
+    get: (id: string) => Promise<IUserTrust>
+    delete: (id: string) => Promise<void>
   }
 }
 
@@ -85,7 +84,7 @@ interface PeerstackDBOpts {
 }
 
 export async function getIndexedDB(
-  { dbName = 'peerstack', dbVersion = 2, onUpgrade }: PeerstackDBOpts = {}
+  { dbName = 'peerstack', dbVersion = 3, onUpgrade }: PeerstackDBOpts = {}
 ): Promise<IDB> {
   if (typeof window === 'undefined' || !window.indexedDB) {
     throw new Error('indexedDB is not currently available')
@@ -113,6 +112,10 @@ export async function getIndexedDB(
       if (dbVersion >= 2) {
         const fileStore = db.createObjectStore("files", { keyPath: 'id' });
       }
+      if (dbVersion >= 3) {
+        const trustStore = db.createObjectStore("userTrust", { keyPath: 'id' });
+        trustStore.createIndex('trustLevel', 'trustLevel', { unique: false })
+      }
       if (onUpgrade) await onUpgrade(evt);
     }
   });
@@ -137,7 +140,22 @@ export async function getIndexedDB(
     };
   });
 
-  function dbOp(storeName: 'data' | 'files', op: 'put' | 'delete' | 'get', value) {
+  const find = (query?: string | number | IDBKeyRange | ArrayBuffer | Date | ArrayBufferView | IDBArrayKey, index?: indexes): Promise<IData[]> =>
+    new Promise(async (resolve, reject) => {
+      const transaction = db.transaction(['data'], 'readonly');
+      transaction.onerror = evt => reject(evt);
+      const dataStore = transaction.objectStore('data');
+      let request: IDBRequest;
+      if (index) {
+        request = dataStore.index(index).getAll(query);
+      } else {
+        request = dataStore.getAll(query);
+      }
+      request.onerror = evt => reject(evt);
+      request.onsuccess = evt => resolve((evt.target as any).result);
+    });
+
+  function dbOp(storeName: 'data' | 'files' | 'userTrust', op: 'put' | 'delete' | 'get', value) {
     return new Promise<any>((resolve, reject) => {
       const mode: IDBTransactionMode = op == 'get' ? 'readonly' : 'readwrite';
       const transaction = db.transaction([storeName], mode);
@@ -161,24 +179,9 @@ export async function getIndexedDB(
 
   const get = (id: string) => dbOp('data', 'get', id);
 
-  const find = (query?: string | number | IDBKeyRange | ArrayBuffer | Date | ArrayBufferView | IDBArrayKey, index?: indexes): Promise<IData[]> =>
-    new Promise(async (resolve, reject) => {
-      const transaction = db.transaction(['data'], 'readwrite');
-      transaction.onerror = evt => reject(evt);
-      const dataStore = transaction.objectStore('data');
-      let request: IDBRequest;
-      if (index) {
-        request = dataStore.index(index).getAll(query);
-      } else {
-        request = dataStore.getAll(query);
-      }
-      request.onerror = evt => reject(evt);
-      request.onsuccess = evt => resolve((evt.target as any).result);
-    });
-
   const openCursor = (query?: string | number | IDBKeyRange | ArrayBuffer | Date | ArrayBufferView | IDBArrayKey, index?: indexes, direction?: IDBCursorDirection): Promise<IDBCursorWithValue> =>
     new Promise(async (resolve, reject) => {
-      const transaction = db.transaction(['data'], 'readwrite');
+      const transaction = db.transaction(['data'], 'readonly');
       transaction.onerror = evt => reject(evt);
       const dataStore = transaction.objectStore('data');
       let request: IDBRequest;
@@ -191,9 +194,22 @@ export async function getIndexedDB(
       request.onsuccess = evt => resolve((evt.target as any).result);
     });
 
+  const findUserTrust = (trustLevel): Promise<IUserTrust[]> =>
+    new Promise(async (resolve, reject) => {
+      const transaction = db.transaction(['userTrust'], 'readonly');
+      transaction.onerror = evt => reject(evt);
+      const dataStore = transaction.objectStore('userTrust');
+      let request: IDBRequest;
+      request = dataStore.index('trustLevel').getAll(trustLevel)
+      request.onerror = evt => reject(evt);
+      request.onsuccess = evt => resolve((evt.target as any).result);
+    });
+
   const saveFile = (file: IFile) => dbOp('files', 'put', file);
   const getFile = (id: string) => dbOp('files', 'get', id);
   const deleteFile = (id: string) => dbOp('files', 'delete', id);
+
+
 
   const baseOps: IDB = {
     db,
@@ -206,6 +222,12 @@ export async function getIndexedDB(
       save: saveFile,
       get: getFile,
       delete: deleteFile
+    },
+    userTrust: {
+      save: userTrust => dbOp('userTrust', 'put', userTrust),
+      find: findUserTrust,
+      get: id => dbOp('userTrust', 'get', id),
+      delete: id => dbOp('userTrust', 'delete', id)
     }
   }
 
@@ -388,64 +410,6 @@ export async function getBlockHashes(groupId: string, level: BlockHashLevel = 'L
   }
 }
 
-// export async function buildDBHashes() {
-//   if (blockHashes) return blockHashes;
-//   modifiedBlockIds = {};
-//   blockHashes = {};
-//   const db = await getIndexedDB();
-
-//   const maxTime = Date.now();
-//   const minTime = (await db.openCursor(null, 'modified')).value.modified;
-
-//   // populate level 0
-//   let interval = BLOCK_SIZE * 100;
-//   let lowerTime = maxTime - (maxTime % interval);
-//   let upperTime = lowerTime + interval;
-//   while (minTime < upperTime) {
-//     const data = await db.find(IDBKeyRange.bound(lowerTime, upperTime), 'modified');
-//     // const data = await db.find(IDBKeyRange.bound(['9c9ba93245d849c593947212b6c2fc11',lowerTime], ['9c9ba93245d849c593947212b6c2fc11',upperTime]), 'group-modified');
-//     lowerTime -= interval;
-//     upperTime -= interval;
-//     if (!data.length) continue;
-//     const grouped = groupBy(data, d => d.group + '.L0.' + getBlockId(d.modified));
-//     Object.keys(grouped).forEach(key => {
-//       set(blockHashes, key, hashObject(grouped[key]));
-//     })
-//   }
-
-//   const dataLower = await db.find(IDBKeyRange.upperBound(minTime), 'modified');
-//   const dataUpper = await db.find(IDBKeyRange.lowerBound(maxTime), 'modified');
-//   const dataNull = await db.find(null, 'modified');
-//   console.log({ dataLower, dataUpper, dataNull });
-
-
-//   // populate higher block levels
-//   let level = 0;
-//   while (BLOCK_SIZE * level ** 10 < maxTime) {
-//     level++;
-//     Object.keys(blockHashes).forEach(group => {
-//       const blocks = Object.keys(blockHashes[group][`L${level-1}`]).sort();
-//       let currentHigherBlock = blocks[0].substr(0, blocks[0].length - 1);
-//       let hashes = [];
-//       blocks.forEach(block => {
-//         let higherBlock = block.substr(0, block.length - 1);
-//         if (higherBlock != currentHigherBlock && hashes.length) {
-//           set(blockHashes, `${group}.L${level}.${currentHigherBlock}`, hashObject(hashes));
-//           hashes.length = 0;
-//           currentHigherBlock = higherBlock;
-//         }
-//         hashes.push(blockHashes[group][`L${level-1}`][block]);
-//       })
-//       if (hashes.length) {
-//         set(blockHashes, `${group}.L${level}.${currentHigherBlock}`, hashObject(hashes));
-//       }
-//     });
-//   }
-
-//   return blockHashes;
-// }
-
-
 // export function getMemoryDB(): IDB {
 //   const memoryDB: {
 //     [id: string]: IData
@@ -475,193 +439,6 @@ export async function getBlockHashes(groupId: string, level: BlockHashLevel = 'L
 //   }
 //   return baseOps
 // }
-
-
-
-// export async function setupIndexedDBGroupOps(
-//   group: string,
-//   dbName: string = 'peerstack') 
-// {
-//   if (typeof window === 'undefined' || !window.indexedDB) {
-//     throw new Error('indexdb is not currently available')
-//   }
-//   const groupStoreName = 'groups';
-//   const dbVersion = Date.now();
-//   const db: IDBDatabase = await new Promise(async (resolve, reject) => {
-//     const request = window.indexedDB.open(dbName, dbVersion);
-//     request.onerror = evt => reject(new Error('failed to open db: ' + String(evt)));
-//     request.onsuccess = evt => resolve((evt.target as any).result as IDBDatabase)
-//     request.onupgradeneeded = async evt => {
-//       var db = (evt.target as any).result as IDBDatabase;
-//       const { oldVersion } = evt
-//       let groupStorePromise = Promise.resolve();
-//       if (oldVersion < 1) {
-//         groupStorePromise = new Promise((resolve) => {
-//           const objectStore = db.createObjectStore(groupStoreName, { keyPath: 'id' });
-//           objectStore.transaction.oncomplete = () => resolve();
-//         });
-//       }
-//       await groupStorePromise;
-//       if (group === groupStoreName) {
-//         resolve(db);
-//       }
-
-//       const tx = db.transaction(groupStoreName, 'readonly');
-//       tx.onerror = evt => reject(evt);
-//       const group = await new Promise((resolve, reject) => {
-//         const request = tx.objectStore(groupStoreName).get(group);
-//         request.onerror = evt => reject(evt);
-//         request.onsuccess = evt => resolve((evt.target as any).result);
-//       });
-//       if (!group) {
-//         // add group
-//         const tx = db.transaction(groupStoreName, 'readwrite');
-//         tx.onerror = evt => reject(evt);
-//         await new Promise((resolve, reject) => {
-//           const request = tx.objectStore(groupStoreName).add({ id: group, });
-//           request.onerror = evt => reject(evt);
-//           request.onsuccess = evt => resolve((evt.target as any).result);
-//         });
-//         const groupObjectStore = db.createObjectStore(group, { keyPath: 'id' });
-//         groupObjectStore.createIndex('type', 'type', { unique: false })
-//         groupObjectStore.createIndex('createMS', 'createMS', { unique: false })
-//         groupObjectStore.createIndex('updateMS', 'updateMS', { unique: false })
-
-//       }
-//       resolve(db);
-//     }    
-//   });
-
-//   baseOps.get = (group: string, id: string): Promise<IData> => new Promise(async (resolve, reject) => {
-//     resolve(null)
-//     // const db = await openDb();
-//     // const transaction = db.transaction(['data'], 'readonly');
-//     // transaction.onerror = evt => reject(evt);
-//     // const request = transaction.objectStore('data').get([group, id]);
-//     // request.onerror = evt => reject(evt);
-//     // request.onsuccess = evt => resolve((evt.target as any).result);
-//   });
-
-//   baseOps.insert = (data: IData): Promise<any> => new Promise(async (resolve, reject) => {
-//     resolve(null);
-//     // const transaction = db.transaction(['data'], 'readwrite');
-//     // transaction.onerror = evt => reject(evt);
-//     // const request = transaction.objectStore('data').add(data);
-//     // request.onsuccess = evt => resolve((evt.target as any).result);
-//   });
-
-//   baseOps.update = (data: IData): Promise<any> => new Promise(async (resolve, reject) => {
-//     const transaction = db.transaction(['data'], 'readwrite');
-//     transaction.onerror = evt => reject(evt);
-//     const request = transaction.objectStore('data').put(data);
-//     request.onerror = evt => reject(evt);
-//     request.onsuccess = evt => resolve((evt.target as any).result);
-//   });
-
-//   baseOps.delete = (group, id): Promise<any> => new Promise(async (resolve, reject) => {
-//     const transaction = db.transaction(['data'], 'readwrite');
-//     transaction.onerror = evt => reject(evt);
-//     const request = transaction.objectStore('data').delete([group, id]);
-//     request.onerror = evt => reject(evt);
-//     request.onsuccess = evt => resolve((evt.target as any).result);
-//   });
-
-//   baseOps.find = (group: string, query: string | IDBKeyRange, index?: string): Promise<IData[]> => 
-//     new Promise(async (resolve, reject) => {
-//       // WIP
-//       const transaction = db.transaction(['data'], 'readwrite');
-//       transaction.onerror = evt => reject(evt);
-//       const dataStore = transaction.objectStore('data');
-//       let request: IDBRequest;
-//       if (index) {
-//         request = dataStore.index(index).getAll(query);
-//       } else {
-//         request = dataStore.getAll(query);
-//       }
-//       request.onerror = evt => reject(evt);
-//       request.onsuccess = evt => resolve((evt.target as any).result);
-//     });
-// }
-
-// export async function validateAndSaveComment(data: IComment) {
-//   if (data.type !== 'comment') {
-//     throw new Error('validateAndSaveComment should only be called with data of type "comment"');
-//   }
-//   const group = await baseOps.get('groups', data.group) as IGroup;
-//   const member = group.members.find(m => m.userId == data.owner);
-
-//   const exists = Boolean(await baseOps.get('groups', data.id));
-//   if (!member && group.allowPublicViewers && group.allowViewerComments) {
-
-//   }
-
-//   if (!member && !(group.allowPublicViewers && group.allowViewerComments)) {
-//     throw new Error('User is not a group member and public comments are not allowed');
-//   }
-
-//   if (
-//     !(member.isAdmin || member.isEditor) && 
-//     !(data.type === 'comment' && group.allowViewerComments && (group.allowPublicViewers || member.isViewer))
-//   ) {
-//     throw new Error(`Member does not have write permissions to the group`);
-//   }
-//   verifySignedObject(data, member.publicKey);
-
-//   if (exists) {
-//     return baseOps.update(data);
-//   } else {
-//     return baseOps.insert(data);
-//   }
-// }
-
-
-// export async function validateAndSave(data: IData) {
-//   // if (data.type === 'comment') {
-//   //   return validateAndSaveComment(data as IComment);
-//   // }
-//   const group = await baseOps.get(GROUPS_GROUP_ID, data.group) as IGroup;
-//   const member = group.members.find(m => m.userId == data.owner);
-//   if (!member) {
-//     throw new Error(`Owner of data is not a member of the group`);
-//   }
-//   if (!(member.isAdmin || member.isEditor)) {
-//     throw new Error(`Member does not have write permissions to the group`);
-//   }
-//   verifySignedObject(data, member.publicKey);
-//   const exists = Boolean(await baseOps.get(data.group, data.id));
-//   if (exists) {
-//     return baseOps.update(data);
-//   } else {
-//     return baseOps.insert(data);
-//   }
-// }
-
-// export async function validateAndGet(getEvent: IDataEvent) {
-//   const { group, userId, dataId } = getEvent;
-//   const group = await baseOps.get(GROUPS_GROUP_ID, group) as IGroup;
-//   const member = group.members.find(m => m.userId == userId);
-//   if (!member && group.allowPublicViewers) {
-//     throw new Error(`User is not a member of the group`);
-//   }
-//   verifySignedObject(getEvent, member.publicKey);
-//   return baseOps.get(group, dataId);
-// }
-
-// export async function validateAndDelete(deleteEvent: IDataEvent) {
-//   const { group, userId, dataId } = deleteEvent;
-//   const group = await baseOps.get(GROUPS_GROUP_ID, group) as IGroup;
-//   const member = group.members.find(m => m.userId == userId);
-//   if (!member) {
-//     throw new Error(`User is not a member of the group`);
-//   }
-//   verifySignedObject(deleteEvent, member.publicKey);
-//   const dbData = await baseOps.get(group, dataId);
-//   if (!(member.isAdmin || dbData.owner === userId)) {
-//     throw new Error(`User must be an admin or owner of the data to delete it`);
-//   }
-//   return baseOps.delete(group, dataId);
-// }
-
 
 // @ts-ignore
 if (typeof window !== 'undefined') window.peerdb = module.exports;
