@@ -1,4 +1,4 @@
-import { groupBy, isArray, isObject, set, sortBy } from 'lodash';
+import { compact, groupBy, isArray, isObject, set, sortBy, uniq } from 'lodash';
 import { hashObject } from './common';
 import { ISigned, IUser, verifySignedObject } from './user';
 
@@ -352,9 +352,12 @@ export function getBlockId(modified: number) {
 export async function getGroupUsers(groupId: string): Promise<IUser[]> {
   const db = await getIndexedDB();
   const group = await db.get(groupId) as IGroup;
-  const userIds: string[] = group.members.map(m => m.userId);
+  if (!group) return [];
+  let userIds: string[] = group.members.map(m => m.userId);
   userIds.push(group.owner);
+  userIds = uniq(compact(userIds))
   let users = await Promise.all(userIds.map(userId => db.get(userId))) as IUser[];
+  users = compact(users);
   users = sortBy(users, 'modified');
   return users;
 }
