@@ -167,12 +167,8 @@ export async function syncDBs(connection: IConnection) {
   const db = await getIndexedDB();
   const _syncGroup = (group: IGroup) => syncGroup(connection, group, db);
   
-  // // TODO this seems too aggressive, before long every user will know of every other user...  Maybe that's not a bad thing?  Helps prevent hijacking userIds.
-  // //    A simple user object is about 600 bytes (lets say 1k to be conservative).  If we end up with 1 billion users, that would be ~1TB just in user data... way too much.
-  // //    A better approach is to just add users that are group members in this user's group
-  // await _syncGroup(usersGroup); 
-  // // await syncUsers(connection, db);
-
+  // this should no longer be needed because each group has a special 'users' block
+  // await _syncGroup(usersGroup);   
 
   let remoteGroups = await RPC(connection, getRemoteGroups)();
   remoteGroups = _.shuffle(remoteGroups);  // randomize order to try to spread traffic around
@@ -227,7 +223,6 @@ export const remotelyCallableFunctions: { [key: string]: Function } = {
   getRemoteBlockData,
   pushData,
   signId,
-  getLevel1UserIds,
 }
 
 export function RPC<T extends Function>(connection: IConnection, fn: T): T {
