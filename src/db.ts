@@ -353,7 +353,7 @@ export async function getGroupUsers(groupId: string): Promise<IUser[]> {
   const db = await getIndexedDB();
   const group = await db.get(groupId) as IGroup;
   if (!group) return [];
-  let userIds: string[] = group.members.map(m => m.userId);
+  let userIds: string[] = (group.members || []).map(m => m.userId);
   userIds.push(group.owner);
   userIds = uniq(compact(userIds))
   let users = await Promise.all(userIds.map(userId => db.get(userId))) as IUser[];
