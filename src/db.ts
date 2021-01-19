@@ -1,4 +1,4 @@
-import { groupBy, isArray, isObject, set } from 'lodash';
+import { groupBy, isArray, isObject, set, sortBy } from 'lodash';
 import { hashObject } from './common';
 import { ISigned, IUser, verifySignedObject } from './user';
 
@@ -37,11 +37,12 @@ export interface IFile {
   blob: Blob
 }
 
-export interface IUserTrust extends ISigned {
-  type: 'UserTrust'
-  id: string  // user id
-  trustLevel: 1 | 2 | number // higher the number the less they are trusted
-}
+// export interface IUserTrust extends ISigned {
+//   type: 'UserTrust'
+//   userId: string  
+//   trustLevel: 1 | 2 | number // the higher the number the less they are trusted
+//   modified: number
+// }
 
 export const usersGroup: IGroup = { type: 'Group', id: 'users', group: 'users', owner: 'users', name: 'Users', modified: Date.now(), members: [], blockedUserIds: [] };
 
@@ -69,12 +70,12 @@ export interface IDB {
     get: (id: string) => Promise<IFile>
     delete: (id: string) => Promise<void>
   },
-  userTrust: {
-    save: (userTrust: IUserTrust) => Promise<void>
-    find: (trustLevel: number) => Promise<IUserTrust[]>
-    get: (id: string) => Promise<IUserTrust>
-    delete: (id: string) => Promise<void>
-  }
+  // userTrust: {
+  //   save: (userTrust: IUserTrust) => Promise<void>
+  //   find: (trustLevel: number) => Promise<IUserTrust[]>
+  //   get: (userId: string) => Promise<IUserTrust>
+  //   delete: (userId: string) => Promise<void>
+  // }
 }
 
 interface PeerstackDBOpts {
@@ -84,7 +85,7 @@ interface PeerstackDBOpts {
 }
 
 export async function getIndexedDB(
-  { dbName = 'peerstack', dbVersion = 3, onUpgrade }: PeerstackDBOpts = {}
+  { dbName = 'peerstack', dbVersion = 2, onUpgrade }: PeerstackDBOpts = {}
 ): Promise<IDB> {
   if (typeof window === 'undefined' || !window.indexedDB) {
     throw new Error('indexedDB is not currently available')
@@ -112,10 +113,10 @@ export async function getIndexedDB(
       if (dbVersion >= 2) {
         const fileStore = db.createObjectStore("files", { keyPath: 'id' });
       }
-      if (dbVersion >= 3) {
-        const trustStore = db.createObjectStore("userTrust", { keyPath: 'id' });
-        trustStore.createIndex('trustLevel', 'trustLevel', { unique: false })
-      }
+      // if (dbVersion >= 3) {
+      //   const trustStore = db.createObjectStore("userTrust", { keyPath: 'userId' });
+      //   trustStore.createIndex('trustLevel', 'trustLevel', { unique: false })
+      // }
       if (onUpgrade) await onUpgrade(evt);
     }
   });
@@ -194,16 +195,16 @@ export async function getIndexedDB(
       request.onsuccess = evt => resolve((evt.target as any).result);
     });
 
-  const findUserTrust = (trustLevel): Promise<IUserTrust[]> =>
-    new Promise(async (resolve, reject) => {
-      const transaction = db.transaction(['userTrust'], 'readonly');
-      transaction.onerror = evt => reject(evt);
-      const dataStore = transaction.objectStore('userTrust');
-      let request: IDBRequest;
-      request = dataStore.index('trustLevel').getAll(trustLevel)
-      request.onerror = evt => reject(evt);
-      request.onsuccess = evt => resolve((evt.target as any).result);
-    });
+  // const findUserTrust = (trustLevel): Promise<IUserTrust[]> =>
+  //   new Promise(async (resolve, reject) => {
+  //     const transaction = db.transaction(['userTrust'], 'readonly');
+  //     transaction.onerror = evt => reject(evt);
+  //     const dataStore = transaction.objectStore('userTrust');
+  //     let request: IDBRequest;
+  //     request = dataStore.index('trustLevel').getAll(trustLevel)
+  //     request.onerror = evt => reject(evt);
+  //     request.onsuccess = evt => resolve((evt.target as any).result);
+  //   });
 
   const saveFile = (file: IFile) => dbOp('files', 'put', file);
   const getFile = (id: string) => dbOp('files', 'get', id);
@@ -223,12 +224,12 @@ export async function getIndexedDB(
       get: getFile,
       delete: deleteFile
     },
-    userTrust: {
-      save: userTrust => dbOp('userTrust', 'put', userTrust),
-      find: findUserTrust,
-      get: id => dbOp('userTrust', 'get', id),
-      delete: id => dbOp('userTrust', 'delete', id)
-    }
+    // userTrust: {
+    //   save: userTrust => dbOp('userTrust', 'put', userTrust),
+    //   find: findUserTrust,
+    //   get: userId => dbOp('userTrust', 'get', userId),
+    //   delete: userId => dbOp('userTrust', 'delete', userId)
+    // }
   }
 
   return baseOps;
@@ -348,7 +349,20 @@ export function getBlockId(modified: number) {
   return 'B' + Math.floor(modified / BLOCK_SIZE)
 }
 
+export async function getGroupUsers(groupId: string): Promise<IUser[]> {
+  const db = await getIndexedDB();
+  const group = await db.get(groupId) as IGroup;
+  const userIds: string[] = group.members.map(m => m.userId);
+  userIds.push(group.owner);
+  let users = await Promise.all(userIds.map(userId => db.get(userId))) as IUser[];
+  users = sortBy(users, 'modified');
+  return users;
+}
+
 export async function getBlockData(group: string, level0BlockId: string) {
+  if (level0BlockId === 'users') {
+    return getGroupUsers(group);
+  }
   const db = await getIndexedDB();
   const blockNum = Number(level0BlockId.substr(1));
   const lowerTime = blockNum * BLOCK_SIZE;
@@ -387,12 +401,15 @@ export async function getBlockHashes(groupId: string, level: BlockHashLevel = 'L
   const minTime = oldestDataResult?.value?.modified || Date.now();
   const blockHashes = {};
 
+  // include any users in this group as 'users' block
+  blockHashes['users'] = hashObject(await getGroupUsers(groupId))
+
   // populate L0 hashes
   let interval = BLOCK_SIZE * 1000;
   let lowerTime = maxTime - (maxTime % interval);
   let upperTime = lowerTime + interval;
   while (minTime < upperTime) {
-    const data = await db.find(IDBKeyRange.bound([groupId, lowerTime], [groupId, upperTime]), 'group-modified');
+    const data = await db.find(IDBKeyRange.bound([groupId, lowerTime], [groupId, upperTime]), 'group-modified');    
     lowerTime -= interval;
     upperTime -= interval;
     if (!data.length) continue;

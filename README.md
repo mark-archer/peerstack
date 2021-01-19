@@ -61,13 +61,13 @@ If a native app is made, many more options for finding peers, establishing conne
 
 ## Groups
 
-Groups are used to define who has access to what data.  A natural side effect of this is it defines how to [shard](https://en.wikipedia.org/wiki/Shard_(database_architecture)) the data across devices. All data must have a group.
+[Groups](./src/db.ts) are used to define who has access to what data.  A natural side effect of this is it defines how to [shard](https://en.wikipedia.org/wiki/Shard_(database_architecture)) the data across devices. All data must have a group.
 
 For every user, an implicit group exists (using the user's own id) and that is defined to be the user's personal group.  Any data in that group should not be sent to another device unless it has the same user logged in.  
 
 Users can create groups and can give other users access to those groups.  This is the default mechanism for determining which devices will connect to each other.  If you are not in any groups with other people, your device will only connect to your other devices.  If you're in a group with your family members, your device will connect any of your family members devices as well as your own, etc, etc.  
 
-This creates a network topology that matches the real world social topology which seems ideal.
+This creates a [network topology](https://en.wikipedia.org/wiki/Network_topology) that matches the real world social topology which seems ideal.
 
 ## Peer Host
 

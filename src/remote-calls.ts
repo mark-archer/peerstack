@@ -123,7 +123,7 @@ export const eventHandlers = {
 }
 
 export async function syncGroup(connection: IConnection, remoteGroup: IGroup, db: IDB) {
-  if (remoteGroup.id !== connection.me.id && remoteGroup.id !== 'users') {
+  if (remoteGroup.id !== connection.me.id && remoteGroup.id !== usersGroup.id) {
     const localGroup = await db.get(remoteGroup.id);
     if (!localGroup || remoteGroup.modified > localGroup.modified) {
       await db.save(remoteGroup);
@@ -144,7 +144,7 @@ export async function syncGroup(connection: IConnection, remoteGroup: IGroup, db
   const localHashes = await getBlockHashes(remoteGroup.id, blockHashLevel);
   // const blockIds = _.uniq([...Object.keys(localHashes), ...Object.keys(remoteHashes)]);
   const blockIds = Object.keys(remoteHashes);
-  blockIds.sort().reverse(); // reverse because we want to do newest first
+  blockIds.sort().reverse(); // reverse because we want to do newest first (also 'users' block will be done first)
   console.log({ blockIds, localHashes, remoteHashes })
   for (const blockId of blockIds) {
     if (localHashes[blockId] != remoteHashes[blockId]) {
@@ -166,8 +166,14 @@ export async function syncDBs(connection: IConnection) {
   const startTime = Date.now();
   const db = await getIndexedDB();
   const _syncGroup = (group: IGroup) => syncGroup(connection, group, db);
+  
+  // // TODO this seems too aggressive, before long every user will know of every other user...  Maybe that's not a bad thing?  Helps prevent hijacking userIds.
+  // //    A simple user object is about 600 bytes (lets say 1k to be conservative).  If we end up with 1 billion users, that would be ~1TB just in user data... way too much.
+  // //    A better approach is to just add users that are group members in this user's group
+  // await _syncGroup(usersGroup); 
+  // // await syncUsers(connection, db);
 
-  await _syncGroup(usersGroup);
+
   let remoteGroups = await RPC(connection, getRemoteGroups)();
   remoteGroups = _.shuffle(remoteGroups);  // randomize order to try to spread traffic around
   if (connection.me.id === connection.remoteUser.id) {
@@ -221,6 +227,7 @@ export const remotelyCallableFunctions: { [key: string]: Function } = {
   getRemoteBlockData,
   pushData,
   signId,
+  getLevel1UserIds,
 }
 
 export function RPC<T extends Function>(connection: IConnection, fn: T): T {
