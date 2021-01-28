@@ -47,8 +47,8 @@ async function getFile(fileId: string) {
   // validate peer has permissions to file
   if (!file.isPublic) {
     const remoteUserId = connection.remoteUser.id;
-    if (!file.shareUsers.includes(remoteUserId)) {
-      const hasReadPermissions = file.shareGroups.some(groupId => hasPermission(remoteUserId, groupId, 'read', db));
+    if (!(file.shareUsers || []).includes(remoteUserId)) {
+      const hasReadPermissions = (file.shareGroups || []).some(groupId => hasPermission(remoteUserId, groupId, 'read', db));
       if (!hasReadPermissions) {
         throw new Error(`Unauthorized access to file ${fileId}`);
       }

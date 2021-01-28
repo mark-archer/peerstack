@@ -209,7 +209,21 @@ export async function getIndexedDB(
   //     request.onsuccess = evt => resolve((evt.target as any).result);
   //   });
 
-  const saveFile = (file: IFile) => dbOp('files', 'put', file);
+  const saveFile = (file: IFile) => {
+    if (file.type !== 'File') {
+      throw new Error(`type must be 'File'`)
+    }
+    if (!isArray(file.shareGroups) || !isArray(file.shareUsers)) {
+      throw new Error(`shareGroups and shareUsers must be arrays`);
+    }
+    const requiredFields = ['id', 'name', 'fileType', 'size', 'blob'];
+    requiredFields.forEach(key => {
+      if (!file[key]) {
+        throw new Error(`'${key}' is required but not present`)
+      }
+    });
+    return dbOp('files', 'put', file);
+  }
   const getFile = (id: string) => dbOp('files', 'get', id);
   const deleteFile = (id: string) => dbOp('files', 'delete', id);
 
