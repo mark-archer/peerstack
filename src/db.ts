@@ -35,6 +35,9 @@ export interface IFile {
   fileType: string
   size: number
   blob: Blob
+  isPublic: boolean
+  shareUsers: string[]
+  shareGroups: string[]
 }
 
 // export interface IUserTrust extends ISigned {

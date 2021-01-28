@@ -1,6 +1,6 @@
 import { hashBlob } from "./common";
 import { chunkSize, connections, IDeviceConnection } from "./connections";
-import { getIndexedDB, IFile } from "./db";
+import { getIndexedDB, hasPermission, IData, IFile } from "./db";
 import { getCurrentConnection, remotelyCallableFunctions, RPC } from "./remote-calls";
 
 remotelyCallableFunctions.getFile = getFile;
@@ -40,10 +40,20 @@ export async function getFileFromPeers(fileId: string, updateProgress?: (percent
 
 async function getFile(fileId: string) {
   const connection = getCurrentConnection() as IDeviceConnection;
-  // todo: validate peer should be allowed to read file
   const db = await getIndexedDB()
   const file = await db.files.get(fileId)
   if (!file) return;
+
+  // validate peer has permissions to file
+  if (!file.isPublic) {
+    const remoteUserId = connection.remoteUser.id;
+    if (!file.shareUsers.includes(remoteUserId)) {
+      const hasReadPermissions = file.shareGroups.some(groupId => hasPermission(remoteUserId, groupId, 'read', db));
+      if (!hasReadPermissions) {
+        throw new Error(`Unauthorized access to file ${fileId}`);
+      }
+    }
+  }
 
   connection.pc.ondatachannel = e => {
     console.log('send dc open', e);
