@@ -64,8 +64,8 @@ export type indexes = 'group' | 'type' | 'owner' | 'modified'
 export interface IDB {
   db: IDBDatabase
   save: (data: IData | IData[], skipValidation?: boolean) => Promise<void>
-  find: (query?: string | number | IDBKeyRange | ArrayBuffer | Date | ArrayBufferView | IDBArrayKey, index?: indexes) => Promise<IData[]>
-  get: (id: string) => Promise<IData>
+  find: <T = IData>(query?: string | number | IDBKeyRange | ArrayBuffer | Date | ArrayBufferView | IDBArrayKey, index?: indexes) => Promise<T[]>
+  get: <T= IData>(id: string) => Promise<T>
   delete: (id: string) => Promise<void>
   openCursor: (query?: string | number | IDBKeyRange | ArrayBuffer | Date | ArrayBufferView | IDBArrayKey, index?: indexes, direction?: IDBCursorDirection) => Promise<IDBCursorWithValue>
   files: {
@@ -144,7 +144,7 @@ export async function getIndexedDB(
     };
   });
 
-  const find = (query?: string | number | IDBKeyRange | ArrayBuffer | Date | ArrayBufferView | IDBArrayKey, index?: indexes): Promise<IData[]> =>
+  const find = <T = IData>(query?: string | number | IDBKeyRange | ArrayBuffer | Date | ArrayBufferView | IDBArrayKey, index?: indexes): Promise<T[]> =>
     new Promise(async (resolve, reject) => {
       const transaction = db.transaction(['data'], 'readonly');
       transaction.onerror = evt => reject(evt);
