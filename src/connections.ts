@@ -184,17 +184,22 @@ async function sendIceCandidate(iceCandidate: ISDIExchange) {
   socket.emit('iceCandidate', iceCandidate)
 }
 
-export const eventHandlers = {
-  onDeviceDiscovered: async (deviceId: string) => {
+export const eventHandlers: {
+  onDeviceDiscovered: (deviceId: string) => any,
+  onDeviceConnected: (connection: IDeviceConnection) => any,
+  onDeviceDisconnected: (connection: IDeviceConnection) => any,
+  onSignalingReconnected: () => any,
+} = {
+  onDeviceDiscovered: (deviceId: string) => {
     // placeholder
   },
-  onDeviceConnected: async (connection: IDeviceConnection) => {
+  onDeviceConnected: (connection: IDeviceConnection) => {
     // placeholder
   },
-  onDeviceDisconnected: async (connection: IDeviceConnection) => {
+  onDeviceDisconnected: (connection: IDeviceConnection) => {
     // placeholder
   },
-  onSignalingReconnected: async () => {
+  onSignalingReconnected: () => {
     // placeholder
   },
 }
