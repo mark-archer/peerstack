@@ -57,17 +57,30 @@ export function getPersonalGroup(myId: string) {
   return _personalGroup;
 }
 
-export type indexes = 'group' | 'type' | 'owner' | 'modified'
-  | 'group-modified' | 'type-modified' | 'owner-modified'
-  | 'group-type-modified' | 'group-owner-modified';
+export type Indexes
+  = 'group'
+  | 'type'
+  | 'owner'
+  | 'modified'
+  | 'group-type'
+  | 'group-owner'
+  | 'group-modified'
+  | 'type-owner'
+  | 'type-modified'
+  | 'owner-modified'
+  | 'group-type-owner'
+  | 'group-type-modified'
+  | 'group-owner-modified'
+  | 'type-owner-modified'
+  | 'group-type-owner-modified'
 
 export interface IDB {
   db: IDBDatabase
   save: (data: IData | IData[], skipValidation?: boolean) => Promise<void>
-  find: <T = IData>(query?: string | number | IDBKeyRange | ArrayBuffer | Date | ArrayBufferView | IDBArrayKey, index?: indexes) => Promise<T[]>
-  get: <T= IData>(id: string) => Promise<T>
+  find: <T = IData>(query?: string | number | IDBKeyRange | ArrayBuffer | Date | ArrayBufferView | IDBArrayKey, index?: Indexes) => Promise<T[]>
+  get: <T = IData>(id: string) => Promise<T>
   delete: (id: string) => Promise<void>
-  openCursor: (query?: string | number | IDBKeyRange | ArrayBuffer | Date | ArrayBufferView | IDBArrayKey, index?: indexes, direction?: IDBCursorDirection) => Promise<IDBCursorWithValue>
+  openCursor: (query?: string | number | IDBKeyRange | ArrayBuffer | Date | ArrayBufferView | IDBArrayKey, index?: Indexes, direction?: IDBCursorDirection) => Promise<IDBCursorWithValue>
   files: {
     save: (file: IFile) => Promise<void>
     get: (id: string) => Promise<IFile>
@@ -88,33 +101,54 @@ interface PeerstackDBOpts {
 }
 
 export async function getIndexedDB(
-  { dbName = 'peerstack', dbVersion = 2, onUpgrade }: PeerstackDBOpts = {}
+  { dbName = 'peerstack', dbVersion = 3, onUpgrade }: PeerstackDBOpts = {}
 ): Promise<IDB> {
   if (typeof window === 'undefined' || !window.indexedDB) {
     throw new Error('indexedDB is not currently available')
   }
+
+  function createIndex(objectStore: IDBObjectStore,index: Indexes) {
+    let keyPath: string[] | string = index.split('-');
+    if (keyPath.length == 1) {
+      keyPath = keyPath[0];
+    }
+    objectStore.createIndex(index, keyPath, { unique: false });
+  }
+
   const db: IDBDatabase = await new Promise(async (resolve, reject) => {
     const request = window.indexedDB.open(dbName, dbVersion);
     request.onerror = evt => reject(new Error('failed to open db: ' + String(evt)));
     request.onsuccess = evt => resolve((evt.target as any).result as IDBDatabase)
     request.onupgradeneeded = async evt => {
       var db = (evt.target as any).result as IDBDatabase;
+      const upgradeTransaction = (evt.target as any).transaction as IDBTransaction;
       if (dbVersion >= 1) {
         const dataStore = db.createObjectStore("data", { keyPath: 'id' });
-        dataStore.createIndex("group", 'group', { unique: false })
-        dataStore.createIndex("type", 'type', { unique: false })
-        dataStore.createIndex("owner", 'owner', { unique: false })
-        dataStore.createIndex("modified", 'modified', { unique: false })
-
-        dataStore.createIndex("group-modified", ['group', 'modified'], { unique: false })
-        dataStore.createIndex("type-modified", ['type', 'modified'], { unique: false })
-        dataStore.createIndex("owner-modified", ['owner', 'modified'], { unique: false })
-
-        dataStore.createIndex("group-type-modified", ['group', 'type', 'modified'], { unique: false })
-        dataStore.createIndex("group-owner-modified", ['group', 'owner', 'modified'], { unique: false })
+        createIndex(dataStore, 'group');
+        createIndex(dataStore, 'type');
+        createIndex(dataStore, 'owner');
+        createIndex(dataStore, 'modified');
+        
+        createIndex(dataStore, 'group-modified');
+        createIndex(dataStore, 'type-modified');
+        createIndex(dataStore, 'owner-modified');
+        
+        createIndex(dataStore, 'group-type-modified');
+        createIndex(dataStore, 'group-owner-modified');        
       }
       if (dbVersion >= 2) {
         const fileStore = db.createObjectStore("files", { keyPath: 'id' });
+      }
+      if (dbVersion >= 3) {
+        const dataStore = upgradeTransaction.objectStore('data');
+        createIndex(dataStore, 'group-type');
+        createIndex(dataStore, 'group-owner');
+        createIndex(dataStore, 'type-owner');
+        
+        createIndex(dataStore, 'group-type-owner');
+        createIndex(dataStore, 'type-owner-modified');
+
+        createIndex(dataStore, 'group-type-owner-modified');
       }
       // if (dbVersion >= 3) {
       //   const trustStore = db.createObjectStore("userTrust", { keyPath: 'userId' });
@@ -144,7 +178,7 @@ export async function getIndexedDB(
     };
   });
 
-  const find = <T = IData>(query?: string | number | IDBKeyRange | ArrayBuffer | Date | ArrayBufferView | IDBArrayKey, index?: indexes): Promise<T[]> =>
+  const find = <T = IData>(query?: string | number | IDBKeyRange | ArrayBuffer | Date | ArrayBufferView | IDBArrayKey, index?: Indexes): Promise<T[]> =>
     new Promise(async (resolve, reject) => {
       const transaction = db.transaction(['data'], 'readonly');
       transaction.onerror = evt => reject(evt);
@@ -183,7 +217,7 @@ export async function getIndexedDB(
 
   const get = (id: string) => dbOp('data', 'get', id);
 
-  const openCursor = (query?: string | number | IDBKeyRange | ArrayBuffer | Date | ArrayBufferView | IDBArrayKey, index?: indexes, direction?: IDBCursorDirection): Promise<IDBCursorWithValue> =>
+  const openCursor = (query?: string | number | IDBKeyRange | ArrayBuffer | Date | ArrayBufferView | IDBArrayKey, index?: Indexes, direction?: IDBCursorDirection): Promise<IDBCursorWithValue> =>
     new Promise(async (resolve, reject) => {
       const transaction = db.transaction(['data'], 'readonly');
       transaction.onerror = evt => reject(evt);
@@ -417,8 +451,8 @@ export async function getBlockHashes(groupId: string, level: BlockHashLevel = 'L
   const db = await getIndexedDB();
 
   const maxTime = Date.now();
-  const oldestDataResult = await db.openCursor(null, 'modified');
-  const minTime = oldestDataResult?.value?.modified || Date.now();
+  const cursorModified = await db.openCursor(null, 'modified');
+  const minTime = cursorModified?.value?.modified || Date.now();
   const blockHashes = {};
 
   // include any users in this group as 'users' block
@@ -429,7 +463,7 @@ export async function getBlockHashes(groupId: string, level: BlockHashLevel = 'L
   let lowerTime = maxTime - (maxTime % interval);
   let upperTime = lowerTime + interval;
   while (minTime < upperTime) {
-    const data = await db.find(IDBKeyRange.bound([groupId, lowerTime], [groupId, upperTime]), 'group-modified');    
+    const data = await db.find(IDBKeyRange.bound([groupId, lowerTime], [groupId, upperTime]), 'group-modified');
     lowerTime -= interval;
     upperTime -= interval;
     if (!data.length) continue;
