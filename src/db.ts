@@ -67,7 +67,7 @@ export type Indexes
   | 'type-owner-modified'
   | 'group-type-owner-modified'
 
-export interface ICursor<T> {
+export interface ICursor<T = IData> {
   idbRequest: IDBRequest,
   idbCursor: IDBCursorWithValue,
   value: T,
@@ -219,21 +219,27 @@ export async function getIndexedDB(
       }
       request.onerror = evt => reject(evt);
       let resolveNext: ((value: ICursor<T>) => void) = resolve;
+      const cursorWrapper: ICursor<T> = {
+        idbRequest: request,
+        idbCursor: null,
+        next: null,
+        value: null,
+      }
       request.onsuccess = evt => {
         const cursor: IDBCursorWithValue = (evt.target as any).result;
+        cursorWrapper.idbCursor = cursor;
         if (!cursor) {
+          cursorWrapper.next = null;
+          cursorWrapper.value = null;
           resolveNext(null)
         } else {
-          resolveNext({
-            value: cursor.value,
-            next: () => {
-              const nextCursor = new Promise<ICursor<T>>(resolve => resolveNext = resolve);
-              cursor.continue();
-              return nextCursor;
-            },
-            idbRequest: request,
-            idbCursor: cursor,            
-          })
+          cursorWrapper.value = cursor.value;
+          cursorWrapper.next = () => {
+            const nextCursor = new Promise<ICursor<T>>(resolve => resolveNext = resolve);
+            cursor.continue();
+            return nextCursor;
+          }
+          resolveNext(cursorWrapper);
         }
       }
     });
