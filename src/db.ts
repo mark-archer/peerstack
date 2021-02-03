@@ -40,13 +40,6 @@ export interface IFile {
   shareGroups: string[]
 }
 
-// export interface IUserTrust extends ISigned {
-//   type: 'UserTrust'
-//   userId: string  
-//   trustLevel: 1 | 2 | number // the higher the number the less they are trusted
-//   modified: number
-// }
-
 export const usersGroup: IGroup = { type: 'Group', id: 'users', group: 'users', owner: 'users', name: 'Users', modified: Date.now(), members: [], blockedUserIds: [] };
 
 let _personalGroup: IGroup;
@@ -74,27 +67,27 @@ export type Indexes
   | 'type-owner-modified'
   | 'group-type-owner-modified'
 
+export interface ICursor<T> {
+  idbRequest: IDBRequest,
+  idbCursor: IDBCursorWithValue,
+  value: T,
+  next: () => Promise<ICursor<T>>
+}
 export interface IDB {
   db: IDBDatabase
   save: (data: IData | IData[], skipValidation?: boolean) => Promise<void>
   find: <T = IData>(query?: string | number | IDBKeyRange | ArrayBuffer | Date | ArrayBufferView | IDBArrayKey, index?: Indexes) => Promise<T[]>
   get: <T = IData>(id: string) => Promise<T>
   delete: (id: string) => Promise<void>
-  openCursor: (query?: string | number | IDBKeyRange | ArrayBuffer | Date | ArrayBufferView | IDBArrayKey, index?: Indexes, direction?: IDBCursorDirection) => Promise<IDBCursorWithValue>
+  openCursor: <T = IData>(query?: string | number | IDBKeyRange | ArrayBuffer | Date | ArrayBufferView | IDBArrayKey, index?: Indexes, direction?: IDBCursorDirection) => Promise<ICursor<T>>
   files: {
     save: (file: IFile) => Promise<void>
     get: (id: string) => Promise<IFile>
     delete: (id: string) => Promise<void>
   },
-  // userTrust: {
-  //   save: (userTrust: IUserTrust) => Promise<void>
-  //   find: (trustLevel: number) => Promise<IUserTrust[]>
-  //   get: (userId: string) => Promise<IUserTrust>
-  //   delete: (userId: string) => Promise<void>
-  // }
 }
 
-interface PeerstackDBOpts {
+export interface PeerstackDBOpts {
   dbName?: string,
   dbVersion?: number,
   onUpgrade?: ((evt: IDBVersionChangeEvent) => Promise<void>)
@@ -150,10 +143,6 @@ export async function getIndexedDB(
 
         createIndex(dataStore, 'group-type-owner-modified');
       }
-      // if (dbVersion >= 3) {
-      //   const trustStore = db.createObjectStore("userTrust", { keyPath: 'userId' });
-      //   trustStore.createIndex('trustLevel', 'trustLevel', { unique: false })
-      // }
       if (onUpgrade) await onUpgrade(evt);
     }
   });
@@ -217,7 +206,7 @@ export async function getIndexedDB(
 
   const get = (id: string) => dbOp('data', 'get', id);
 
-  const openCursor = (query?: string | number | IDBKeyRange | ArrayBuffer | Date | ArrayBufferView | IDBArrayKey, index?: Indexes, direction?: IDBCursorDirection): Promise<IDBCursorWithValue> =>
+  const openCursor = <T>(query?: string | number | IDBKeyRange | ArrayBuffer | Date | ArrayBufferView | IDBArrayKey, index?: Indexes, direction?: IDBCursorDirection): Promise<ICursor<T>> =>
     new Promise(async (resolve, reject) => {
       const transaction = db.transaction(['data'], 'readonly');
       transaction.onerror = evt => reject(evt);
@@ -229,19 +218,25 @@ export async function getIndexedDB(
         request = dataStore.openCursor(query, direction);
       }
       request.onerror = evt => reject(evt);
-      request.onsuccess = evt => resolve((evt.target as any).result);
+      let resolveNext: ((value: ICursor<T>) => void) = resolve;
+      request.onsuccess = evt => {
+        const cursor: IDBCursorWithValue = (evt.target as any).result;
+        if (!cursor) {
+          resolveNext(null)
+        } else {
+          resolveNext({
+            value: cursor.value,
+            next: () => {
+              const nextCursor = new Promise<ICursor<T>>(resolve => resolveNext = resolve);
+              cursor.continue();
+              return nextCursor;
+            },
+            idbRequest: request,
+            idbCursor: cursor,            
+          })
+        }
+      }
     });
-
-  // const findUserTrust = (trustLevel): Promise<IUserTrust[]> =>
-  //   new Promise(async (resolve, reject) => {
-  //     const transaction = db.transaction(['userTrust'], 'readonly');
-  //     transaction.onerror = evt => reject(evt);
-  //     const dataStore = transaction.objectStore('userTrust');
-  //     let request: IDBRequest;
-  //     request = dataStore.index('trustLevel').getAll(trustLevel)
-  //     request.onerror = evt => reject(evt);
-  //     request.onsuccess = evt => resolve((evt.target as any).result);
-  //   });
 
   const saveFile = (file: IFile) => {
     if (file.type !== 'File') {
@@ -275,12 +270,6 @@ export async function getIndexedDB(
       get: getFile,
       delete: deleteFile
     },
-    // userTrust: {
-    //   save: userTrust => dbOp('userTrust', 'put', userTrust),
-    //   find: findUserTrust,
-    //   get: userId => dbOp('userTrust', 'get', userId),
-    //   delete: userId => dbOp('userTrust', 'delete', userId)
-    // }
   }
 
   return baseOps;
