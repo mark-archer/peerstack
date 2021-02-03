@@ -231,7 +231,7 @@ export async function getIndexedDB(
         if (!cursor) {
           cursorWrapper.next = null;
           cursorWrapper.value = null;
-          resolveNext(null)
+          resolveNext(cursorWrapper)
         } else {
           cursorWrapper.value = cursor.value;
           cursorWrapper.next = () => {
