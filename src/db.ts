@@ -464,7 +464,7 @@ export async function getBlockHashes(groupId: string, level: BlockHashLevel = 'L
     if (!data.length) continue;
     const grouped = groupBy(data, d => getBlockId(d.modified));
     Object.keys(grouped).forEach(key => {
-      set(blockHashes, key, hashObject(grouped[key]));
+      set(blockHashes, key, hashObject(grouped[key])); // TODO this might be able to be speed up by only hashing id+modified
     })
   }
   L1BlockHashes[groupId] = hashObject(blockHashes);

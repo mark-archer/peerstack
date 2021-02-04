@@ -62,7 +62,7 @@ If a native app is made, many more options for finding peers, establishing conne
 
 ## Groups
 
-[Groups](./src/db.ts) are used to define who has access to what data.  A natural side effect of this is it defines how to [shard](https://en.wikipedia.org/wiki/Shard_(database_architecture)) the data across devices. All data must have a group.
+All data must have a group. [Groups](./src/db.ts) are used to define who has access to what data.  A natural side effect of this is it defines how to [shard](https://en.wikipedia.org/wiki/Shard_(database_architecture)) the data across devices.
 
 For every user, an implicit group exists (using the user's own id) and that is defined to be the user's personal group.  Any data in that group should not be sent to another device unless it has the same user logged in.  
 
@@ -76,13 +76,13 @@ A supporting project is [peerhost](https://github.com/mark-archer/peerhost).  Th
 
 An important function of a host is it can provide the signaling channel for peers to establish secure data channels with each other.  The goal is that if the host has a public ip address it could even be the initial point of connection via web sockets and provide STUN and TURN services for the WebRTC connections.  This reduces peers' reliance on central servers even more and allows users to take additional ownership over the infrastructure.  
 
-Another eventual use case (that I'm particularly excited about) is that users could write custom applications and use one or more hosts to provide any necessary server type functionality.  The big advantage to this over just writing an application from scratch is the only coding that would need to be done would be the business logic and UI.  Security, authentication, targeting different platforms, establishing connections between devices, and almost every other pain point in developing and deploying a production application would already be solved by the peers network.  Application development would become as simple as declaring a javascript function. 
+Another eventual use case (that I'm particularly excited about) is that users could write custom applications and use one or more hosts to provide any necessary server type functionality.  The big advantage of this over just writing an application from scratch is the only coding that would need to be done would be the business logic and UI.  Security, authentication, targeting different platforms, establishing connections between devices, and almost every other pain point in developing and deploying a production application would already be solved by the peers network.  Application development and deployment would become as simple as declaring a javascript function. 
 
 ## Areas of Concern
 
 Keeping the user's secret key stored locally but securely is not a trivial problem but is of utmost importance.  It can be done by asking the user to encrypt it with a password but now that password is the weak link and the user also has to log in every time they reload the page.  I'm hoping there is some method the browser will give me but I haven't found it yet. 
 
-Users have ids and public keys as separate identifiers.  This is to try to plan for the situation where a user's secret key is lost or stolen. But when a user's keys change they'll have to re-sign all of their data and then via some secure and trusted channel send their new public key to all of their contacts (e.g. hand delivering it, emailing, texting, etc) and then resend all of their newly signed data to who ever needs it.  That seems like an incredibly expensive and involved operation but still doable and I think better than having no fallback if a secret key is lost or stolen.  But there is still the problem that changing a user's keys is vastly more costly than changing a password.
+Users have ids and public keys as separate identifiers.  This is to try to plan for the situation where a user's secret key is lost or stolen. But when a user's keys change they'll have to re-sign all of their data and then via some trusted channel send their new public key to all of their contacts (e.g. hand delivering it, emailing, texting, etc) and then resend all of their newly signed data to who ever needs it.  That seems like an incredibly expensive and involved operation but still doable and I think better than having no fallback if a secret key is lost or stolen.  But there is still the problem that changing a user's keys is vastly more costly than changing a password.
 
 Because the value in `signer` is a user's id (not their public key), it's much more complicated to verify a signature because we have to look up the public key associated with that user id.  If we don't have that information when the data is received then we can't verify the signature and have to either reject the data or assume it's valid and risk propagating bad data.
 
