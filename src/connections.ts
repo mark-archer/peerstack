@@ -213,15 +213,14 @@ export interface IRemoteChunk {
 
 export const chunkSize = 16384; // this is the safe maximum size but many devices can handle much larger sizes
 const strChunkSize = Math.floor(chunkSize / 7);
-async function dcSend(connection, data) {
+async function dcSend(connection: IDeviceConnection, data) {
   const id = data?.id || newid();
   const strData = JSON.stringify(toJSON(data));
   if (strData.length < strChunkSize) {
-    connection.dc.send(strData);
+    dcSendAndCloseOnError(connection, strData);
   } else {
     const totalChunks = Math.ceil(strData.length / strChunkSize);
     for (var i = 0; i < strData.length; i += strChunkSize) {
-      // console.log(`sending chunk ${i/strChunkSize} of ${totalChunks}`)
       const chunk = strData.substr(i, strChunkSize);
       const chunkPayload: IRemoteChunk = {
         type: 'chunk',
@@ -230,10 +229,23 @@ async function dcSend(connection, data) {
         totalChunks,
         chunk
       }
-      connection.dc.send(JSON.stringify(chunkPayload));
-      if ((chunkPayload.iChunk % 2) === 0)
+      dcSendAndCloseOnError(connection, JSON.stringify(chunkPayload));      
+      // TODO we should find a better way to apply back pressure (and only if needed)
+      if ((chunkPayload.iChunk % 2) === 0) {
         await new Promise(resolve => setTimeout(resolve, 1));
+      }
     }
+  }
+}
+
+function dcSendAndCloseOnError(connection: IDeviceConnection, strData: string) {
+  try {
+    connection.dc.send(strData);
+  } catch (err) {
+    connection.dc.close();
+    connection.pc.close();
+    connections.splice(connections.indexOf(connection), 1);
+    throw err;
   }
 }
 
