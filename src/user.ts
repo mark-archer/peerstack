@@ -69,11 +69,28 @@ export function hydrateUser(id: string, secretKey: string, displayName?: string)
   }
 }
 
-export function signMessage(msg: string) {
+export function signMessageWithSecretKey(msg: string, secretKey: string) {
   const _secretKey = decodeUint8ArrayFromBaseN(secretKey)
   const msgDecoded = naclUtil.decodeUTF8(msg);
   const msgSigned = nacl.sign(msgDecoded, _secretKey);
   return encodeUint8ArrayToBaseN(msgSigned);
+}
+
+export function signObjectWithIdAndSecretKey<T>(obj: T, userId: string, secretKey: string): T & ISigned {
+  const signedObj = obj as T & ISigned;
+  delete signedObj.signature;
+  signedObj.signer = userId;
+  const hash = hashObject(signedObj);
+  signedObj.signature = signMessageWithSecretKey(hash, secretKey);
+  return signedObj;
+}
+
+export function signMessage(msg: string) {
+  return signMessageWithSecretKey(msg, secretKey);
+}
+
+export function signObject<T>(obj: T): T & ISigned {
+  return signObjectWithIdAndSecretKey(obj, userId, secretKey);
 }
 
 export function openMessage(signedMsg: string, publicKey: (Uint8Array | string)) {
@@ -81,15 +98,6 @@ export function openMessage(signedMsg: string, publicKey: (Uint8Array | string))
   const _publicKey = (typeof publicKey === 'string') ? decodeUint8ArrayFromBaseN(publicKey) : publicKey;
   const msgOpened = nacl.sign.open(msgDecoded, _publicKey);
   return naclUtil.encodeUTF8(msgOpened);
-}
-
-export function signObject<T>(obj: T): T & ISigned {
-  const signedObj = obj as T & ISigned;
-  delete signedObj.signature;
-  signedObj.signer = userId;
-  const hash = hashObject(signedObj);
-  signedObj.signature = signMessage(hash);
-  return signedObj;
 }
 
 export function verifySignedObject(obj: ISigned, publicKey: string) {
