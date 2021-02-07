@@ -34,7 +34,7 @@ export function newUser(displayName?: string): IUser & { secretKey: string } {
 
 let userId: string;
 let secretKey: string;
-export async function init(config?: { id: string, secretKey: string, displayName?: string, iconUrl: string, dontWarn?: boolean, dontStore?: boolean }) {  
+export async function init(config?: { id: string, secretKey: string, displayName?: string, iconUrl?: string, dontWarn?: boolean, dontStore?: boolean }) {  
   if (config) {
     userId = config.id;
     secretKey = config.secretKey;
