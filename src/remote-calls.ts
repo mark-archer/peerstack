@@ -2,7 +2,7 @@ import * as _ from "lodash";
 import { fromJSON, isid, newid } from "./common";
 import { connections } from "./connections";
 import { BlockHashLevel, checkPermission, getBlockData, getBlockHashes, getIndexedDB, getPersonalGroup, hasPermission, IData, IDB, IGroup, usersGroup } from "./db";
-import { IMe, IUser, openMessage, signMessage, signObject, verifySignedObject } from "./user";
+import { IUser, openMessage, signMessage, signObject, verifySignedObject } from "./user";
 
 export type txfn = <T>(data: (string | IRemoteData)) => Promise<T | void> | void
 
@@ -12,7 +12,7 @@ export interface IConnection {
   lastAck: number //time
   handlers: { [key: string]: ((err: any, result: any) => void) }
   send: txfn
-  me?: IMe
+  me?: IUser
   remoteUser?: IUser
   remoteUserVerified?: boolean
   groups?: string[]
@@ -51,11 +51,10 @@ export async function testError(msg: string) {
 }
 
 async function signId(id: string) {
-  const connection: IConnection = currentConnection;
   if (!isid(id)) {
     throw new Error('Only single ids are signed to prevent abuse');
   }
-  return signMessage(id, connection.me.secretKey);
+  return signMessage(id);
 }
 
 export async function verifyRemoteUser(connection: IConnection) {
@@ -246,7 +245,7 @@ export async function makeRemoteCall(connection: IConnection, fnName: string, ar
       fnName,
       args
     }
-    remoteCall = signObject(remoteCall, connection.me.secretKey, connection.me.id);
+    remoteCall = signObject(remoteCall);
     connection.send(remoteCall);
   } catch (err) {
     rejectRemoteCall(err);

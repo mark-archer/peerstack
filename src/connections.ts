@@ -1,7 +1,7 @@
 import { newid, toJSON } from "./common";
 import { getIndexedDB, IGroup } from './db';
 import { IConnection, onRemoteMessage } from "./remote-calls";
-import { IMe, IUser, signObject } from "./user";
+import { IUser, signObject, init as initUser } from "./user";
 
 export interface ISDIExchange {
   connectionId: string
@@ -29,20 +29,22 @@ export interface IDeviceConnection extends IConnection {
 }
 
 let deviceId: string = null;
-let me: IMe = null;
-let user: IUser = null;
+let me: IUser = null;
 let socket;
 export const connections: IDeviceConnection[] = [];
 
 let initialized = false;
-export function init(_deviceId: string, _me: IMe, serverUrl?: string) {
+export async function init(_deviceId: string, _me: IUser, serverUrl?: string) {
   if (initialized) throw new Error('initialized should only be called once');
+  const userId = await initUser();
+  if (userId != _me.id) {
+    throw new Error('Connection must be initialized with the same user that is currently signed in');
+  }
   initialized = true;
   console.log('initializing peerIO')
   deviceId = _deviceId;
   me = _me;
-  user = Object.assign({}, me, { secretKey: undefined });
-  signObject(user, me.secretKey, me.id);
+  signObject(me);
 
   if (serverUrl) {
     socket = require('socket.io-client')(serverUrl, { secure: true, rejectUnauthorized: false });
@@ -56,7 +58,7 @@ export function init(_deviceId: string, _me: IMe, serverUrl?: string) {
     const allGroups = (await db.find('Group', 'type')) as IGroup[];
     const allGroupIds = allGroups.map(g => g.id);
     allGroupIds.push(_me.id);
-    await registerDevice({ deviceId, user, groups: allGroupIds });
+    await registerDevice({ deviceId, user: me, groups: allGroupIds });
     console.log('registered device', { deviceId, groups: allGroupIds })
   });
   // reconnect is called in addition to connect so redundant for now
