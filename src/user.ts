@@ -34,7 +34,10 @@ export function newUser(name?: string): IUser & { secretKey: string } {
 
 let userId: string;
 let secretKey: string;
-export async function init(config?: { id: string, secretKey: string, name?: string, iconUrl?: string, dontWarn?: boolean, dontStore?: boolean }) {  
+export async function init(config?: { id: string, secretKey: string, name?: string, iconUrl?: string, dontWarn?: boolean, dontStore?: boolean }): Promise<string> {
+  if (!config && userId && secretKey) {
+    return userId;
+  }
   if (config) {
     userId = config.id;
     secretKey = config.secretKey;
