@@ -86,10 +86,16 @@ export function signObjectWithIdAndSecretKey<T>(obj: T, userId: string, secretKe
 }
 
 export function signMessage(msg: string) {
+  if (!secretKey) {
+    throw new Error('secret key not set, have you called `init`?')
+  }
   return signMessageWithSecretKey(msg, secretKey);
 }
 
 export function signObject<T>(obj: T): T & ISigned {
+  if (!secretKey) {
+    throw new Error('secret key not set, have you called `init`?')
+  }
   return signObjectWithIdAndSecretKey(obj, userId, secretKey);
 }
 
