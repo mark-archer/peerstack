@@ -34,14 +34,20 @@ export function newUser(displayName?: string): IUser & { secretKey: string } {
 
 let userId: string;
 let secretKey: string;
-export async function init(user?: { id: string, secretKey: string, dontWarn?: boolean }) {
-  if (user) {
-    if (!user.dontWarn) {
+export async function init(config?: { id: string, secretKey: string, dontWarn?: boolean, dontStore?: boolean }) {
+  if (config) {
+    userId = config.id;
+    secretKey = config.secretKey;
+    if (config.dontStore) {
+      return userId;
+    }
+    if (!config.dontWarn) {
       alert("You're about to be asked if you'd like to store a username and password for this site.  It is highly recommend you click SAVE unless you're comfortable managing your user id and secret key yourself.")
     }
     // @ts-ignore
-    const creds = await navigator.credentials.create({ password: { id: user.id, password: user.secretKey } });
-    await navigator.credentials.store(creds);
+    const creds = await navigator.credentials.create({ password: { id: config.id, password: config.secretKey } });
+    await navigator.credentials.store(creds);    
+    return userId
   }
   // @ts-ignore
   const creds = await navigator.credentials.get({ password: true })
