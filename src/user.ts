@@ -12,12 +12,12 @@ export interface IUser extends ISigned, IData {
   type: 'User',
   group: 'users',
   id: string,
-  displayName: string,
+  name: string,
   publicKey: string,
   modified: number
 }
 
-export function newUser(displayName?: string): IUser & { secretKey: string } {
+export function newUser(name?: string): IUser & { secretKey: string } {
   const userId = newid();
   const newKey = nacl.sign.keyPair();
   return {
@@ -25,7 +25,7 @@ export function newUser(displayName?: string): IUser & { secretKey: string } {
     id: userId,
     owner: userId,
     group: 'users',
-    displayName: displayName || userId,
+    name: name || userId,
     secretKey: encodeUint8ArrayToBaseN(newKey.secretKey),
     publicKey: encodeUint8ArrayToBaseN(newKey.publicKey),
     modified: Date.now(),
@@ -45,7 +45,7 @@ export async function init(config?: { id: string, secretKey: string, displayName
       alert("You're about to be asked if you'd like to store a username and password for this site.  It is highly recommend you click SAVE unless you're comfortable managing your user id and secret key yourself.")
     }
     // @ts-ignore
-    const creds = await navigator.credentials.create({ password: { id: config.id, password: config.secretKey, displayName: config.displayName, iconUrl: config.iconUrl } });
+    const creds = await navigator.credentials.create({ password: { id: config.id, password: config.secretKey, name: config.displayName, iconUrl: config.iconUrl } });
     await navigator.credentials.store(creds);    
     return userId
   }
@@ -61,7 +61,7 @@ export function hydrateUser(id: string, secretKey: string, displayName?: string)
   return {
     id,
     publicKey: secretKey.substr(64),
-    displayName: displayName || id,
+    name: displayName || id,
     group: 'users',
     modified: 1, // don't want to overwrite data in the database with this most minimal user object
     owner: id,
