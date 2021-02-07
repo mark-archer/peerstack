@@ -45,7 +45,7 @@ export async function init(config?: { id: string, secretKey: string, name?: stri
       return userId;
     }
     if (!config.dontWarn) {
-      alert("You're about to be asked if you'd like to store a username and password for this site.  It is highly recommend you click SAVE unless you're comfortable managing your user id and secret key yourself.")
+      alert("You're about to be asked if you'd like to store a username and password for this site.  It is highly recommend you agree to this unless you're comfortable managing your user id and secret key yourself.")
     }
     // @ts-ignore
     const creds = await navigator.credentials.create({ password: { id: config.id, password: config.secretKey, name: config.name, iconUrl: config.iconUrl } });
