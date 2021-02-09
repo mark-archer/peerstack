@@ -47,14 +47,16 @@ export async function init(config?: { id: string, secretKey: string, name?: stri
     if (!config.dontWarn) {
       alert("You're about to be asked if you'd like to store a username and password for this site.  It is highly recommend you agree to this unless you're comfortable managing your user id and secret key yourself.")
     }
+    // switch name and id so name is shown 
     // @ts-ignore
-    const creds = await navigator.credentials.create({ password: { id: config.id, password: config.secretKey, name: config.name, iconUrl: config.iconUrl } });
+    const creds = await navigator.credentials.create({ password: { id: config.name, password: config.secretKey, name: config.id, iconUrl: config.iconUrl } });
     await navigator.credentials.store(creds);    
     return userId
   }
   // @ts-ignore
   const creds = await navigator.credentials.get({ password: true })
-  userId = creds.id;
+  // @ts-ignore
+  userId = creds.name;
   // @ts-ignore
   secretKey = creds.password;
   return userId;
