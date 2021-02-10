@@ -116,7 +116,7 @@ export async function getIndexedDB(
       const db = (evt.target as any).result as IDBDatabase;
       const oldVersion = evt.oldVersion      
       const upgradeTransaction = (evt.target as any).transaction as IDBTransaction;
-      if (oldVersion > 1) {
+      if (oldVersion < 1) {
         const dataStore = db.createObjectStore("data", { keyPath: 'id' });
         createIndex(dataStore, 'group');
         createIndex(dataStore, 'type');
@@ -130,10 +130,10 @@ export async function getIndexedDB(
         createIndex(dataStore, 'group-type-modified');
         createIndex(dataStore, 'group-owner-modified');        
       }
-      if (oldVersion > 2) {
+      if (oldVersion < 2) {
         const fileStore = db.createObjectStore("files", { keyPath: 'id' });
       }
-      if (oldVersion > 3) {
+      if (oldVersion < 3) {
         const dataStore = upgradeTransaction.objectStore('data');
         createIndex(dataStore, 'group-type');
         createIndex(dataStore, 'group-owner');
