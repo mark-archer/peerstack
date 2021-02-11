@@ -3,6 +3,7 @@
 import { sha256 } from 'js-sha256';
 import * as _ from 'lodash';
 import * as uuid from 'uuid';
+import * as base64 from "byte-base64";
 
 const stableStringify = require('fast-json-stable-stringify');
 
@@ -76,13 +77,24 @@ export function hashBlob(blob: Blob, progressUpdate?: ((a: number) => any), chun
   });
 };
 
-export function encodeUint8ArrayToBaseN(ary: Uint8Array, radix: number = 36) {
+export function encodeUint8ArrayToBaseN(ary: Uint8Array, radix: number = 64) {
+  if (radix === 64) {
+    return base64.bytesToBase64(ary);
+  }
   const nums = ary.toString().split(',').map(sn => Number(sn) + radix);
   const encoded = nums.map(n => n.toString(radix)).join('');
   return encoded;
 }
 
-export function decodeUint8ArrayFromBaseN(str: string, radix: number = 36): Uint8Array {
+export function decodeUint8ArrayFromBaseN(str: string, radix: number = 64): Uint8Array {
+  if (radix === 64) {
+    // TODO take the try-catch out after 1/1/2022
+    try {
+      return base64.base64ToBytes(str);
+    } catch {
+      return decodeUint8ArrayFromBaseN(str, 36);
+    }
+  }
   const nums: number[] = [];
   for (let i = 0; i < str.length; i += 2) {
     const sn = str.substr(i, 2);

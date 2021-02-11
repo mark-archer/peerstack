@@ -28,6 +28,7 @@
     "webpack-cli": "^4.3.1"
   },
   "dependencies": {
+    "byte-base64": "^1.1.0",
     "cryptr": "^6.0.2",
     "fast-json-stable-stringify": "^2.1.0",
     "fingerprintjs2": "1.8.1",
