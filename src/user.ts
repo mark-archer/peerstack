@@ -47,10 +47,10 @@ export async function init(config?: { id: string, secretKey: string, name?: stri
     if (!config.dontWarn) {
       alert("You're about to be asked if you'd like to store a username and password for this site.  It is highly recommend you agree to this unless you're comfortable managing your user id and secret key yourself.")
     }
-    // switch name and id so name is shown 
+    // switch name and id so name is shown
     // @ts-ignore
     const creds = await navigator.credentials.create({ password: { id: config.name, password: config.secretKey, name: config.id, iconUrl: config.iconUrl } });
-    await navigator.credentials.store(creds);    
+    await navigator.credentials.store(creds);
     return userId
   }
   // @ts-ignore
@@ -63,6 +63,7 @@ export async function init(config?: { id: string, secretKey: string, name?: stri
 }
 
 export function hydrateUser(id: string, secretKey: string, displayName?: string): IUser {
+  // TODO need to convert secretKey to UInt8Array, then split array, then convert back to string
   return {
     id,
     publicKey: secretKey.substr(64),
@@ -75,7 +76,12 @@ export function hydrateUser(id: string, secretKey: string, displayName?: string)
 }
 
 export function signMessageWithSecretKey(msg: string, secretKey: string) {
-  const _secretKey = decodeUint8ArrayFromBaseN(secretKey)
+  let _secretKey: Uint8Array;
+  if (secretKey.length == 128) {
+    _secretKey = decodeUint8ArrayFromBaseN(secretKey, 36)
+  } else {
+    _secretKey = decodeUint8ArrayFromBaseN(secretKey)
+  }
   const msgDecoded = naclUtil.decodeUTF8(msg);
   const msgSigned = nacl.sign(msgDecoded, _secretKey);
   return encodeUint8ArrayToBaseN(msgSigned);
@@ -104,10 +110,22 @@ export function signObject<T>(obj: T): T & ISigned {
   return signObjectWithIdAndSecretKey(obj, userId, secretKey);
 }
 
-export function openMessage(signedMsg: string, publicKey: (Uint8Array | string)) {
-  const msgDecoded = decodeUint8ArrayFromBaseN(signedMsg);
-  const _publicKey = (typeof publicKey === 'string') ? decodeUint8ArrayFromBaseN(publicKey) : publicKey;
-  const msgOpened = nacl.sign.open(msgDecoded, _publicKey);
+export function openMessage(signedMsg: string, publicKey: string) {
+  let _publicKey: Uint8Array;
+  if (publicKey.length == 64) {
+    _publicKey = decodeUint8ArrayFromBaseN(publicKey, 36)
+  } else {
+    _publicKey = decodeUint8ArrayFromBaseN(publicKey);
+  }
+  let msgDecoded: Uint8Array;
+  let msgOpened: Uint8Array;
+  try {
+    msgDecoded = decodeUint8ArrayFromBaseN(signedMsg);
+    msgOpened = nacl.sign.open(msgDecoded, _publicKey);
+  } catch {
+    msgDecoded = decodeUint8ArrayFromBaseN(signedMsg, 36);
+    msgOpened = nacl.sign.open(msgDecoded, _publicKey);
+  }
   return naclUtil.encodeUTF8(msgOpened);
 }
 
