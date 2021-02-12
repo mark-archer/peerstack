@@ -122,6 +122,7 @@ export function openMessage(signedMsg: string, publicKey: string) {
   try {
     msgDecoded = decodeUint8ArrayFromBaseN(signedMsg);
     msgOpened = nacl.sign.open(msgDecoded, _publicKey);
+    if (!msgOpened) throw 'failed';
   } catch {
     msgDecoded = decodeUint8ArrayFromBaseN(signedMsg, 36);
     msgOpened = nacl.sign.open(msgDecoded, _publicKey);
