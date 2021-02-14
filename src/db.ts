@@ -96,7 +96,7 @@ export interface PeerstackDBOpts {
 export async function getIndexedDB(
   { dbName = 'peerstack', dbVersion = 3, onUpgrade }: PeerstackDBOpts = {}
 ): Promise<IDB> {
-  if (typeof window === 'undefined' || !window.indexedDB) {
+  if (typeof indexedDB === 'undefined') {
     throw new Error('indexedDB is not currently available')
   }
 
@@ -109,7 +109,7 @@ export async function getIndexedDB(
   }
 
   const db: IDBDatabase = await new Promise(async (resolve, reject) => {
-    const request = window.indexedDB.open(dbName, dbVersion);
+    const request = indexedDB.open(dbName, dbVersion);
     request.onerror = evt => reject(new Error('failed to open db: ' + String(evt)));
     request.onsuccess = evt => resolve((evt.target as any).result as IDBDatabase)
     request.onupgradeneeded = async evt => {
