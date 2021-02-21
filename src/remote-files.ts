@@ -10,29 +10,30 @@ export async function getFileFromPeers(fileId: string, updateProgress?: (percent
     const file = await RPC(connection, getFile)(fileId);
     if (file) {
       return new Promise((resolve, reject) => {
-        const dcReceive = connection.pc.createDataChannel(`file-${file.id}`);
-        dcReceive.onopen = e => console.log('receive dc open', e);
-        let receiveBuffer = [];
-        let receivedSize = 0;
-        dcReceive.onmessage = e => {
-          receiveBuffer.push(e.data);
-          receivedSize += e.data.byteLength;
+        connection.openDataChannel(`file-${file.id}`).then(dcReceive => {
+          console.log('receive dc open', dcReceive)
+          let receiveBuffer = [];
+          let receivedSize = 0;
+          dcReceive.onmessage = e => {
+            receiveBuffer.push(e.data);
+            receivedSize += e.data.byteLength;
 
-          if (updateProgress) updateProgress(receivedSize / file.size);
+            if (updateProgress) updateProgress(receivedSize / file.size);
 
-          if (receivedSize === file.size) {
-            file.blob = new Blob(receiveBuffer);
-            hashBlob(file.blob, updateProgress)
-              .then(sha => {
-                if (sha != file.id) return reject(new Error('File failed verification after transfer'))
-                receiveBuffer = [];
-                resolve(file);
-              })
+            if (receivedSize === file.size) {
+              file.blob = new Blob(receiveBuffer);
+              hashBlob(file.blob, updateProgress)
+                .then(sha => {
+                  if (sha != file.id) return reject(new Error('File failed verification after transfer'))
+                  receiveBuffer = [];
+                  resolve(file);
+                })
+            }
           }
-        }
-        dcReceive.onbufferedamountlow = e => console.log('buffered amount low', e);
-        dcReceive.onclose = e => console.log('closed', e);
-        dcReceive.onerror = e => console.log('error', e);
+          dcReceive.onbufferedamountlow = e => console.log('buffered amount low', e);
+          dcReceive.onclose = e => console.log('closed', e);
+          dcReceive.onerror = e => console.log('error', e);
+        });
       });
     }
   }
@@ -55,9 +56,8 @@ async function getFile(fileId: string) {
     }
   }
 
-  connection.pc.ondatachannel = e => {
-    console.log('send dc open', e);
-    const dcSend = e.channel;
+  connection.waitForDataChannel(`file-${file.id}`).then(dcSend => {
+    console.log('send dc open', dcSend);
     dcSend.onclose = e => console.log('closed', e);
     dcSend.onerror = e => console.log('error', e);
     dcSend.onopen = e => console.log('open', e)
@@ -100,6 +100,6 @@ async function getFile(fileId: string) {
     //   }
     // }
     readSlice(0);
-  }
+  })
   return file;
 }

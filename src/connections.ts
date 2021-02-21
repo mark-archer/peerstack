@@ -26,6 +26,8 @@ export interface IDeviceConnection extends IConnection {
   onAnswer: ((sdi: ISDIExchange) => void)
   handlers: { [key: string]: ((err: any, result: any) => void) }
   remoteUser?: IUser
+  openDataChannel: (label: string) => Promise<RTCDataChannel>
+  waitForDataChannel: (label: string) => Promise<RTCDataChannel>
 }
 
 let deviceId: string = null;
@@ -302,6 +304,8 @@ export async function connectToDevice(toDeviceId): Promise<IConnection> {
     let onAnswer: ((sdi: ISDIExchange) => void);
     const answerPromise = new Promise<ISDIExchange>(resolve => onAnswer = resolve);
 
+    const pendingDCConns: { [label: string]: ((dc: RTCDataChannel) => any) } = {};
+
     let connection: IDeviceConnection = {
       id: connectionId,
       remoteDeviceId: toDeviceId,
@@ -311,7 +315,22 @@ export async function connectToDevice(toDeviceId): Promise<IConnection> {
       lastAck: Date.now(),
       onAnswer,
       handlers: {},
-      me
+      me,
+      openDataChannel: async label => {
+        const dc = await connection.pc.createDataChannel(label);
+        return new Promise<RTCDataChannel>((resolve) => dc.onopen = () => resolve(dc));
+      },
+      waitForDataChannel: label => new Promise<RTCDataChannel>((resolve) => pendingDCConns[label] = resolve),
+    }
+    // listen for data connections
+    pc.ondatachannel = e => {
+      let dc = e.channel;
+      if (pendingDCConns[dc.label]) {
+        pendingDCConns[dc.label](dc);
+        delete pendingDCConns[dc.label];
+      } else {
+        console.log(`unexpected data channel opened ${dc.label}`)
+      }      
     }
     connections.push(connection);
 
@@ -377,7 +396,9 @@ async function handelOffer(offer: ISDIExchange) {
     // build answer connection
     const pc2 = new RTCPeerConnection(rtcConfig);
 
-    // add connection to list
+    const pendingDCConns: { [label: string]: ((dc: RTCDataChannel) => any) } = {};
+
+    // add connection to list    
     const connection: IDeviceConnection = {
       id: offer.connectionId,
       remoteDeviceId: offer.fromDevice,
@@ -389,6 +410,11 @@ async function handelOffer(offer: ISDIExchange) {
       handlers: {},
       remoteUser: offer.user,
       me: me,
+      openDataChannel: async label => {
+        const dc = await connection.pc.createDataChannel(label);
+        return new Promise<RTCDataChannel>((resolve) => dc.onopen = () => resolve(dc));
+      },
+      waitForDataChannel: label => new Promise<RTCDataChannel>((resolve) => pendingDCConns[label] = resolve),
     }
     // connections = connections.filter(c => !['closed', 'closing'].includes(c.dc?.readyState) && c.remoteDeviceId != connection.remoteDeviceId);
     connections.push(connection);
@@ -430,19 +456,26 @@ async function handelOffer(offer: ISDIExchange) {
     // listen for data connections
     pc2.ondatachannel = e => {
       let dc: RTCDataChannel = e.channel;
-      connection.dc = dc;
-      connection.send = data => dcSend(connection, data);
-      dc.onmessage = e => onRemoteMessage(connection, e.data);
-      dc.onopen = e => {
-        console.log('dc2 connection open to', offer.fromDevice)
-        eventHandlers.onDeviceConnected(connection);
-      }
-      dc.onclose = e => {
-        console.log("dc2.onclose")
-        pc2.close();
-        connections.splice(connections.indexOf(connection), 1);
-        eventHandlers.onDeviceDisconnected(connection);
-      };
+      if (dc.label == `${connection.id}-data`) {
+        connection.dc = dc;
+        connection.send = data => dcSend(connection, data);
+        dc.onmessage = e => onRemoteMessage(connection, e.data);
+        dc.onopen = e => {
+          console.log('dc2 connection open to', offer.fromDevice)
+          eventHandlers.onDeviceConnected(connection);
+        }
+        dc.onclose = e => {
+          console.log("dc2.onclose")
+          pc2.close();
+          connections.splice(connections.indexOf(connection), 1);
+          eventHandlers.onDeviceDisconnected(connection);
+        };
+      } else if (pendingDCConns[dc.label]) {
+          pendingDCConns[dc.label](dc);
+          delete pendingDCConns[dc.label];
+      } else {
+        console.log(`unexpected data channel opened ${dc.label}`)
+      }      
     }
   }
   catch (err) {
