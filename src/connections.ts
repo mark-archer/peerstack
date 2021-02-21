@@ -26,7 +26,6 @@ export interface IDeviceConnection extends IConnection {
   onAnswer: ((sdi: ISDIExchange) => void)
   handlers: { [key: string]: ((err: any, result: any) => void) }
   remoteUser?: IUser
-  openDataChannel: (label: string) => Promise<RTCDataChannel>
   waitForDataChannel: (label: string) => Promise<RTCDataChannel>
 }
 
@@ -316,10 +315,6 @@ export async function connectToDevice(toDeviceId): Promise<IConnection> {
       onAnswer,
       handlers: {},
       me,
-      openDataChannel: async label => {
-        const dc = await connection.pc.createDataChannel(label);
-        return new Promise<RTCDataChannel>((resolve) => dc.onopen = () => resolve(dc));
-      },
       waitForDataChannel: label => new Promise<RTCDataChannel>((resolve) => pendingDCConns[label] = resolve),
     }
     // listen for data connections
@@ -410,10 +405,6 @@ async function handelOffer(offer: ISDIExchange) {
       handlers: {},
       remoteUser: offer.user,
       me: me,
-      openDataChannel: async label => {
-        const dc = await connection.pc.createDataChannel(label);
-        return new Promise<RTCDataChannel>((resolve) => dc.onopen = () => resolve(dc));
-      },
       waitForDataChannel: label => new Promise<RTCDataChannel>((resolve) => pendingDCConns[label] = resolve),
     }
     // connections = connections.filter(c => !['closed', 'closing'].includes(c.dc?.readyState) && c.remoteDeviceId != connection.remoteDeviceId);
