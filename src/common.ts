@@ -49,7 +49,7 @@ export function hashObject(obj: ({ [key: string]: any })) {
   return hash;
 }
 
-export function hashBlob(blob: Blob, progressUpdate?: ((a: number) => any), chunkSize: number = 4194304 /*4MB*/) {
+export function hashBlob(blob: Blob, progressUpdate?: ((a: number) => any), chunkSize: number = 4194304 /*4MB*/): Promise<string> {
   return new Promise((resolve, reject) => {
     let hash = sha256.create();
     const totalSize = blob.size;
