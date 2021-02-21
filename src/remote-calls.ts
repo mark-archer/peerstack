@@ -1,5 +1,5 @@
 import * as _ from "lodash";
-import { fromJSON, isid, newid } from "./common";
+import { fromJSON, isid, newid, sleep } from "./common";
 import { connections } from "./connections";
 import { BlockHashLevel, checkPermission, getBlockData, getBlockHashes, getIndexedDB, getPersonalGroup, hasPermission, IData, IDB, IGroup, usersGroup } from "./db";
 import { IUser, openMessage, signMessage, signObject, verifySignedObject } from "./user";
@@ -161,7 +161,9 @@ export async function syncGroup(connection: IConnection, remoteGroup: IGroup, db
   console.log(`finished syncing ${remoteGroup.title || remoteGroup.name} in ${Date.now() - startTime}ms`);
 }
 
+let syncingCount = 0;
 export async function syncDBs(connection: IConnection) {
+  await sleep(5000 * syncingCount++)
   const startTime = Date.now();
   const db = await getIndexedDB();
   const _syncGroup = (group: IGroup) => syncGroup(connection, group, db);
@@ -177,9 +179,10 @@ export async function syncDBs(connection: IConnection) {
   console.log({ remoteGroups })
   connection.groups = remoteGroups.map(g => g.id);
 
-  await Promise.all(remoteGroups.map(_syncGroup));
-  // for (const remoteGroup of remoteGroups) await _syncGroup(remoteGroup);
+  // await Promise.all(remoteGroups.map(_syncGroup));
+  for (const remoteGroup of remoteGroups) await _syncGroup(remoteGroup);
   console.log(`finished syncing DB with ${connection.remoteDeviceId} in ${Date.now() - startTime} ms`);
+  syncingCount--;
 }
 
 const pushDataAlreadySeen: {
