@@ -232,7 +232,7 @@ async function dcSend(connection: IDeviceConnection, data) {
         totalChunks,
         chunk
       }
-      dcSendAndCloseOnError(connection, JSON.stringify(chunkPayload));      
+      dcSendAndCloseOnError(connection, JSON.stringify(chunkPayload));
       // TODO we should find a better way to apply back pressure (and only if needed)
       if ((chunkPayload.iChunk % 2) === 0) {
         await new Promise(resolve => setTimeout(resolve, 1));
@@ -325,7 +325,7 @@ export async function connectToDevice(toDeviceId): Promise<IConnection> {
         delete pendingDCConns[dc.label];
       } else {
         console.log(`unexpected data channel opened ${dc.label}`)
-      }      
+      }
     }
     connections.push(connection);
 
@@ -462,11 +462,13 @@ async function handelOffer(offer: ISDIExchange) {
           eventHandlers.onDeviceDisconnected(connection);
         };
       } else if (pendingDCConns[dc.label]) {
+        dc.onopen = e => {
           pendingDCConns[dc.label](dc);
           delete pendingDCConns[dc.label];
+        };
       } else {
-        console.log(`unexpected data channel opened ${dc.label}`)
-      }      
+        console.log(`unexpected data channel ${dc.label}`)
+      }
     }
   }
   catch (err) {
