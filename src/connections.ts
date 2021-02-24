@@ -77,7 +77,7 @@ export async function init(_deviceId: string, _me: IUser, serverUrl?: string) {
 
   socket.on('iceCandidate', async (iceCandidate: ISDIExchange) => {
     console.log('received ice candidate', iceCandidate.iceCandidates);
-    const conn = connections.find(c => c.id == iceCandidate.connectionId)
+    const conn = pendingConnections[iceCandidate.fromDevice] || connections.find(c => c.id == iceCandidate.connectionId)
     if (!conn) {
       console.warn('no connection found for iceCandidate', iceCandidate);
       return;
