@@ -28,6 +28,7 @@ export async function getFileFromPeers(fileId: string, updateProgress?: (percent
                 if (sha != file.id) return reject(new Error('File failed verification after transfer'))
                 receiveBuffer = [];
                 resolve(file);
+                dcReceive.close();
               })
           }
         }
@@ -58,10 +59,9 @@ async function getFile(fileId: string) {
 
   connection.waitForDataChannel(`file-${file.id}`).then(dcSend => {
     console.log('send dc open', dcSend);
-    dcSend.onclose = e => console.log('closed', e);
-    dcSend.onerror = e => console.log('error', e);
-    dcSend.onopen = e => console.log('open', e)
-    dcSend.onmessage = e => console.log('message', e)
+    dcSend.onclose = e => console.log('file transfer data channel closed', e);
+    dcSend.onerror = e => console.error('error', e);
+    dcSend.onmessage = e => console.log('message was received from a send only data channel', e)
 
     const fileReader = new FileReader();
     let offset = 0;
