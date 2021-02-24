@@ -234,6 +234,7 @@ async function dcSend(connection: IDeviceConnection, data) {
       }
       dcSendAndCloseOnError(connection, JSON.stringify(chunkPayload));
       // TODO we should find a better way to apply back pressure (and only if needed)
+      // TODO see remote-files for a better way to do this: if (dcSend.bufferedAmount > chunkSize * 64)...
       if ((chunkPayload.iChunk % 2) === 0) {
         await new Promise(resolve => setTimeout(resolve, 1));
       }
@@ -321,8 +322,10 @@ export async function connectToDevice(toDeviceId): Promise<IConnection> {
     pc.ondatachannel = e => {
       let dc = e.channel;
       if (pendingDCConns[dc.label]) {
-        pendingDCConns[dc.label](dc);
-        delete pendingDCConns[dc.label];
+        dc.onopen = e => {
+          pendingDCConns[dc.label](dc);
+          delete pendingDCConns[dc.label];
+        };
       } else {
         console.log(`unexpected data channel opened ${dc.label}`)
       }
