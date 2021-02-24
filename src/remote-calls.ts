@@ -121,9 +121,9 @@ export const eventHandlers = {
   },
 }
 
-let syncingGroupsCount = 0;
+// let syncingGroupsCount = 0;
 export async function syncGroup(connection: IConnection, remoteGroup: IGroup, db: IDB) {
-  await sleep(500 * syncingGroupsCount++)
+  // await sleep(500 * syncingGroupsCount++)
   if (remoteGroup.id !== connection.me.id && remoteGroup.id !== usersGroup.id) {
     const localGroup = await db.get(remoteGroup.id);
     if (!localGroup || remoteGroup.modified > localGroup.modified) {
@@ -161,12 +161,12 @@ export async function syncGroup(connection: IConnection, remoteGroup: IGroup, db
     }
   }
   console.log(`finished syncing ${remoteGroup.title || remoteGroup.name} in ${Date.now() - startTime}ms`);
-  syncingGroupsCount--;
+  // syncingGroupsCount--;
 }
 
-let syncingCount = 0;
+// let syncingCount = 0;
 export async function syncDBs(connection: IConnection) {
-  await sleep(5000 * syncingCount++)
+  // await sleep(5000 * syncingCount++)
   const startTime = Date.now();
   const db = await getIndexedDB();
   const _syncGroup = (group: IGroup) => syncGroup(connection, group, db);
@@ -185,7 +185,7 @@ export async function syncDBs(connection: IConnection) {
   await Promise.all(remoteGroups.map(_syncGroup));
   // for (const remoteGroup of remoteGroups) await _syncGroup(remoteGroup);
   console.log(`finished syncing DB with ${connection.remoteDeviceId} in ${Date.now() - startTime} ms`);
-  syncingCount--;
+  // syncingCount--;
 }
 
 const pushDataAlreadySeen: {
