@@ -248,7 +248,7 @@ function dcSendAndCloseOnError(connection: IDeviceConnection, strData: string) {
   } catch (err) {
     connection.dc.close();
     connection.pc.close();
-    connections.splice(connections.indexOf(connection), 1);
+    garbageCollectConnections();
     throw err;
   }
 }
@@ -348,10 +348,7 @@ export async function connectToDevice(toDeviceId): Promise<IConnection> {
     dc.onclose = e => {
       console.log("dc.onclose")
       pc.close();
-      const iConn = connections.indexOf(connection);
-      if (iConn >= 0) {
-        connections.splice(iConn, 1);
-      }
+      garbageCollectConnections();
       eventHandlers.onDeviceDisconnected(connection);
     }
 
@@ -419,7 +416,6 @@ async function handelOffer(offer: ISDIExchange) {
       me: me,
       waitForDataChannel: label => new Promise<RTCDataChannel>((resolve) => pendingDCConns[label] = resolve),
     }
-    // connections = connections.filter(c => !['closed', 'closing'].includes(c.dc?.readyState) && c.remoteDeviceId != connection.remoteDeviceId);
     pendingConnections[offer.fromDevice] = connection;
     setTimeout(() => {
       delete pendingConnections[offer.fromDevice];
@@ -474,10 +470,7 @@ async function handelOffer(offer: ISDIExchange) {
         dc.onclose = e => {
           console.log("dc2.onclose")
           pc2.close();
-          const iConn = connections.indexOf(connection);
-          if (iConn >= 0) {
-            connections.splice(iConn, 1);
-          }
+          garbageCollectConnections();
           eventHandlers.onDeviceDisconnected(connection);
         };
       } else if (pendingDCConns[dc.label]) {
@@ -497,7 +490,7 @@ async function handelOffer(offer: ISDIExchange) {
 }
 
 async function handelAnswer(answer: ISDIExchange) {
-  const connection = connections.find(c => c.id == answer.connectionId)
+  const connection = pendingConnections[answer.fromDevice] || connections.find(c => c.id == answer.connectionId)
   if (connection) connection.onAnswer(answer);
   else console.log('could not find connection for answer', answer);
 }
