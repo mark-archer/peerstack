@@ -262,10 +262,11 @@ function garbageCollectConnections() {
   }
 }
 
+const pendingConnections = {};
 export async function connectToDevice(toDeviceId): Promise<IConnection> {
   try {
     garbageCollectConnections();
-    const existingConnection = connections.find(c => c.remoteDeviceId === toDeviceId);
+    const existingConnection = pendingConnections[toDeviceId] || connections.find(c => c.remoteDeviceId === toDeviceId);
     if (existingConnection) {
       console.log('already have a connection to this device so just returning that')
       return existingConnection;
@@ -330,19 +331,27 @@ export async function connectToDevice(toDeviceId): Promise<IConnection> {
         console.log(`unexpected data channel opened ${dc.label}`)
       }
     }
-    connections.push(connection);
 
+    pendingConnections[toDeviceId] = connection;
+    setTimeout(() => {
+      delete pendingConnections[toDeviceId];
+    }, 10000);
+    
     let resolveConnectionOpen;
     const connectionOpenPromise = new Promise(resolve => resolveConnectionOpen = resolve);
     dc.onmessage = e => onRemoteMessage(connection, e.data);
     dc.onopen = e => {
+      connections.push(connection);
       console.log('dc connection open to', toDeviceId)
       resolveConnectionOpen();
     }
     dc.onclose = e => {
       console.log("dc.onclose")
       pc.close();
-      connections.splice(connections.indexOf(connection), 1);
+      const iConn = connections.indexOf(connection);
+      if (iConn >= 0) {
+        connections.splice(iConn, 1);
+      }
       eventHandlers.onDeviceDisconnected(connection);
     }
 
@@ -411,7 +420,10 @@ async function handelOffer(offer: ISDIExchange) {
       waitForDataChannel: label => new Promise<RTCDataChannel>((resolve) => pendingDCConns[label] = resolve),
     }
     // connections = connections.filter(c => !['closed', 'closing'].includes(c.dc?.readyState) && c.remoteDeviceId != connection.remoteDeviceId);
-    connections.push(connection);
+    pendingConnections[offer.fromDevice] = connection;
+    setTimeout(() => {
+      delete pendingConnections[offer.fromDevice];
+    })    
 
     // gather ice candidates
     const iceCandidates: RTCIceCandidate[] = [];
@@ -456,12 +468,16 @@ async function handelOffer(offer: ISDIExchange) {
         dc.onmessage = e => onRemoteMessage(connection, e.data);
         dc.onopen = e => {
           console.log('dc2 connection open to', offer.fromDevice)
+          connections.push(connection);
           eventHandlers.onDeviceConnected(connection);
         }
         dc.onclose = e => {
           console.log("dc2.onclose")
           pc2.close();
-          connections.splice(connections.indexOf(connection), 1);
+          const iConn = connections.indexOf(connection);
+          if (iConn >= 0) {
+            connections.splice(iConn, 1);
+          }
           eventHandlers.onDeviceDisconnected(connection);
         };
       } else if (pendingDCConns[dc.label]) {
