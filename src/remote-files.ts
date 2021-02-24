@@ -7,6 +7,7 @@ import { getCurrentConnection, remotelyCallableFunctions, RPC } from "./remote-c
 remotelyCallableFunctions.getFile = getFile;
 
 export async function getFileFromPeers(fileId: string, updateProgress?: (percent: number) => any): Promise<IFile> {
+  // for (const connection of shuffle(connections.filter(c => c.remoteUserVerified))) {
   for (const connection of shuffle(connections)) {
     const file = await RPC(connection, getFile)(fileId);
     if (file) {

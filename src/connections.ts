@@ -77,7 +77,7 @@ export async function init(_deviceId: string, _me: IUser, serverUrl?: string) {
 
   socket.on('iceCandidate', async (iceCandidate: ISDIExchange) => {
     console.log('received ice candidate', iceCandidate.iceCandidates);
-    const conn = pendingConnections[iceCandidate.fromDevice] || connections.find(c => c.id == iceCandidate.connectionId)
+    const conn = connections.find(c => c.id == iceCandidate.connectionId)
     if (!conn) {
       console.warn('no connection found for iceCandidate', iceCandidate);
       return;
@@ -262,11 +262,10 @@ function garbageCollectConnections() {
   }
 }
 
-const pendingConnections = {};
 export async function connectToDevice(toDeviceId): Promise<IConnection> {
   try {
     garbageCollectConnections();
-    const existingConnection = pendingConnections[toDeviceId] || connections.find(c => c.remoteDeviceId === toDeviceId);
+    const existingConnection = connections.find(c => c.remoteDeviceId === toDeviceId);
     if (existingConnection) {
       console.log('already have a connection to this device so just returning that')
       return existingConnection;
@@ -331,17 +330,12 @@ export async function connectToDevice(toDeviceId): Promise<IConnection> {
         console.log(`unexpected data channel opened ${dc.label}`)
       }
     }
+    connections.push(connection);
 
-    pendingConnections[toDeviceId] = connection;
-    setTimeout(() => {
-      delete pendingConnections[toDeviceId];
-    }, 10000);
-    
     let resolveConnectionOpen;
     const connectionOpenPromise = new Promise(resolve => resolveConnectionOpen = resolve);
     dc.onmessage = e => onRemoteMessage(connection, e.data);
     dc.onopen = e => {
-      connections.push(connection);
       console.log('dc connection open to', toDeviceId)
       resolveConnectionOpen();
     }
@@ -416,10 +410,7 @@ async function handelOffer(offer: ISDIExchange) {
       me: me,
       waitForDataChannel: label => new Promise<RTCDataChannel>((resolve) => pendingDCConns[label] = resolve),
     }
-    pendingConnections[offer.fromDevice] = connection;
-    setTimeout(() => {
-      delete pendingConnections[offer.fromDevice];
-    })    
+    connections.push(connection);
 
     // gather ice candidates
     const iceCandidates: RTCIceCandidate[] = [];
@@ -464,7 +455,6 @@ async function handelOffer(offer: ISDIExchange) {
         dc.onmessage = e => onRemoteMessage(connection, e.data);
         dc.onopen = e => {
           console.log('dc2 connection open to', offer.fromDevice)
-          connections.push(connection);
           eventHandlers.onDeviceConnected(connection);
         }
         dc.onclose = e => {
@@ -490,7 +480,7 @@ async function handelOffer(offer: ISDIExchange) {
 }
 
 async function handelAnswer(answer: ISDIExchange) {
-  const connection = pendingConnections[answer.fromDevice] || connections.find(c => c.id == answer.connectionId)
+  const connection = connections.find(c => c.id == answer.connectionId)
   if (connection) connection.onAnswer(answer);
   else console.log('could not find connection for answer', answer);
 }
