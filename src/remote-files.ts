@@ -9,7 +9,7 @@ remotelyCallableFunctions.getFile = getFile;
 export async function getFileFromPeers(fileId: string, updateProgress?: (percent: number) => any): Promise<IFile> {
   // for (const connection of shuffle(connections)) {
   for (const connection of shuffle(connections.filter(c => c.remoteUserVerified))) {
-    const file = await RPC(connection, getFile)(fileId);
+    const file = await RPC(connection, getFile)(fileId).catch(err => console.error('Error getting file from peers', err));
     if (file) {
       return new Promise((resolve, reject) => {
         const dcReceive = connection.pc.createDataChannel(`file-${file.id}`);
