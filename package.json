@@ -1,6 +1,6 @@
 {
   "name": "peerstack",
-  "version": "3.0.28",
+  "version": "3.0.29",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
   "repository": "https://github.com/mark-archer/peerstack",
