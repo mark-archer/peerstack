@@ -69,6 +69,7 @@ export type Indexes
   | 'group-type-owner-modified'
   | 'subject'
   | 'group-subject'
+  | 'type-subject'
   | 'group-type-subject'
 
 export interface ICursor<T = IData> {
@@ -98,7 +99,7 @@ export interface PeerstackDBOpts {
 }
 
 export async function getIndexedDB(
-  { dbName = 'peerstack', dbVersion = 4, onUpgrade }: PeerstackDBOpts = {}
+  { dbName = 'peerstack', dbVersion = 5, onUpgrade }: PeerstackDBOpts = {}
 ): Promise<IDB> {
   if (typeof indexedDB === 'undefined') {
     throw new Error('indexedDB is not currently available')
@@ -153,6 +154,10 @@ export async function getIndexedDB(
         createIndex(dataStore, 'subject');
         createIndex(dataStore, 'group-subject');
         createIndex(dataStore, 'group-type-subject');
+      }
+      if (oldVersion < 5) {
+        const dataStore = upgradeTransaction.objectStore('data');
+        createIndex(dataStore, 'type-subject');        
       }
       if (onUpgrade) await onUpgrade(evt);
     }
