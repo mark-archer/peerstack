@@ -8,6 +8,7 @@ export interface IData extends ISigned {
   type: 'Group' | 'Deleted' | 'User' | 'any' | string,
   owner: string,
   modified: number,
+  subject?: string,
   [key: string]: any
 }
 
@@ -66,6 +67,9 @@ export type Indexes
   | 'group-owner-modified'
   | 'type-owner-modified'
   | 'group-type-owner-modified'
+  | 'subject'
+  | 'group-subject'
+  | 'group-type-subject'
 
 export interface ICursor<T = IData> {
   idbRequest: IDBRequest,
@@ -94,7 +98,7 @@ export interface PeerstackDBOpts {
 }
 
 export async function getIndexedDB(
-  { dbName = 'peerstack', dbVersion = 3, onUpgrade }: PeerstackDBOpts = {}
+  { dbName = 'peerstack', dbVersion = 4, onUpgrade }: PeerstackDBOpts = {}
 ): Promise<IDB> {
   if (typeof indexedDB === 'undefined') {
     throw new Error('indexedDB is not currently available')
@@ -143,6 +147,12 @@ export async function getIndexedDB(
         createIndex(dataStore, 'type-owner-modified');
 
         createIndex(dataStore, 'group-type-owner-modified');
+      }
+      if (oldVersion < 4) {
+        const dataStore = upgradeTransaction.objectStore('data');
+        createIndex(dataStore, 'subject');
+        createIndex(dataStore, 'group-subject');
+        createIndex(dataStore, 'group-type-subject');
       }
       if (onUpgrade) await onUpgrade(evt);
     }
