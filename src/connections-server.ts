@@ -76,7 +76,7 @@ export function init(server: Server, TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN) {
     socket.on('register-device', async (registration: IDeviceRegistration, callback: Function) => {
       try {
         // TODO: this is doing nothing to verify the userId is owned by the current user since they are also sending us the public key
-        verifySignedObject(registration.user as any, registration.user.publicKey);
+        // verifySignedObject(registration.user as any, registration.user.publicKey);
         user = registration.user;
         deviceSocket[registration.deviceId] = socket;
         deviceId = registration.deviceId
@@ -116,22 +116,6 @@ export function init(server: Server, TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN) {
         console.error('iceCandidate failed', err);
       }
     })
-
-    // socket.on('call', (msg: IRemoteCallIO) => {
-    //   try {
-    //     deviceSocket[msg.toDevice].emit('call', msg);
-    //   } catch (err) {
-    //     console.error('call failed', err);
-    //   }
-    // });
-
-    // socket.on('response', (msg: IRemoteResponseIO) => {
-    //   try {
-    //     deviceSocket[msg.toDevice].emit('response', msg);
-    //   } catch (err) {
-    //     console.error('response failed', err);
-    //   }
-    // });
   }
 
   const io = require('socket.io')(server);

@@ -27,6 +27,7 @@ export interface IGroup extends IData {
   blockedUserIds: string[],
   allowPublicViewers?: boolean,
   allowViewerComments?: boolean,
+  apps?: string[],
 }
 
 export interface IFile {
