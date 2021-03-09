@@ -161,7 +161,8 @@ export async function syncGroup(connection: IConnection, remoteGroup: IGroup, db
       }
     }
     console.log(`finished syncing ${remoteGroup.title || remoteGroup.name} in ${Date.now() - startTime}ms`);
-  })  
+  })
+  return syncGroupPromiseChain;
 }
 
 // let syncingCount = 0;
