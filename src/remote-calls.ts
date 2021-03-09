@@ -153,7 +153,7 @@ export async function syncGroup(connection: IConnection, remoteGroup: IGroup, db
         const remoteBlockData = await RPC(connection, getRemoteBlockData)(remoteGroup.id, blockId);
         for (const remoteData of remoteBlockData) {
           const localData = await db.get(remoteData.id);
-          if (!localData || localData.modified < remoteData.modified) {
+          if (!localData || localData.modified < remoteData.modified || (localData.modified == remoteData.modified && Math.random() > .8)) {
             // console.log('found data diff', { localData, remoteData });
             db.save(remoteData).then(() => eventHandlers.onRemoteDataSaved(remoteData));
           }
