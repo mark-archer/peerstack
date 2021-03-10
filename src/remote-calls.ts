@@ -158,16 +158,19 @@ async function syncBlockId(connection: IConnection, db: IDB, groupId: string, bl
 }
 
 export async function syncGroupV2(connection: IConnection, remoteGroup: IGroup, db: IDB) {
-  const groupId = remoteGroup.id;
-  if (remoteGroup.id !== connection.me.id && remoteGroup.id !== usersGroup.id) {
-    const localGroup = await db.get(remoteGroup.id);
-    if (!localGroup || remoteGroup.modified > localGroup.modified) { // TODO potential security hole if we don't have the local group, do we trust the remote user?
-      await db.save(remoteGroup);
-      eventHandlers.onRemoteDataSaved(remoteGroup);
+  syncGroupPromiseChain = syncGroupPromiseChain.then(async () => {
+    const groupId = remoteGroup.id;
+    if (remoteGroup.id !== connection.me.id && remoteGroup.id !== usersGroup.id) {
+      const localGroup = await db.get(remoteGroup.id);
+      if (!localGroup || remoteGroup.modified > localGroup.modified) { // TODO potential security hole if we don't have the local group, do we trust the remote user?
+        await db.save(remoteGroup);
+        eventHandlers.onRemoteDataSaved(remoteGroup);
+      }
     }
-  }
-  await syncBlockId(connection, db, groupId, 'u');
-  await syncBlockId(connection, db, groupId, 'B');
+    await syncBlockId(connection, db, groupId, 'u');
+    await syncBlockId(connection, db, groupId, 'B');
+  })
+  return syncGroupPromiseChain
 }
 
 let syncGroupPromiseChain = Promise.resolve();
