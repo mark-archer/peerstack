@@ -161,20 +161,17 @@ export async function syncGroup(connection: IConnection, remoteGroup: IGroup, db
       }
     }
     console.log(`finished syncing ${remoteGroup.title || remoteGroup.name} in ${Date.now() - startTime}ms`);
-  })
+  }).catch(err => {
+    console.error(`error syncing group, logging it out and continuing to next one`, err);
+  });
   return syncGroupPromiseChain;
 }
 
-// let syncingCount = 0;
 export async function syncDBs(connection: IConnection) {
-  // await sleep(5000 * syncingCount++)
   const startTime = Date.now();
   const db = await getIndexedDB();
   const _syncGroup = (group: IGroup) => syncGroup(connection, group, db);
   
-  // this should no longer be needed because each group has a special 'users' block
-  // await _syncGroup(usersGroup);   
-
   let remoteGroups = await RPC(connection, getRemoteGroups)();
   remoteGroups = _.shuffle(remoteGroups);  // randomize order to try to spread traffic around
   if (connection.me.id === connection.remoteUser.id) {
@@ -186,7 +183,6 @@ export async function syncDBs(connection: IConnection) {
   await Promise.all(remoteGroups.map(_syncGroup));
   // for (const remoteGroup of remoteGroups) await _syncGroup(remoteGroup);
   console.log(`finished syncing DB with ${connection.remoteDeviceId} in ${Date.now() - startTime} ms`);
-  // syncingCount--;
 }
 
 const pushDataAlreadySeen: {
