@@ -473,7 +473,7 @@ export async function getBlockHashesV2(groupId: string, detailLevel: number = 0)
   if (detailLevel >= 6) {
     detailLevel = 5;
   }
-  if (blockHashes[groupId][detailLevel]) {
+  if (blockHashes[groupId] && blockHashes[groupId][detailLevel]) {
     return blockHashes[groupId][detailLevel];
   }
   if (detailLevel >= 6) {
