@@ -106,7 +106,7 @@ export async function getIndexedDB(
     throw new Error('indexedDB is not currently available')
   }
 
-  function createIndex(objectStore: IDBObjectStore,index: Indexes) {
+  function createIndex(objectStore: IDBObjectStore, index: Indexes) {
     let keyPath: string[] | string = index.split('-');
     if (keyPath.length == 1) {
       keyPath = keyPath[0];
@@ -120,7 +120,7 @@ export async function getIndexedDB(
     request.onsuccess = evt => resolve((evt.target as any).result as IDBDatabase)
     request.onupgradeneeded = async evt => {
       const db = (evt.target as any).result as IDBDatabase;
-      const oldVersion = evt.oldVersion      
+      const oldVersion = evt.oldVersion
       const upgradeTransaction = (evt.target as any).transaction as IDBTransaction;
       if (oldVersion < 1) {
         const dataStore = db.createObjectStore("data", { keyPath: 'id' });
@@ -128,13 +128,13 @@ export async function getIndexedDB(
         createIndex(dataStore, 'type');
         createIndex(dataStore, 'owner');
         createIndex(dataStore, 'modified');
-        
+
         createIndex(dataStore, 'group-modified');
         createIndex(dataStore, 'type-modified');
         createIndex(dataStore, 'owner-modified');
-        
+
         createIndex(dataStore, 'group-type-modified');
-        createIndex(dataStore, 'group-owner-modified');        
+        createIndex(dataStore, 'group-owner-modified');
       }
       if (oldVersion < 2) {
         const fileStore = db.createObjectStore("files", { keyPath: 'id' });
@@ -144,7 +144,7 @@ export async function getIndexedDB(
         createIndex(dataStore, 'group-type');
         createIndex(dataStore, 'group-owner');
         createIndex(dataStore, 'type-owner');
-        
+
         createIndex(dataStore, 'group-type-owner');
         createIndex(dataStore, 'type-owner-modified');
 
@@ -158,7 +158,7 @@ export async function getIndexedDB(
       }
       if (oldVersion < 5) {
         const dataStore = upgradeTransaction.objectStore('data');
-        createIndex(dataStore, 'type-subject');        
+        createIndex(dataStore, 'type-subject');
       }
       if (onUpgrade) await onUpgrade(evt);
     }
@@ -448,8 +448,64 @@ export const L1BlockHashes: {
 } = {}
 
 function clearHashCache(groupId: string) {
-  delete L0BlockHashes[L1BlockHashes[groupId]];
-  delete L1BlockHashes[groupId];
+  if (groupId === 'users') {
+    // TODO make sure this is working correctly
+    // if a user is changed just clear the entire cache for now
+    Object.keys(L1BlockHashes).forEach(_groupId => {
+      delete L1BlockHashes[_groupId]
+      delete L0BlockHashes[L1BlockHashes[_groupId]][groupId]
+    })
+  } else {
+    delete L0BlockHashes[L1BlockHashes[groupId]];
+    delete L1BlockHashes[groupId];
+    delete blockHashes[groupId]
+  }
+}
+
+const blockHashes: {
+  [groupId: string]: {
+    [detailLevel: string]: { [blockId: string]: string }
+  }
+} = {};
+
+// l0BlockId example: B18664 | users
+export async function getBlockHashesV2(groupId: string, detailLevel: number = 0) {
+  if (detailLevel >= 6) {
+    detailLevel = 5;
+  }
+  if (blockHashes[groupId][detailLevel]) {
+    return blockHashes[groupId][detailLevel];
+  }
+  if (detailLevel >= 6) {
+    const _blockHashes = await getBlockHashes(groupId, 'L0') as any as { [blockId: string]: string }
+    set(blockHashes, `${groupId}.${detailLevel}`, _blockHashes);
+    return _blockHashes;
+  } else {
+    const nextLevel = await getBlockHashesV2(groupId, detailLevel + 1);
+    const keyed = Object.entries(nextLevel).map(([blockId, hashes]) => ({
+      blockId,
+      hashes
+    }))
+    const grouped = groupBy(keyed, data => data.blockId.substr(0, data.blockId.length - 1) || 'u');
+    const _blockHashes = {};
+    Object.keys(grouped).forEach(key => {
+      set(_blockHashes, key, hashObject(grouped[key])); // maybe speed up by only hashing id+modified
+    });
+    set(blockHashes, `${groupId}.${detailLevel}`, _blockHashes);
+    return _blockHashes;
+  }
+}
+
+export async function getBlockIdHashes(groupId: string, blockId: string) {
+  const detailLevel = blockId.length + 1;
+  const blockHashes = await getBlockHashesV2(groupId, detailLevel)
+  const blockIdHashes: { [blockId: string]: string } = {}
+  Object.keys(blockHashes).forEach(key => {
+    if (key.startsWith(blockId)) {
+      blockIdHashes[blockId] = blockHashes[key];
+    }
+  })
+  return blockIdHashes;
 }
 
 export async function getBlockHashes(groupId: string, level: BlockHashLevel = 'L0') {
@@ -471,7 +527,7 @@ export async function getBlockHashes(groupId: string, level: BlockHashLevel = 'L
   blockHashes['users'] = hashObject(await getGroupUsers(groupId))
 
   // populate L0 hashes
-  let interval = BLOCK_SIZE * 1000;
+  let interval = BLOCK_SIZE * 1000; // this gets 1k days at a time but groups them by day which is block0
   let lowerTime = maxTime - (maxTime % interval);
   let upperTime = lowerTime + interval;
   while (minTime < upperTime) {
@@ -481,7 +537,7 @@ export async function getBlockHashes(groupId: string, level: BlockHashLevel = 'L
     if (!data.length) continue;
     const grouped = groupBy(data, d => getBlockId(d.modified));
     Object.keys(grouped).forEach(key => {
-      set(blockHashes, key, hashObject(grouped[key])); // TODO this might be able to be speed up by only hashing id+modified
+      set(blockHashes, key, hashObject(grouped[key])); // maybe speed up by only hashing id+modified
     })
   }
   L1BlockHashes[groupId] = hashObject(blockHashes);

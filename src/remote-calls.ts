@@ -1,7 +1,8 @@
 import * as _ from "lodash";
+import { uniq } from "lodash";
 import { fromJSON, isid, newid, sleep } from "./common";
 import { connections } from "./connections";
-import { BlockHashLevel, checkPermission, getBlockData, getBlockHashes, getIndexedDB, getPersonalGroup, hasPermission, IData, IDB, IGroup, usersGroup } from "./db";
+import { BlockHashLevel, checkPermission, getBlockData, getBlockHashes, getBlockHashesV2, getBlockIdHashes, getIndexedDB, getPersonalGroup, hasPermission, IData, IDB, IGroup, usersGroup } from "./db";
 import { IUser, openMessage, signMessage, signObject, verifySignedObject } from "./user";
 
 export type txfn = <T>(data: (string | IRemoteData)) => Promise<T | void> | void
@@ -115,10 +116,58 @@ export async function getRemoteBlockHashes(groupId: string, level: BlockHashLeve
   return getBlockHashes(groupId, level);
 }
 
+export async function getRemoteIdBlockHashes(groupId: string, blockId: string) {
+  const connection: IConnection = currentConnection;
+  await checkPermission(connection.remoteUser?.id, groupId, 'read');
+  return getBlockIdHashes(groupId, blockId);
+}
+
 export const eventHandlers = {
   onRemoteDataSaved: (data: IData) => {
     // placeholder
   },
+}
+
+async function syncBlockId(connection: IConnection, db: IDB, groupId: string, blockId: string = '') {
+  console.log(`syncing ${groupId} block ${blockId}`)
+  const localHashes = await getBlockIdHashes(groupId, blockId);
+  const remoteHashes = await RPC(connection, getRemoteIdBlockHashes)(groupId, blockId);
+  const blockIds = uniq([...Object.keys(localHashes), ...Object.keys(remoteHashes)]);
+  for (let blockId of blockIds) {
+    const localHash = localHashes[blockId];
+    const remoteHash = remoteHashes[blockId];
+    if (localHash != remoteHash) {
+      if (blockId.length < 6 && !blockId.startsWith('u')) {
+        await syncBlockId(connection, db, groupId, blockId);
+      } else {
+        if (blockId.startsWith('u')) {
+          blockId = 'users';
+        }
+        const remoteBlockData = await RPC(connection, getRemoteBlockData)(groupId, blockId);
+        for (const remoteData of remoteBlockData) {
+          const localData = await db.get(remoteData.id);
+          if (!localData || localData.modified < remoteData.modified || (localData.modified == remoteData.modified && Math.random() > .8)) {
+            // console.log('found data diff', { localData, remoteData });
+            await db.save(remoteData);
+            eventHandlers.onRemoteDataSaved(remoteData)
+          }
+        }
+      }
+    }
+  }
+}
+
+export async function syncGroupV2(connection: IConnection, remoteGroup: IGroup, db: IDB) {
+  const groupId = remoteGroup.id;
+  if (remoteGroup.id !== connection.me.id && remoteGroup.id !== usersGroup.id) {
+    const localGroup = await db.get(remoteGroup.id);
+    if (!localGroup || remoteGroup.modified > localGroup.modified) { // TODO potential security hole if we don't have the local group, do we trust the remote user?
+      await db.save(remoteGroup);
+      eventHandlers.onRemoteDataSaved(remoteGroup);
+    }
+  }
+  await syncBlockId(connection, db, groupId, 'u');
+  await syncBlockId(connection, db, groupId, 'B');
 }
 
 let syncGroupPromiseChain = Promise.resolve();
@@ -170,7 +219,7 @@ export async function syncGroup(connection: IConnection, remoteGroup: IGroup, db
 export async function syncDBs(connection: IConnection) {
   const startTime = Date.now();
   const db = await getIndexedDB();
-  const _syncGroup = (group: IGroup) => syncGroup(connection, group, db);
+  const _syncGroup = (group: IGroup) => syncGroupV2(connection, group, db);
   
   let remoteGroups = await RPC(connection, getRemoteGroups)();
   remoteGroups = _.shuffle(remoteGroups);  // randomize order to try to spread traffic around
@@ -222,6 +271,7 @@ export const remotelyCallableFunctions: { [key: string]: Function } = {
   testError,
   getRemoteGroups,
   getRemoteBlockHashes,
+  getRemoteIdBlockHashes,
   getRemoteBlockData,
   pushData,
   signId,
