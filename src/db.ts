@@ -476,7 +476,7 @@ export async function getBlockHashesV2(groupId: string, detailLevel: number = 0)
   if (blockHashes[groupId] && blockHashes[groupId][detailLevel]) {
     return blockHashes[groupId][detailLevel];
   }
-  if (detailLevel >= 6) {
+  if (detailLevel >= 5) {
     const _blockHashes = await getBlockHashes(groupId, 'L0') as any as { [blockId: string]: string }
     set(blockHashes, `${groupId}.${detailLevel}`, _blockHashes);
     return _blockHashes;
