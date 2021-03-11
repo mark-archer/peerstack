@@ -502,7 +502,7 @@ export async function getBlockIdHashes(groupId: string, blockId: string) {
   const blockIdHashes: { [blockId: string]: string } = {}
   Object.keys(blockHashes).forEach(key => {
     if (key.startsWith(blockId)) {
-      blockIdHashes[blockId] = blockHashes[key];
+      blockIdHashes[key] = blockHashes[key];
     }
   })
   return blockIdHashes;
