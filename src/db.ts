@@ -437,27 +437,22 @@ export async function getBlockData(group: string, level0BlockId: string) {
   return blockData;
 }
 
-export type BlockHashLevel = 'L0' | 'L1';
-
-export const L0BlockHashes: {
-  [l1Hash: string]: { [blockId: string]: string }
-} = {}
-
-export const L1BlockHashes: {
-  [groupId: string]: string
+export const L5BlockHashes: {
+  [groupId: string]: { [blockId: string]: string }
 } = {}
 
 function clearHashCache(groupId: string) {
+  // TODO this could be done much cleaner by sending in the old and new L5 block id
   if (groupId === 'users') {
     // TODO make sure this is working correctly
     // if a user is changed just clear the entire cache for now
-    Object.keys(L1BlockHashes).forEach(_groupId => {
-      delete L1BlockHashes[_groupId]
-      delete L0BlockHashes[L1BlockHashes[_groupId]][groupId]
+    Object.keys(L5BlockHashes).forEach(_groupId => {
+      delete L5BlockHashes[_groupId]['users']
+      delete blockHashes[groupId]
     })
+
   } else {
-    delete L0BlockHashes[L1BlockHashes[groupId]];
-    delete L1BlockHashes[groupId];
+    delete L5BlockHashes[groupId];
     delete blockHashes[groupId]
   }
 }
@@ -469,7 +464,7 @@ const blockHashes: {
 } = {};
 
 // l0BlockId example: B18664 | users
-export async function getBlockHashesV2(groupId: string, detailLevel: number = 0) {
+export async function getBlockHashes(groupId: string, detailLevel: number = 0) {
   if (detailLevel >= 6) {
     detailLevel = 5;
   }
@@ -477,11 +472,11 @@ export async function getBlockHashesV2(groupId: string, detailLevel: number = 0)
     return blockHashes[groupId][detailLevel];
   }
   if (detailLevel >= 5) {
-    const _blockHashes = await getBlockHashes(groupId, 'L0') as any as { [blockId: string]: string }
+    const _blockHashes = await getDetailHashes(groupId) as any as { [blockId: string]: string }
     set(blockHashes, `${groupId}.${detailLevel}`, _blockHashes);
     return _blockHashes;
   } else {
-    const nextLevel = await getBlockHashesV2(groupId, detailLevel + 1);
+    const nextLevel = await getBlockHashes(groupId, detailLevel + 1);
     const keyed = Object.entries(nextLevel).map(([blockId, hashes]) => ({
       blockId,
       hashes
@@ -498,7 +493,7 @@ export async function getBlockHashesV2(groupId: string, detailLevel: number = 0)
 
 export async function getBlockIdHashes(groupId: string, blockId: string) {
   const detailLevel = blockId.length || 1;
-  const blockHashes = await getBlockHashesV2(groupId, detailLevel)
+  const blockHashes = await getBlockHashes(groupId, detailLevel)
   const blockIdHashes: { [blockId: string]: string } = {}
   Object.keys(blockHashes).forEach(key => {
     if (key.startsWith(blockId)) {
@@ -508,12 +503,9 @@ export async function getBlockIdHashes(groupId: string, blockId: string) {
   return blockIdHashes;
 }
 
-export async function getBlockHashes(groupId: string, level: BlockHashLevel = 'L0') {
-  if (level == 'L1' && L1BlockHashes[groupId]) {
-    return L1BlockHashes[groupId];
-  }
-  if (level == 'L0' && L1BlockHashes[groupId] && L0BlockHashes[L1BlockHashes[groupId]]) {
-    return L0BlockHashes[L1BlockHashes[groupId]]
+export async function getDetailHashes(groupId: string) {
+  if (L5BlockHashes[groupId]) {
+    return L5BlockHashes[groupId]
   }
   // console.log(`building hash for group ${groupId}`)
   const db = await getIndexedDB();
@@ -540,44 +532,9 @@ export async function getBlockHashes(groupId: string, level: BlockHashLevel = 'L
       set(blockHashes, key, hashObject(grouped[key])); // maybe speed up by only hashing id+modified
     })
   }
-  L1BlockHashes[groupId] = hashObject(blockHashes);
-  L0BlockHashes[L1BlockHashes[groupId]] = blockHashes;
-  if (level === 'L1') {
-    return L1BlockHashes[groupId]
-  } else {
-    return blockHashes
-  }
+  L5BlockHashes[groupId] = blockHashes;
+  return blockHashes  
 }
-
-// export function getMemoryDB(): IDB {
-//   const memoryDB: {
-//     [id: string]: IData
-//   } = {}
-
-//   const baseOps: IDB = {    
-//     insert: async data => memoryDB[data.id] = JSON.parse(JSON.stringify(data)),
-//     update: async data => memoryDB[data.id] = JSON.parse(JSON.stringify(data)),
-//     delete: async id => delete memoryDB[id] as undefined,
-//     get: async id => memoryDB[id],
-//     find: async (query: string | IDBKeyRange, index?: string) => {
-//       const results: IData[] = [];
-//       Object.keys(memoryDB).forEach(id => {
-//         let testValue = id;
-//         if (index) {
-//           testValue = get(memoryDB, `${id}.${index}`, null);
-//         }
-//         if (
-//           (typeof query === 'string' && testValue === query) ||
-//           (query.includes && query.includes(testValue))
-//         ) {
-//           results.push(memoryDB[id])
-//         }
-//       })
-//       return results;
-//     },
-//   }
-//   return baseOps
-// }
 
 // @ts-ignore
 if (typeof window !== 'undefined') window.peerdb = module.exports;
