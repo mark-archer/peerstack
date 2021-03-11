@@ -158,7 +158,7 @@ async function syncBlockId(connection: IConnection, db: IDB, groupId: string, bl
 }
 
 let syncGroupPromiseChain = Promise.resolve();
-export async function syncGroupV3(connection: IConnection, remoteGroup: IGroup, db: IDB) {
+export async function syncGroup(connection: IConnection, remoteGroup: IGroup, db: IDB) {
   syncGroupPromiseChain = syncGroupPromiseChain.then(async () => {
     const groupId = remoteGroup.id;
     if (groupId !== connection.me.id && groupId !== usersGroup.id) {
@@ -170,13 +170,16 @@ export async function syncGroupV3(connection: IConnection, remoteGroup: IGroup, 
     }
     await syncBlockId(connection, db, groupId);
   })
+  .catch(err => {
+    console.error(`error while syncing group`, { remoteDevice: connection.remoteDeviceId, group: remoteGroup}, err)
+  });
   return syncGroupPromiseChain
 }
 
 export async function syncDBs(connection: IConnection) {
   const startTime = Date.now();
   const db = await getIndexedDB();
-  const _syncGroup = (group: IGroup) => syncGroupV3(connection, group, db);
+  const _syncGroup = (group: IGroup) => syncGroup(connection, group, db);
   
   let remoteGroups = await RPC(connection, getRemoteGroups)();
   remoteGroups = _.shuffle(remoteGroups);  // randomize order to try to spread traffic around
