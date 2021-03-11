@@ -497,7 +497,7 @@ export async function getBlockHashesV2(groupId: string, detailLevel: number = 0)
 }
 
 export async function getBlockIdHashes(groupId: string, blockId: string) {
-  const detailLevel = blockId.length + 1;
+  const detailLevel = blockId.length || 1;
   const blockHashes = await getBlockHashesV2(groupId, detailLevel)
   const blockIdHashes: { [blockId: string]: string } = {}
   Object.keys(blockHashes).forEach(key => {
