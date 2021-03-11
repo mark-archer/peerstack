@@ -167,8 +167,9 @@ export async function syncGroupV2(connection: IConnection, remoteGroup: IGroup, 
         eventHandlers.onRemoteDataSaved(remoteGroup);
       }
     }
-    await syncBlockId(connection, db, groupId, 'u');
-    await syncBlockId(connection, db, groupId, 'B');
+    // await syncBlockId(connection, db, groupId, 'u');
+    // await syncBlockId(connection, db, groupId, 'B');
+    await syncBlockId(connection, db, groupId);
   })
   return syncGroupPromiseChain
 }
