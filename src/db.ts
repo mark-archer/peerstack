@@ -284,7 +284,7 @@ export async function getIndexedDB(
   const baseOps: IDB = {
     db,
     save,
-    delete: deleteOp,
+    delete: deleteOp,    
     get,
     find,
     openCursor,

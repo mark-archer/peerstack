@@ -2,6 +2,7 @@ import { newid, toJSON } from "./common";
 import { getIndexedDB, IGroup } from './db';
 import { IConnection, onRemoteMessage } from "./remote-calls";
 import { IUser, signObject, init as initUser } from "./user";
+import { checkPendingInvitations, IInviteAccept, IInviteAcceptType } from "./invitations"
 
 export interface ISDIExchange {
   connectionId: string
@@ -29,8 +30,8 @@ export interface IDeviceConnection extends IConnection {
   waitForDataChannel: (label: string) => Promise<RTCDataChannel>
 }
 
-let deviceId: string = null;
-let me: IUser = null;
+export let deviceId: string = null;
+export let me: IUser = null;
 let socket;
 export const connections: IDeviceConnection[] = [];
 
@@ -55,12 +56,7 @@ export async function init(_deviceId: string, _me: IUser, serverUrl?: string) {
 
   socket.on('connect', async () => {
     console.log('connected to server', socket.id);
-    const db = await getIndexedDB();
-    const allGroups = (await db.find('Group', 'type')) as IGroup[];
-    const allGroupIds = allGroups.map(g => g.id);
-    allGroupIds.push(_me.id);
-    await registerDevice({ deviceId, user: me, groups: allGroupIds });
-    console.log('registered device', { deviceId, groups: allGroupIds })
+    registerDevice();
   });
   // reconnect is called in addition to connect so redundant for now
   socket.on('reconnect', async () => {
@@ -123,7 +119,20 @@ export async function init(_deviceId: string, _me: IUser, serverUrl?: string) {
   // }, heartBeatInterval);
 }
 
-async function registerDevice(registration: IDeviceRegistration) {
+export async function registerDevice() {
+  const db = await getIndexedDB();
+  const allGroups = (await db.find('Group', 'type')) as IGroup[];
+  const allGroupIds = allGroups.map(g => g.id);
+  allGroupIds.push(me.id);
+  const pendingInvites = (await db.find(IInviteAcceptType, 'type')) as IInviteAccept[];
+  pendingInvites.forEach(invite => {
+    if (invite.invitation.expires > Date.now()) {
+      db.delete(invite.id);
+    } else {
+      allGroupIds.push(invite.invitation.group);
+    }
+  })
+  const registration: IDeviceRegistration = { deviceId, user: me, groups: allGroupIds };
   // TODO try to do it through peers first
   await new Promise((resolve, reject) => {
     socket.emit('register-device', registration, (err, res) => {
@@ -131,10 +140,11 @@ async function registerDevice(registration: IDeviceRegistration) {
       else resolve(res);
     })
   })
-  const otherDevices = await getAvailableDevices();
+  const otherDevices = await getAvailableDevices();  
   console.log('availableDevices', otherDevices);
   // otherDevices.forEach(device => connectToDevice(device.deviceId))
   otherDevices.forEach(device => eventHandlers.onDeviceDiscovered(device.deviceId));
+  console.log('registered device', { deviceId, groups: allGroupIds })
 }
 
 export async function getAvailableDevices(): Promise<IDeviceRegistration[]> {
@@ -374,6 +384,7 @@ export async function connectToDevice(toDeviceId): Promise<IConnection> {
     console.log(`connection to peer established!`, connectionId, { connections })
 
     eventHandlers.onDeviceConnected(connection);
+    checkPendingInvitations(connection);
 
     return connection;
   }
@@ -456,6 +467,7 @@ async function handelOffer(offer: ISDIExchange) {
         dc.onopen = e => {
           console.log('dc2 connection open to', offer.fromDevice)
           eventHandlers.onDeviceConnected(connection);
+          checkPendingInvitations(connection);
         }
         dc.onclose = e => {
           console.log("dc2.onclose")
