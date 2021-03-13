@@ -126,11 +126,7 @@ export async function registerDevice() {
   allGroupIds.push(me.id);
   const pendingInvites = (await db.find(IInviteAcceptType, 'type')) as IInviteAccept[];
   pendingInvites.forEach(invite => {
-    if (invite.invitation.expires > Date.now()) {
-      db.delete(invite.id);
-    } else {
-      allGroupIds.push(invite.invitation.group);
-    }
+    allGroupIds.push(invite.invitation.group);
   })
   const registration: IDeviceRegistration = { deviceId, user: me, groups: allGroupIds };
   // TODO try to do it through peers first
