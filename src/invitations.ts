@@ -6,7 +6,7 @@ import { getCurrentConnection, IConnection, remotelyCallableFunctions, RPC } fro
 
 export interface IInvitation extends IData {
   type: 'Invitation',
-  publicKey: string, 
+  publicKey: string,
   secretKey: string,
   expires: number,
   read?: boolean,
@@ -32,15 +32,15 @@ export async function createInvitation(group: string, expires?: number, read = t
     expires = Date.now() + 1000 * 60 * 60 * 24 * 30; // in 30 days
   }
   const keys = newUser();
-  const invitation: IInvitation = { 
-    id: newid(), 
-    type: 'Invitation',   
-    group, 
+  const invitation: IInvitation = {
+    id: newid(),
+    type: 'Invitation',
+    group,
     owner: me.id,
     modified: Date.now(),
     expires,
-    read, 
-    write, 
+    read,
+    write,
     admin,
     publicKey: keys.publicKey,
     secretKey: keys.secretKey
@@ -63,7 +63,7 @@ export async function acceptInvitation(invite: IInviteDetails) {
     type: IInviteAcceptType,
     group: me.id,
     owner: me.id,
-    modified: Date.now(),    
+    modified: Date.now(),
     invitation: {
       id,
       group,
@@ -88,25 +88,24 @@ export async function checkPendingInvitations(connection: IConnection) {
   let groupJoined = false;
   for (const pendingInvite of pendingInvites) {
     const { invitation } = pendingInvite;
-    if (connection.groups.includes(invitation.group)) {
-      try {
-        const idToSign = newid();
-        const signedId = await RPC(connection, verifyInvitationSender)(invitation.id, idToSign);
-        const openedId = openMessage(signedId, invitation.publicKey);
-        if (openedId !== idToSign) {
-          continue;
-        }
-        const group = await RPC(connection, confirmInvitation)(invitation.id, invitation.publicKey);
-        const db = await getIndexedDB();
-        await db.save(group);
-        
-        // @ts-ignore
-        pendingInvite.type = "Deleted"
-        signObject(pendingInvite);
-        await db.save(pendingInvite);
-        groupJoined = true;
-      } catch { }
-    }
+    // if (connection.groups.includes(invitation.group)) {
+    try {
+      const idToSign = newid();
+      const signedId = await RPC(connection, verifyInvitationSender)(invitation.id, idToSign);
+      const openedId = openMessage(signedId, invitation.publicKey);
+      if (openedId !== idToSign) {
+        continue;
+      }
+      const group = await RPC(connection, confirmInvitation)(invitation.id, invitation.publicKey);
+      const db = await getIndexedDB();
+      await db.save(group);
+
+      // @ts-ignore
+      pendingInvite.type = "Deleted"
+      signObject(pendingInvite);
+      await db.save(pendingInvite);
+      groupJoined = true;
+    } catch { }
   }
   if (groupJoined) {
     registerDevice();
@@ -114,11 +113,11 @@ export async function checkPendingInvitations(connection: IConnection) {
 }
 
 async function verifyInvitationSender(inviteId: string, idToSign: string) {
-  const db = await getIndexedDB();
-  const invite = await db.get(inviteId) as IInvitation;
   if (!isid(idToSign)) {
     throw new Error(`${idToSign} is not an id. Only ids are accepted as prompts to verify identity`)
   }
+  const db = await getIndexedDB();
+  const invite = await db.get(inviteId) as IInvitation;
   if (invite.type === 'Invitation') {
     return signMessageWithSecretKey(idToSign, invite.secretKey);
   } else {
