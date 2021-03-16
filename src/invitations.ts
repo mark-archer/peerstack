@@ -59,7 +59,7 @@ export async function acceptInvitation(invite: IInviteDetails) {
   const { id, group, publicKey } = invite;
   const db = await getIndexedDB();
   const inviteAccept: IInviteAccept = {
-    id: newid(),
+    id,
     type: IInviteAcceptType,
     group: me.id,
     owner: me.id,
@@ -76,6 +76,7 @@ export async function acceptInvitation(invite: IInviteDetails) {
     pendingInvites.push(inviteAccept);
   }
   await registerDevice();
+  return inviteAccept;
 }
 
 let pendingInvites: IInviteAccept[];
