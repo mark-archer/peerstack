@@ -1,7 +1,7 @@
 import { signObject, newUser, signMessageWithSecretKey, openMessage } from './user';
 import { registerDevice, me } from './connections';
 import { getIndexedDB, IData, IGroup } from './db';
-import { newid } from './common';
+import { isid, newid } from './common';
 import { getCurrentConnection, IConnection, remotelyCallableFunctions, RPC } from './remote-calls';
 
 export interface IInvitation extends IData {
@@ -55,7 +55,8 @@ export async function createInvitation(group: string, expires?: number, read = t
   };
 }
 
-export async function acceptInvitation(group: string, id: string, publicKey: string) {
+export async function acceptInvitation(invite: IInviteDetails) {
+  const { id, group, publicKey } = invite;
   const db = await getIndexedDB();
   const inviteAccept: IInviteAccept = {
     id: newid(),
@@ -83,30 +84,40 @@ export async function checkPendingInvitations(connection: IConnection) {
     const db = await getIndexedDB();
     pendingInvites = (await db.find(IInviteAcceptType, 'type')) as IInviteAccept[];
   }
+  let groupJoined = false;
   for (const pendingInvite of pendingInvites) {
     const { invitation } = pendingInvite;
     if (connection.groups.includes(invitation.group)) {
-      const db = await getIndexedDB();
-      const idToSign = newid();
-      const signedId = await RPC(connection, verifyInvitationSender)(invitation.id, idToSign);
-      const openedId = openMessage(signedId, invitation.publicKey);
-      if (openedId !== idToSign) {
-        continue;
-      }
-      const group = await RPC(connection, presentInvitation)(invitation.id, invitation.publicKey);
-      await db.save(group);
-      
-      // @ts-ignore
-      pendingInvite.type = "Deleted"
-      signObject(pendingInvite);
-      await db.save(pendingInvite);
+      try {
+        const idToSign = newid();
+        const signedId = await RPC(connection, verifyInvitationSender)(invitation.id, idToSign);
+        const openedId = openMessage(signedId, invitation.publicKey);
+        if (openedId !== idToSign) {
+          continue;
+        }
+        const group = await RPC(connection, confirmInvitation)(invitation.id, invitation.publicKey);
+        const db = await getIndexedDB();
+        await db.save(group);
+        
+        // @ts-ignore
+        pendingInvite.type = "Deleted"
+        signObject(pendingInvite);
+        await db.save(pendingInvite);
+        groupJoined = true;
+      } catch { }
     }
+  }
+  if (groupJoined) {
+    registerDevice();
   }
 }
 
 async function verifyInvitationSender(inviteId: string, idToSign: string) {
   const db = await getIndexedDB();
   const invite = await db.get(inviteId) as IInvitation;
+  if (!isid(idToSign)) {
+    throw new Error(`${idToSign} is not an id. Only ids are accepted as prompts to verify identity`)
+  }
   if (invite.type === 'Invitation') {
     return signMessageWithSecretKey(idToSign, invite.secretKey);
   } else {
@@ -114,9 +125,9 @@ async function verifyInvitationSender(inviteId: string, idToSign: string) {
   }
 }
 
-remotelyCallableFunctions.presentInvitation = verifyInvitationSender;
+remotelyCallableFunctions.verifyInvitationSender = verifyInvitationSender;
 
-async function presentInvitation(inviteId: string, publicKey: string) {
+async function confirmInvitation(inviteId: string, publicKey: string) {
   const connection = getCurrentConnection();
   const db = await getIndexedDB();
   const invitation = await db.get(inviteId) as IInvitation;
@@ -143,4 +154,4 @@ async function presentInvitation(inviteId: string, publicKey: string) {
   return group
 }
 
-remotelyCallableFunctions.presentInvitation = presentInvitation;
+remotelyCallableFunctions.confirmInvitation = confirmInvitation;
