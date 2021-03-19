@@ -59,7 +59,7 @@ export async function acceptInvitation(invite: IInviteDetails) {
   const { id, group, publicKey } = invite;
   const db = await getIndexedDB();
   const inviteAccept: IInviteAccept = {
-    id,
+    id: newid(),
     type: IInviteAcceptType,
     group: me.id,
     owner: me.id,
@@ -99,6 +99,7 @@ export async function checkPendingInvitations(connection: IConnection) {
       const group = await RPC(connection, confirmInvitation)(invitation.id, invitation.publicKey);
       const db = await getIndexedDB();
       await db.save(group);
+      eventHandlers.onRemoteDataSaved(group);
 
       // @ts-ignore
       pendingInvite.type = "Deleted"
@@ -151,7 +152,6 @@ async function confirmInvitation(inviteId: string, publicKey: string) {
   group.modified = Date.now();
   signObject(group);
   await db.save(group);
-  eventHandlers.onRemoteDataSaved(group);
   return group
 }
 
