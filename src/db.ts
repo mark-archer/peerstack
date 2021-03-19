@@ -91,6 +91,11 @@ export interface IDB {
     get: (id: string) => Promise<IFile>
     delete: (id: string) => Promise<void>
   },
+  local: {
+    save: (data: any) => Promise<void>
+    get: (id: string) => Promise<any>
+    delete: (id: string) => Promise<void>
+  },
 }
 
 export interface PeerstackDBOpts {
@@ -100,7 +105,7 @@ export interface PeerstackDBOpts {
 }
 
 export async function getIndexedDB(
-  { dbName = 'peerstack', dbVersion = 5, onUpgrade }: PeerstackDBOpts = {}
+  { dbName = 'peerstack', dbVersion = 6, onUpgrade }: PeerstackDBOpts = {}
 ): Promise<IDB> {
   if (typeof indexedDB === 'undefined') {
     throw new Error('indexedDB is not currently available')
@@ -160,6 +165,9 @@ export async function getIndexedDB(
         const dataStore = upgradeTransaction.objectStore('data');
         createIndex(dataStore, 'type-subject');
       }
+      if (oldVersion < 6) {
+        const local = db.createObjectStore("local", { keyPath: 'id' });
+      }
       if (onUpgrade) await onUpgrade(evt);
     }
   });
@@ -199,7 +207,7 @@ export async function getIndexedDB(
       request.onsuccess = evt => resolve((evt.target as any).result);
     });
 
-  function dbOp(storeName: 'data' | 'files' | 'userTrust', op: 'put' | 'delete' | 'get', value) {
+  function dbOp(storeName: 'data' | 'files' | 'local', op: 'put' | 'delete' | 'get', value) {
     return new Promise<any>((resolve, reject) => {
       const mode: IDBTransactionMode = op == 'get' ? 'readonly' : 'readwrite';
       const transaction = db.transaction([storeName], mode);
@@ -279,8 +287,6 @@ export async function getIndexedDB(
   const getFile = (id: string) => dbOp('files', 'get', id);
   const deleteFile = (id: string) => dbOp('files', 'delete', id);
 
-
-
   const baseOps: IDB = {
     db,
     save,
@@ -291,7 +297,12 @@ export async function getIndexedDB(
     files: {
       save: saveFile,
       get: getFile,
-      delete: deleteFile
+      delete: deleteFile,
+    },
+    local: {
+      save: data => dbOp('local', 'put', data),
+      get: id => dbOp('local', 'get', id),
+      delete: id => dbOp('local', 'delete', id),
     },
   }
 
