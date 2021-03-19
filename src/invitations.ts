@@ -2,7 +2,7 @@ import { signObject, newUser, signMessageWithSecretKey, openMessage } from './us
 import { registerDevice, me } from './connections';
 import { getIndexedDB, IData, IGroup } from './db';
 import { isid, newid } from './common';
-import { getCurrentConnection, IConnection, remotelyCallableFunctions, RPC } from './remote-calls';
+import { eventHandlers, getCurrentConnection, IConnection, remotelyCallableFunctions, RPC } from './remote-calls';
 
 export interface IInvitation extends IData {
   type: 'Invitation',
@@ -151,6 +151,7 @@ async function confirmInvitation(inviteId: string, publicKey: string) {
   group.modified = Date.now();
   signObject(group);
   await db.save(group);
+  eventHandlers.onRemoteDataSaved(group);
   return group
 }
 
