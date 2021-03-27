@@ -132,7 +132,8 @@ async function syncBlockId(connection: IConnection, db: IDB, groupId: string, bl
   console.log(`syncing ${groupId} block ${blockId}`)
   const localHashes = await getBlockIdHashes(groupId, blockId);
   const remoteHashes = await RPC(connection, getRemoteIdBlockHashes)(groupId, blockId);
-  const blockIds = uniq([...Object.keys(localHashes), ...Object.keys(remoteHashes)]);
+  // const blockIds = uniq([...Object.keys(localHashes), ...Object.keys(remoteHashes)]);
+  const blockIds = Object.keys(remoteHashes);
   for (let blockId of blockIds) {
     const localHash = localHashes[blockId];
     const remoteHash = remoteHashes[blockId];
