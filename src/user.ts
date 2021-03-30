@@ -83,10 +83,12 @@ export async function init(config?: { id: string, secretKey: string, name?: stri
 }
 
 export function hydrateUser(id: string, secretKey: string, displayName?: string): IUser {
-  // TODO need to convert secretKey to UInt8Array, then split array, then convert back to string
+  const secretKeyAry = decodeUint8ArrayFromBaseN(secretKey);
+  const publicKeyAry = secretKeyAry.slice(0, 64);
+  const publicKey = encodeUint8ArrayToBaseN(publicKeyAry);
   return {
     id,
-    publicKey: secretKey.substr(64),
+    publicKey,
     name: displayName || id,
     group: 'users',
     modified: 1, // don't want to overwrite data in the database with this most minimal user object
