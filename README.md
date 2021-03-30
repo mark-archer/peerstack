@@ -15,7 +15,7 @@ A library for building decentralized, peer-to-peer web applications.
 ```javascript
 const { connections, newid, remoteCalls, user } = require('peerstack');
 // this creates a new user, normally you'd use an existing user
-const me = user.newMe(); 
+const me = user.newUser(); 
 const deviceId = newid();
 connections.init(deviceId, me, yourServerUrl || "https://theque.app/");
 connections.eventHandlers.onDeviceDiscovered = connections.connectToDevice;

@@ -84,7 +84,7 @@ export async function init(config?: { id: string, secretKey: string, name?: stri
 
 export function hydrateUser(id: string, secretKey: string, displayName?: string): IUser {
   const secretKeyAry = decodeUint8ArrayFromBaseN(secretKey);
-  const publicKeyAry = secretKeyAry.slice(0, secretKeyAry.length / 2);
+  const publicKeyAry = secretKeyAry.slice(secretKeyAry.length / 2);
   const publicKey = encodeUint8ArrayToBaseN(publicKeyAry);
   return {
     id,
