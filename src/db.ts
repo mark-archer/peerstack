@@ -534,13 +534,15 @@ export async function getDetailHashes(groupId: string) {
   let lowerTime = maxTime - (maxTime % interval);
   let upperTime = lowerTime + interval;
   while (minTime < upperTime) {
-    const data = await db.find(IDBKeyRange.bound([groupId, lowerTime], [groupId, upperTime]), 'group-modified');
+    let data = await db.find(IDBKeyRange.bound([groupId, lowerTime], [groupId, upperTime]), 'group-modified');
     lowerTime -= interval;
     upperTime -= interval;
     if (!data.length) continue;
+    // speed up and improve reliability by only hashing id+modified
+    data = data.map(d => ({ id: d.id, modified: d.modified } as any))
     const grouped = groupBy(data, d => getBlockId(d.modified));
     Object.keys(grouped).forEach(key => {
-      set(blockHashes, key, hashObject(grouped[key])); // maybe speed up by only hashing id+modified
+      set(blockHashes, key, hashObject(grouped[key]));
     })
   }
   L5BlockHashes[groupId] = blockHashes;
