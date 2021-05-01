@@ -157,9 +157,9 @@ async function syncBlockId(connection: IConnection, db: IDB, groupId: string, bl
   }
 }
 
-let syncGroupPromiseChain = Promise.resolve();
+// let syncGroupPromiseChain = Promise.resolve();
 export async function syncGroup(connection: IConnection, remoteGroup: IGroup, db: IDB) {
-  syncGroupPromiseChain = syncGroupPromiseChain.then(async () => {
+  // syncGroupPromiseChain = syncGroupPromiseChain.then(async () => {
     const groupId = remoteGroup.id;
     if (groupId !== connection.me.id && groupId !== usersGroup.id) {
       const localGroup = await db.get(groupId);
@@ -169,11 +169,11 @@ export async function syncGroup(connection: IConnection, remoteGroup: IGroup, db
       }
     }
     await syncBlockId(connection, db, groupId);
-  })
-  .catch(err => {
-    console.error(`error while syncing group`, { remoteDevice: connection.remoteDeviceId, group: remoteGroup}, err)
-  });
-  return syncGroupPromiseChain
+  // })
+  // .catch(err => {
+  //   console.error(`error while syncing group`, { remoteDevice: connection.remoteDeviceId, group: remoteGroup}, err)
+  // });
+  // return syncGroupPromiseChain
 }
 
 export async function syncDBs(connection: IConnection) {
@@ -189,8 +189,8 @@ export async function syncDBs(connection: IConnection) {
   console.log({ remoteGroups })
   connection.groups = remoteGroups.map(g => g.id);
 
-  await Promise.all(remoteGroups.map(_syncGroup));
-  // for (const remoteGroup of remoteGroups) await _syncGroup(remoteGroup);
+  // await Promise.all(remoteGroups.map(_syncGroup));
+  for (const remoteGroup of remoteGroups) await _syncGroup(remoteGroup);
   console.log(`finished syncing DB with ${connection.remoteDeviceId} in ${Date.now() - startTime} ms`);
 }
 
