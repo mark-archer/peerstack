@@ -166,6 +166,9 @@ export async function syncGroup(connection: IConnection, remoteGroup: IGroup, db
       if (!localGroup || remoteGroup.modified > localGroup.modified) { // TODO potential security hole if we don't have the local group, do we trust the remote user?
         await db.save(remoteGroup);
         eventHandlers.onRemoteDataSaved(remoteGroup);
+      } else if (localGroup.type === 'Deleted' && remoteGroup.modified < localGroup.modified) {
+        RPC(connection, pushData)(localGroup);
+        return;
       }
     }
     await syncBlockId(connection, db, groupId);
