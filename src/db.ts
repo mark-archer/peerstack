@@ -338,6 +338,12 @@ export async function hasPermission(userId: string, group: string | IGroup, acce
     }
   }
   group = group as IGroup;
+
+  // enables propagating deleted groups
+  if ((group as any)?.type == 'Deleted' && group.id === group.group) {
+    return true
+  }
+  
   if (group?.type !== 'Group') {
     throw new Error('invalid group specified');
   }
@@ -363,6 +369,7 @@ export async function validateData(db: IDB, datas: IData[]) {
     if (data.modified > (Date.now() + 60000)) {
       throw new Error(`modified timestamp cannot be in the future`);
     }
+    // TODO verify type is not being changed on existing data (e.g. deleting a user or group)
     if (data.type === 'Group') {
       if (data.id !== data.group) {
         throw new Error(`All groups must have their group set to themselves`);
