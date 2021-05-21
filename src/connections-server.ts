@@ -1,18 +1,21 @@
 import * as _ from 'lodash';
 import { Socket } from 'socket.io';
-import { IUser, verifySignedObject } from './user';
+import { IUser } from './user';
 import { Server } from 'http';
 import { IDeviceRegistration, ISDIExchange } from './connections';
 
 
-export function init(server: Server, TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN) {
+export function init(server: Server, TWILIO_ACCOUNT_SID?, TWILIO_AUTH_TOKEN?) {
   let token;
-  try {
-    const client = require('twilio')(TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN);
-    client.tokens.create().then(_token => token = _token);
-  } catch (err) {
-    console.error(err);
+  if (TWILIO_ACCOUNT_SID && TWILIO_AUTH_TOKEN) {
+    try {
+      const client = require('twilio')(TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN);
+      client.tokens.create().then(_token => token = _token);
+    } catch (err) {
+      console.error(err);
+    }
   }
+
 
   const getIceServers = () => {
     const iceServers: RTCIceServer[] =
@@ -85,7 +88,7 @@ export function init(server: Server, TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN) {
         console.log('device registered', deviceId);
         if (callback) callback(null, 'success');
       } catch (err) {
-        console.error('device registration failed', err);        
+        console.error('device registration failed', err);
         if (callback) callback('device registration failed: ' + String(err))
         return;
       }
@@ -119,5 +122,5 @@ export function init(server: Server, TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN) {
   }
 
   const io = require('socket.io')(server);
-  io.on('connection', onSocketConnection);  
+  io.on('connection', onSocketConnection);
 }
