@@ -2,19 +2,19 @@
 
 import { sha256 } from 'js-sha256';
 import * as _ from 'lodash';
-import * as uuid from 'uuid';
 import * as base64 from "byte-base64";
+// import * as uuid from 'uuid';
 
 const stableStringify = require('fast-json-stable-stringify');
 
 export type anyObject = ({ [key: string]: any });
 
 export const isObject = (x: any) => _.isObject(x) && !_.isArray(x) && !_.isDate(x);
-export const guid = uuid.v4;
 
-export function newid_v1(): string {
-  return uuid.v4().replace(/-/g, '');
-}
+// export const guid = uuid.v4;
+// export function newid_v1(): string {
+//   return uuid.v4().replace(/-/g, '');
+// }
 
 export function isid_v1(id: any) {
   // valid 
