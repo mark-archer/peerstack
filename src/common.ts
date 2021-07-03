@@ -12,11 +12,11 @@ export type anyObject = ({ [key: string]: any });
 export const isObject = (x: any) => _.isObject(x) && !_.isArray(x) && !_.isDate(x);
 export const guid = uuid.v4;
 
-export function newid(): string {
+export function newid_v1(): string {
   return uuid.v4().replace(/-/g, '');
 }
 
-export function isid(id: any) {
+export function isid_v1(id: any) {
   // valid 
   //      7194ee666e4c4ab18f1f7466ec525a43
   //      7194ee666e4c4ab18f1f7466ec525a43:a
@@ -29,6 +29,64 @@ export function isid(id: any) {
   //      a:7194ee666e4c4ab18f1f7466ec525a43
   return Boolean(/^[0-9a-f]{32}(:[0-9a-z]+)*$/i.exec(id)) && id.length <= 128;
 };
+
+export function newid(): string {
+  // v1 ids do not sort in their natural order.  The goal is to fix that with v2
+  // modeled after mongo ids, timestamp + counter + random but we're going to skip counter and have bigger random
+  // people can switch to using a counter + random later if they want (or do something else with the random part). 
+  
+  // This id is going to be a 128 bit number so it fits naturally into memory.
+  // 2 ** 128 ~= 3.4e38 is the maximum it can be
+  // For efficient transmission and storage we're going to represent this number with base 36 [0-9a-z]
+  // (3.4e38).toString(36) == "f55n5nmuuaw00000000000000", this is our max in base 36, 25 characters
+  // Date.now() =~ 1625282091498, max without more digits is 9999999999999 == year 2286 ~ 250 years, maybe good enough
+  // but we're dealing in base 36 not base 10
+  // (1625282091498).toString(36) == "kqn6zrvu" (length 8)
+  // Number.parseInt("zzzzzzzz", 36) == 2821109907455 == year 2059.  Way too soon so going up to 9 characters
+  // Number.parseInt("zzzzzzzzz", 36) == 101559956668415 == year 5188.  
+  // but the max size of 9 left most can only be "f55n5nmuu" == 42720753566838 == 3323.  That'll could still work but only ~ 1100 years
+  // that leaves 16 characters to represent a random number to prevent collisions, 36 ** 16 ~= 8e24
+  // this might be a bad idea but I'm going to allocate one more character to the time and one less to the random number
+  // the reasoning is I don't want to bake in an upper limit to these numbers that is actually relatively soon in the grand scheme of things
+  // now our max time is new Date(Number.parseInt('f55n5nmuua',36)) == +050705-08-09T23:40:06.178Z. 50k years from now.  THAT SHOULD WORK
+  // We still have 15 chars for our random number. 36 ** 15 ~= 2e23
+  // That is still a huge number and I think (hope) the chance of collision is still so small as to be effectively unique
+  // It's also worth mentioning that it _technically_ only needs to be unique within a group.  
+  // I want it to be globally unique but knowing things can still work if ids are only unique within a group gives me a lot of comfort
+  // These ids are pretty much guaranteed to be unique within a group and, in light of that, it certainly seems worth the extra character to push the max date out so far
+  
+  
+  const time = Date.now().toString(36).padStart(10,'0'); // e.g: "00kq6xh45f", length == 10
+  // Number.parseInt('zzzzzzzz',36).toString().length == 13, 8 digits in base 36 maps to 13 digits in base 10
+  const rand1 = _.random(1e14).toString(36).padStart(8,'0').substr(0,8);
+  
+  // Number.parseInt('zzzzzzz',36).toString().length == 11, 7 digits in base 36 maps to 11 digits in base 10
+  const rand2 = _.random(1e12).toString(36).padStart(7,'0').substr(0,7);
+  return time + rand1 + rand2;
+}
+
+export function isid(id: any): boolean {
+  // valid 
+  //      00kqn91s56yt2gu3yf5vnbg67
+  //      00kqn91s56yt2gu3yf5vnbg67:a
+  //      00kqn91s56yt2gu3yf5vnbg67:a:b
+  // invalid
+  //      00kqn91s56yt2gu3yf5vnbg67a
+  //      00kqn91s56yt2gu3yf5vnbg6
+  //      00kqn91s56yt2gu3yf5vnbg67:
+  //      00kqn91s56yt2gu3yf5vnbg67:a:
+  //      a:00kqn91s56yt2gu3yf5vnbg67
+  return Boolean(/^[0-9a-z]{25}(:[0-9a-z]+)*$/i.exec(id)) && id.length <= 128 || isid_v1(id);
+};
+
+export function idTime(id: string): number {
+  const time36 = id.substr(0,10);
+  return Number.parseInt(time36, 36)
+}
+
+export function idDate(id: string): Date {
+  return new Date(idTime(id));
+}
 
 export function isEmail(x) {
   return _.isString(x) && /^[a-zA-Z0-9.!#$%&’*+/=?^_`{|}~-]+@[a-zA-Z0-9-]+(?:\.[a-zA-Z0-9-]+)*$/.test(x);
