@@ -74,20 +74,31 @@ export type Indexes
   | 'type-subject'
   | 'group-type-subject'
 
-export interface ICursor<T = IData> {
-  idbRequest: IDBRequest,
-  idbCursor: IDBCursorWithValue,
-  value: T,
-  next: () => Promise<ICursor<T>>
+export interface ICursor<T> {
+  value: T
+  next: () => Promise<T>
 }
 
+
+export type DBKeyValue = string | number | Date
+
+export type DBKeyArray = DBKeyValue[]
+
+export interface DBKeyRange {
+  lower?: DBKeyValue,
+  upper?: DBKeyValue,
+  lowerOpen?: boolean,
+  upperOpen?: boolean
+}
+
+export type DBQuery = DBKeyValue | DBKeyArray | DBKeyRange
+
 export interface IDB {
-  db: IDBDatabase
   save: (data: IData | IData[], skipValidation?: boolean) => Promise<void>
-  find: <T = IData>(query?: string | number | IDBKeyRange | ArrayBuffer | Date | ArrayBufferView | IDBArrayKey, index?: Indexes) => Promise<T[]>
   get: <T = IData>(id: string) => Promise<T>
   delete: (id: string) => Promise<void>
-  openCursor: <T = IData>(query?: string | number | IDBKeyRange | ArrayBuffer | Date | ArrayBufferView | IDBArrayKey, index?: Indexes, direction?: IDBCursorDirection) => Promise<ICursor<T>>
+  find: <T = IData>(query?: DBQuery, index?: Indexes) => Promise<T[]>
+  openCursor: <T = IData>(query?: DBQuery, index?: Indexes, direction?: IDBCursorDirection) => Promise<ICursor<T>>
   files: {
     save: (file: IFile) => Promise<void>
     get: (id: string) => Promise<IFile>

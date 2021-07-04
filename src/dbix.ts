@@ -1,6 +1,23 @@
 import { isArray } from 'lodash';
-import { IData, IFile, Indexes, IDB, validateData, clearHashCache, ICursor } from './db';
+import { isObject } from './common';
+import { IData, IFile, Indexes, IDB, validateData, clearHashCache, ICursor, DBQuery, DBKeyRange, DBKeyArray, DBKeyValue } from './db';
 
+export type IDBQuery = string | number | Date | IDBKeyRange | IDBArrayKey | ArrayBuffer | ArrayBufferView;
+
+export function convertDBQueryToIDBQuery(query: DBQuery): IDBQuery {
+  if (isObject(query)) {
+    const dbQuery = query as DBKeyRange;
+    if (dbQuery.lower !== undefined && dbQuery.upper === undefined) {
+      return IDBKeyRange.lowerBound(dbQuery.lower, dbQuery.lowerOpen);
+    } else if (dbQuery.lower === undefined && dbQuery.upper !== undefined) {
+      return IDBKeyRange.upperBound(dbQuery.upper, dbQuery.upperOpen);
+    } else {
+      return IDBKeyRange.bound(dbQuery.lower, dbQuery.upper, dbQuery.lowerOpen, dbQuery.upperOpen);
+    }
+  } else {
+    return query as DBKeyValue | DBKeyArray;
+  }
+}
 
 export async function init(
   { dbName = 'peerstack', dbVersion = 6, onUpgrade = undefined } = {}
@@ -90,16 +107,17 @@ export async function init(
     };
   });
 
-  const find = <T = IData>(query?: string | number | IDBKeyRange | ArrayBuffer | Date | ArrayBufferView | IDBArrayKey, index?: Indexes): Promise<T[]> =>
+  const find = <T = IData>(query?: DBQuery, index?: Indexes): Promise<T[]> =>
     new Promise(async (resolve, reject) => {
+      const ixQuery = convertDBQueryToIDBQuery(query)
       const transaction = db.transaction(['data'], 'readonly');
       transaction.onerror = evt => reject(evt);
       const dataStore = transaction.objectStore('data');
       let request: IDBRequest;
       if (index) {
-        request = dataStore.index(index).getAll(query);
+        request = dataStore.index(index).getAll(ixQuery);
       } else {
-        request = dataStore.getAll(query);
+        request = dataStore.getAll(ixQuery);
       }
       request.onerror = evt => reject(evt);
       request.onsuccess = evt => resolve((evt.target as any).result);
@@ -129,41 +147,33 @@ export async function init(
 
   const get = (id: string) => dbOp('data', 'get', id);
 
-  const openCursor = <T>(query?: string | number | IDBKeyRange | ArrayBuffer | Date | ArrayBufferView | IDBArrayKey, index?: Indexes, direction?: IDBCursorDirection): Promise<ICursor<T>> =>
+  const openCursor = <T>(query?: DBQuery, index?: Indexes, direction?: IDBCursorDirection): Promise<ICursor<T>> =>
     new Promise(async (resolve, reject) => {
+      const ixQuery = convertDBQueryToIDBQuery(query);
       const transaction = db.transaction(['data'], 'readonly');
       transaction.onerror = evt => reject(evt);
       const dataStore = transaction.objectStore('data');
       let request: IDBRequest;
       if (index) {
-        request = dataStore.index(index).openCursor(query, direction);
+        request = dataStore.index(index).openCursor(ixQuery, direction);
       } else {
-        request = dataStore.openCursor(query, direction);
+        request = dataStore.openCursor(ixQuery, direction);
       }
       request.onerror = evt => reject(evt);
-      let resolveNext: ((value: ICursor<T>) => void) = resolve;
-      const cursorWrapper: ICursor<T> = {
-        idbRequest: request,
-        idbCursor: null,
+      const cursor: ICursor<T> = {
         next: null,
         value: null,
       }
+      let resolveNext = (value: T) => resolve(cursor);
       request.onsuccess = evt => {
-        const cursor: IDBCursorWithValue = (evt.target as any).result;
-        cursorWrapper.idbCursor = cursor;
-        if (!cursor) {
-          cursorWrapper.next = null;
-          cursorWrapper.value = null;
-          resolveNext(cursorWrapper)
-        } else {
-          cursorWrapper.value = cursor.value;
-          cursorWrapper.next = () => {
-            const nextCursor = new Promise<ICursor<T>>(resolve => resolveNext = resolve);
-            cursor.continue();
-            return nextCursor;
-          }
-          resolveNext(cursorWrapper);
-        }
+        const ixCursor: IDBCursorWithValue = (evt.target as any).result;
+        cursor.value = ixCursor?.value;
+        resolveNext(cursor.value);
+        cursor.next = () => new Promise((resolve, reject) => {
+          if (!ixCursor) return reject(new Error('Cursor has either reached the end or is no longer valid'))
+          ixCursor.continue();
+          resolveNext = resolve
+        })
       }
     });
 
@@ -186,7 +196,6 @@ export async function init(
   const deleteFile = (id: string) => dbOp('files', 'delete', id);
 
   const baseOps: IDB = {
-    db,
     save,
     delete: deleteOp,    
     get,
