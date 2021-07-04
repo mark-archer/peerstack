@@ -1,6 +1,6 @@
 import { signObject, newUser, signMessageWithSecretKey, openMessage } from './user';
 import { registerDevice, me } from './connections';
-import { getIndexedDB, IData, IGroup } from './db';
+import { getDB, IData, IGroup } from './db';
 import { isid, newid } from './common';
 import { eventHandlers, getCurrentConnection, IConnection, remotelyCallableFunctions, RPC } from './remote-calls';
 
@@ -46,7 +46,7 @@ export async function createInvitation(group: string, expires?: number, read = t
     secretKey: keys.secretKey
   }
   signObject(invitation); // this assumes the current user has permissions (admin) to invite users.  That won't be verified until the invitation is used.
-  const db = await getIndexedDB();
+  const db = await getDB();
   await db.save(invitation);
   return {
     id: invitation.id,
@@ -57,7 +57,7 @@ export async function createInvitation(group: string, expires?: number, read = t
 
 export async function acceptInvitation(invite: IInviteDetails) {
   const { id, group, publicKey } = invite;
-  const db = await getIndexedDB();
+  const db = await getDB();
   const inviteAccept: IInviteAccept = {
     id: newid(),
     type: IInviteAcceptType,
@@ -82,7 +82,7 @@ export async function acceptInvitation(invite: IInviteDetails) {
 let pendingInvites: IInviteAccept[];
 export async function checkPendingInvitations(connection: IConnection) {
   if (!pendingInvites) {
-    const db = await getIndexedDB();
+    const db = await getDB();
     pendingInvites = (await db.find(IInviteAcceptType, 'type')) as IInviteAccept[];
   }
   let groupJoined = false;
@@ -97,7 +97,7 @@ export async function checkPendingInvitations(connection: IConnection) {
         continue;
       }
       const group = await RPC(connection, confirmInvitation)(invitation.id, invitation.publicKey);
-      const db = await getIndexedDB();
+      const db = await getDB();
       await db.save(group);
       eventHandlers.onRemoteDataSaved(group);
 
@@ -117,7 +117,7 @@ async function verifyInvitationSender(inviteId: string, idToSign: string) {
   if (!isid(idToSign)) {
     throw new Error(`${idToSign} is not an id. Only ids are accepted as prompts to verify identity`)
   }
-  const db = await getIndexedDB();
+  const db = await getDB();
   const invite = await db.get(inviteId) as IInvitation;
   if (invite.type === 'Invitation') {
     return signMessageWithSecretKey(idToSign, invite.secretKey);
@@ -130,7 +130,7 @@ remotelyCallableFunctions.verifyInvitationSender = verifyInvitationSender;
 
 async function confirmInvitation(inviteId: string, publicKey: string) {
   const connection = getCurrentConnection();
-  const db = await getIndexedDB();
+  const db = await getDB();
   const invitation = await db.get(inviteId) as IInvitation;
   if (!invitation || invitation.type !== 'Invitation' || invitation.publicKey !== publicKey) {
     throw new Error('Invalid invitation id or secret');

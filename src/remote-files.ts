@@ -1,7 +1,7 @@
 import { shuffle } from "lodash";
 import { hashBlob } from "./common";
 import { chunkSize, connections, IDeviceConnection } from "./connections";
-import { getIndexedDB, hasPermission, IData, IFile } from "./db";
+import { getDB, hasPermission, IData, IFile } from "./db";
 import { getCurrentConnection, remotelyCallableFunctions, RPC } from "./remote-calls";
 
 remotelyCallableFunctions.getFile = getFile;
@@ -43,7 +43,7 @@ export async function getFileFromPeers(fileId: string, updateProgress?: (percent
 
 async function getFile(fileId: string) {
   const connection = getCurrentConnection() as IDeviceConnection;
-  const db = await getIndexedDB()
+  const db = await getDB()
   const file = await db.files.get(fileId)
   if (!file) return;
 

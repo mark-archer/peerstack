@@ -1,5 +1,5 @@
 import { newid } from './common';
-import { getIndexedDB, IData } from './db';
+import { getDB, IData } from './db';
 
 describe('db', () => {
 
@@ -46,7 +46,7 @@ describe('db', () => {
   // })
 
   test.skip('indexedDB baseOps CRUD', async () => {
-    const db = await getIndexedDB();
+    const db = await getDB();
     const id = newid();
     let data: IData = { type: 'any', id, group: id, owner: id, signature: null, test: 4, modified: Date.now() }
 

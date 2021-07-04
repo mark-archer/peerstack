@@ -1,5 +1,5 @@
 import { newid, toJSON } from "./common";
-import { getIndexedDB, IGroup } from './db';
+import { getDB, IGroup } from './db';
 import { IConnection, onRemoteMessage } from "./remote-calls";
 import { IUser, signObject, init as initUser } from "./user";
 import { checkPendingInvitations, IInviteAccept, IInviteAcceptType } from "./invitations"
@@ -120,7 +120,7 @@ export async function init(_deviceId: string, _me: IUser, serverUrl?: string) {
 }
 
 export async function registerDevice() {
-  const db = await getIndexedDB();
+  const db = await getDB();
   const allGroups = (await db.find('Group', 'type')) as IGroup[];
   const allGroupIds = allGroups.map(g => g.id);
   allGroupIds.push(me.id);

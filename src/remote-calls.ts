@@ -2,7 +2,7 @@ import * as _ from "lodash";
 import { uniq } from "lodash";
 import { fromJSON, isid, newid, sleep } from "./common";
 import { connections } from "./connections";
-import { checkPermission, getBlockData, getDetailHashes, getBlockIdHashes, getIndexedDB, getPersonalGroup, hasPermission, IData, IDB, IGroup, usersGroup } from "./db";
+import { checkPermission, getBlockData, getDetailHashes, getBlockIdHashes, getDB, getPersonalGroup, hasPermission, IData, IDB, IGroup, usersGroup } from "./db";
 import { IUser, openMessage, signMessage, signObject, verifySignedObject } from "./user";
 
 export type txfn = <T>(data: (string | IRemoteData)) => Promise<T | void> | void
@@ -67,7 +67,7 @@ export async function verifyRemoteUser(connection: IConnection) {
       throw new Error('Failed to verify possession of correct secretKey')
     }
     verifySignedObject(connection.remoteUser, connection.remoteUser.publicKey);
-    const db = await getIndexedDB();
+    const db = await getDB();
     const dbUser = await db.get(connection.remoteUser.id) as IUser;
     if (dbUser && dbUser.publicKey !== connection.remoteUser.publicKey) {
       // TODO allow public keys to change
@@ -93,7 +93,7 @@ export async function verifyRemoteUser(connection: IConnection) {
 
 export async function getRemoteGroups() {
   const connection: IConnection = currentConnection;
-  const db = await getIndexedDB();
+  const db = await getDB();
   const allGroups = (await db.find('Group', 'type')) as IGroup[];
   const readGroups: IGroup[] = []
   for (const group of allGroups) {
@@ -181,7 +181,7 @@ export async function syncGroup(connection: IConnection, remoteGroup: IGroup, db
 
 export async function syncDBs(connection: IConnection) {
   const startTime = Date.now();
-  const db = await getIndexedDB();
+  const db = await getDB();
   const _syncGroup = (group: IGroup) => syncGroup(connection, group, db);
   
   let remoteGroups = await RPC(connection, getRemoteGroups)();
@@ -209,7 +209,7 @@ export async function pushData(data: IData) {
   // console.log('starting data save', data);
   pushDataAlreadySeen[idPlusModified] = true;
   const connection: IConnection = currentConnection;
-  const db = await getIndexedDB();
+  const db = await getDB();
   const dbData = await db.get(data.id);
   if (!dbData || dbData.modified < data.modified) {
     await db.save(data);

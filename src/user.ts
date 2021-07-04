@@ -1,7 +1,7 @@
 import * as nacl from 'tweetnacl';
 import * as naclUtil from 'tweetnacl-util';
 import { decodeUint8ArrayFromBaseN, encodeUint8ArrayToBaseN, hashObject, newid } from './common';
-import { getIndexedDB, IData } from './db';
+import { getDB, IData } from './db';
 
 export interface ISigned {
   signature?: string
@@ -56,7 +56,7 @@ export async function init(config?: { id: string, secretKey: string, name?: stri
     } catch { }
     // @ts-ignore
     const storedCredentials = await navigator.credentials.get({ password: true }).catch(() => 0)
-    const db = await getIndexedDB();
+    const db = await getDB();
     if (!storedCredentials) {
       // can't use credential store so fallback to local storage for now 
       // TODO find a more secure way to do this
@@ -74,7 +74,7 @@ export async function init(config?: { id: string, secretKey: string, name?: stri
     // @ts-ignore
     secretKey = creds.password;
   } else {
-    const db = await getIndexedDB();
+    const db = await getDB();
     config = (await db.local.get(credentialsId)).config;
     userId = config?.id;
     secretKey = config?.secretKey;
