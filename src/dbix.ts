@@ -2,7 +2,7 @@ import { isArray } from 'lodash';
 import { IData, IFile, Indexes, IDB, validateData, clearHashCache, ICursor } from './db';
 
 
-export async function getDB(
+export async function init(
   { dbName = 'peerstack', dbVersion = 6, onUpgrade = undefined } = {}
 ): Promise<IDB> {
   if (typeof indexedDB === 'undefined') {

@@ -108,21 +108,24 @@ export interface PeerstackDBOpts {
 }
 
 export interface IPersistenceLayer {
-  getDB: (opts: Omit<PeerstackDBOpts, 'persistenceLayer'>) => Promise<IDB>
+  init: (opts: Omit<PeerstackDBOpts, 'persistenceLayer'>) => Promise<IDB>
 }
 
+let db: IDB
 
-let dbInitialized: IDB
-
-export async function getDB(
+export async function init(
   { dbName = 'peerstack', dbVersion = 6, onUpgrade, persistenceLayer }: PeerstackDBOpts = { persistenceLayer: dbix }
 ): Promise<IDB> {
-  if (!dbInitialized) {
-    dbInitialized = await persistenceLayer.getDB({ dbName, dbVersion, onUpgrade });
-  }
-  return dbInitialized;
+  db = await persistenceLayer.init({ dbName, dbVersion, onUpgrade });
+  return db;
 }
 
+export async function getDB(): Promise<IDB> {
+  if (!db) {
+    throw new Error('db has not been initialized')
+  }
+  return db;
+}
 
 export const checkPermission = (function <T extends Function>(hasPermission: T): T {
   return <any>async function (...args) {
