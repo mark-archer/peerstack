@@ -1,6 +1,5 @@
-import { isArray } from 'lodash';
 import { isObject } from './common';
-import { IData, IFile, Indexes, IDB, validateData, clearHashCache, ICursor, DBQuery, DBKeyRange, DBKeyArray, DBKeyValue } from './db';
+import { IData, IFile, Indexes, IDB, ICursor, DBQuery, DBKeyRange, DBKeyArray, DBKeyValue } from './db';
 
 export type IDBQuery = string | number | Date | IDBKeyRange | IDBArrayKey | ArrayBuffer | ArrayBufferView;
 
@@ -87,13 +86,7 @@ export async function init(
     }
   });
 
-  const save = (data: IData | IData[], skipValidation: boolean = false): Promise<any> => new Promise(async (resolve, reject) => {
-    if (!isArray(data)) {
-      data = [data];
-    }
-    if (!skipValidation) {
-      await validateData(baseOps, data);
-    }
+  const save = (data: IData[]): Promise<any> => new Promise(async (resolve, reject) => {
     const transaction = db.transaction(['data'], 'readwrite');
     transaction.onerror = evt => reject(evt);
     const objectStore = transaction.objectStore('data');
@@ -102,7 +95,6 @@ export async function init(
       request.onerror = evt => reject(evt);
     }
     transaction.oncomplete = evt => {
-      data.forEach((d: IData) => clearHashCache(d.group));
       resolve((evt.target as any).result);
     };
   });
@@ -137,15 +129,6 @@ export async function init(
       // }
     })
   }
-
-  async function deleteOp(id) {
-    const dbData = await get(id);
-    if (!dbData) return;
-    await dbOp('data', 'delete', id);
-    clearHashCache(dbData.group);
-  }
-
-  const get = (id: string) => dbOp('data', 'get', id);
 
   const openCursor = <T>(query?: DBQuery, index?: string, direction?: IDBCursorDirection): Promise<ICursor<T>> =>
     new Promise(async (resolve, reject) => {
@@ -193,7 +176,7 @@ export async function init(
           resolve(nextValue || true); // we only want `.next()` to return falsy if no more values are available
           nextValueReady = false
           ixCursor?.continue();
-        } else if (cursorDone) {          
+        } else if (cursorDone) {
           resolve(null)
         } else {
           resolveNext = nextValue => {
@@ -208,11 +191,11 @@ export async function init(
       resolve(cursor);
 
       request.onsuccess = evt => {
-        valueCount++;        
+        valueCount++;
         ixCursor = (evt.target as any).result;
         if (!ixCursor) {
           cursorDone = true;
-        }                  
+        }
         if (resolveNext) {
           resolveNext(ixCursor?.value);
         } else {
@@ -222,34 +205,17 @@ export async function init(
       }
     });
 
-  const saveFile = (file: IFile) => {
-    if (file.type !== 'File') {
-      throw new Error(`type must be 'File'`)
-    }
-    if (!isArray(file.shareGroups) || !isArray(file.shareUsers)) {
-      throw new Error(`shareGroups and shareUsers must be arrays`);
-    }
-    const requiredFields = ['id', 'name', 'fileType', 'size', 'blob'];
-    requiredFields.forEach(key => {
-      if (!file[key]) {
-        throw new Error(`'${key}' is required but not present`)
-      }
-    });
-    return dbOp('files', 'put', file);
-  }
-  const getFile = (id: string) => dbOp('files', 'get', id);
-  const deleteFile = (id: string) => dbOp('files', 'delete', id);
-
+  
   const baseOps: IDB = {
-    save,
-    delete: deleteOp,    
-    get,
     find,
     openCursor,
+    save,
+    get: id => dbOp('data', 'get', id),
+    delete: id => dbOp('data', 'delete', id),
     files: {
-      save: saveFile,
-      get: getFile,
-      delete: deleteFile,
+      save: file => dbOp('files', 'put', file),
+      get: id => dbOp('files', 'get', id),
+      delete: id => dbOp('files', 'delete', id),
     },
     local: {
       save: data => dbOp('local', 'put', data),

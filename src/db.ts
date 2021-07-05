@@ -128,7 +128,45 @@ let db: IDB
 export async function init(
   { dbName = 'peerstack', dbVersion = 6, onUpgrade, persistenceLayer }: PeerstackDBOpts = { persistenceLayer: dbix }
 ): Promise<IDB> {
-  db = await persistenceLayer.init({ dbName, dbVersion, onUpgrade });
+  const _db = await persistenceLayer.init({ dbName, dbVersion, onUpgrade });  
+  
+  db = { ..._db, files: { ..._db.files },  local: { ..._db.local } };
+
+  db.save = async (data: IData | IData[], skipValidation: boolean = false) => {
+    if (!isArray(data)) {
+      data = [data];
+    }
+    if (!skipValidation) {
+      await validateData(db, data);
+    }
+    await _db.save(data);
+    data.forEach((d: IData) => clearHashCache(d.group));    
+  };
+
+  db.delete = async (id) => {
+    const dbData = await _db.get(id);
+    // NOTE: no real validation is here because this is only affects local, you can only affect network with updates (`save`) which is heavily validated
+    if (!dbData) return;
+    await _db.delete(id);
+    clearHashCache(dbData.group);
+  }
+
+  db.files.save = (file: IFile) => {
+    if (file.type !== 'File') {
+      throw new Error(`type must be 'File'`)
+    }
+    if (!isArray(file.shareGroups) || !isArray(file.shareUsers)) {
+      throw new Error(`shareGroups and shareUsers must be arrays`);
+    }
+    const requiredFields = ['id', 'name', 'fileType', 'size', 'blob'];
+    requiredFields.forEach(key => {
+      if (!file[key]) {
+        throw new Error(`'${key}' is required but not present`)
+      }
+    });
+    return _db.files.save(file);
+  }
+
   return db;
 }
 
@@ -231,8 +269,7 @@ export async function validateData(db: IDB, datas: IData[]) {
     }
     users[user.id] = user;
     if (data.type == 'User') {
-      // users are always allowed to create or update themselves 
-      continue;
+      continue; // users are always allowed to create or update themselves
     }
     try {
       if (data.type === 'Group') {
@@ -242,8 +279,6 @@ export async function validateData(db: IDB, datas: IData[]) {
         if (dbData && dbData.group != data.group) {
           await checkPermission(user.id, dbData.group, 'write');
           await checkPermission(user.id, data.group, 'write');
-        } if (dbData) {
-          await checkPermission(user.id, data.group, 'write')
         } else {
           await checkPermission(user.id, data.group, 'write')
         }
