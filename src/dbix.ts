@@ -1,5 +1,5 @@
 import { isObject } from './common';
-import { IData, IFile, Indexes, IDB, ICursor, DBQuery, DBKeyRange, DBKeyArray, DBKeyValue } from './db';
+import { IData, Indexes, IDB, ICursor, DBQuery, DBKeyRange, DBKeyArray, DBKeyValue } from './db';
 
 export type IDBQuery = string | number | Date | IDBKeyRange | IDBArrayKey | ArrayBuffer | ArrayBufferView;
 
@@ -18,9 +18,7 @@ export function convertDBQueryToIDBQuery(query: DBQuery): IDBQuery {
   }
 }
 
-export async function init(
-  { dbName = 'peerstack', dbVersion = 6, onUpgrade = undefined } = {}
-): Promise<IDB> {
+export async function init({ dbName, dbVersion, onUpgrade }): Promise<IDB> {
   if (typeof indexedDB === 'undefined') {
     throw new Error('indexedDB is not currently available')
   }

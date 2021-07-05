@@ -10,6 +10,7 @@ const stableStringify = require('fast-json-stable-stringify');
 export type anyObject = ({ [key: string]: any });
 
 export const isObject = (x: any) => _.isObject(x) && !_.isArray(x) && !_.isDate(x);
+export const isArray = (x: any) => _.isArray(x);
 
 // export const guid = uuid.v4;
 // export function newid_v1(): string {
