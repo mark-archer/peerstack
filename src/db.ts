@@ -76,17 +76,18 @@ export type Indexes
 
 export interface ICursor<T> {
   value: T
-  next: () => Promise<T>
+  next: () => Promise<T | boolean>
 }
 
+export type DBCursorDirection = "next" | "nextunique" | "prev" | "prevunique";
 
 export type DBKeyValue = string | number | Date
 
 export type DBKeyArray = DBKeyValue[]
 
 export interface DBKeyRange {
-  lower?: DBKeyValue,
-  upper?: DBKeyValue,
+  lower?: DBKeyValue | DBKeyArray,
+  upper?: DBKeyValue | DBKeyArray,
   lowerOpen?: boolean,
   upperOpen?: boolean
 }
@@ -98,7 +99,7 @@ export interface IDB {
   get: <T = IData>(id: string) => Promise<T>
   delete: (id: string) => Promise<void>
   find: <T = IData>(query?: DBQuery, index?: Indexes) => Promise<T[]>
-  openCursor: <T = IData>(query?: DBQuery, index?: Indexes, direction?: IDBCursorDirection) => Promise<ICursor<T>>
+  openCursor: <T = IData>(query?: DBQuery, index?: Indexes, direction?: DBCursorDirection) => Promise<ICursor<T>>
   files: {
     save: (file: IFile) => Promise<void>
     get: (id: string) => Promise<IFile>
@@ -114,7 +115,7 @@ export interface IDB {
 export interface PeerstackDBOpts {
   dbName?: string,
   dbVersion?: number,
-  onUpgrade?: ((evt: IDBVersionChangeEvent) => Promise<void>),
+  onUpgrade?: ((evt: any) => Promise<void>),
   persistenceLayer: IPersistenceLayer
 }
 
@@ -280,7 +281,8 @@ export async function getBlockData(group: string, level0BlockId: string) {
   const blockNum = Number(level0BlockId.substr(1));
   const lowerTime = blockNum * BLOCK_SIZE;
   const upperTime = lowerTime + BLOCK_SIZE;
-  const blockData = await db.find(IDBKeyRange.bound([group, lowerTime], [group, upperTime]), 'group-modified');
+  // const blockData = await db.find(IDBKeyRange.bound([group, lowerTime], [group, upperTime]), 'group-modified');
+  const blockData = await db.find({ lower: [group, lowerTime], upper: [group, upperTime] }, 'group-modified');
   return blockData;
 }
 
@@ -370,7 +372,8 @@ export async function getDetailHashes(groupId: string) {
   let lowerTime = maxTime - (maxTime % interval);
   let upperTime = lowerTime + interval;
   while (minTime < upperTime) {
-    let data = await db.find(IDBKeyRange.bound([groupId, lowerTime], [groupId, upperTime]), 'group-modified');
+    // let data = await db.find(IDBKeyRange.bound([groupId, lowerTime], [groupId, upperTime]), 'group-modified');
+    let data = await db.find({ lower: [groupId, lowerTime], upper: [groupId, upperTime] }, 'group-modified');
     lowerTime -= interval;
     upperTime -= interval;
     if (!data.length) continue;

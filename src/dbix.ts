@@ -147,9 +147,16 @@ export async function init(
 
   const get = (id: string) => dbOp('data', 'get', id);
 
-  const openCursor = <T>(query?: DBQuery, index?: Indexes, direction?: IDBCursorDirection): Promise<ICursor<T>> =>
+  const openCursor = <T>(query?: DBQuery, index?: string, direction?: IDBCursorDirection): Promise<ICursor<T>> =>
     new Promise(async (resolve, reject) => {
-      const ixQuery = convertDBQueryToIDBQuery(query);
+      let ixQuery = convertDBQueryToIDBQuery(query);
+      if (typeof ixQuery !== 'object') {
+        if (!direction || direction === 'next' || direction == 'nextunique') {
+          ixQuery = IDBKeyRange.lowerBound(query);
+        } else {
+          ixQuery = IDBKeyRange.upperBound(query);
+        }
+      }
       const transaction = db.transaction(['data'], 'readonly');
       transaction.onerror = evt => reject(evt);
       const dataStore = transaction.objectStore('data');
@@ -160,20 +167,58 @@ export async function init(
         request = dataStore.openCursor(ixQuery, direction);
       }
       request.onerror = evt => reject(evt);
+
       const cursor: ICursor<T> = {
         next: null,
         value: null,
       }
-      let resolveNext = (value: T) => resolve(cursor);
+      let resolveNext: (value: T) => void;
+      let nextValue: T;
+      let nextValueReady = false;
+      let ixCursor: IDBCursorWithValue;
+      let cursorDone = false;
+      let valueCount = 0;
+
+      // NOTE this is optimized to prefetch the next value _but_ the cursor will end if any async operation 
+      // happens in between fetches so it has no benefit for now.  
+      cursor.next = () => new Promise((resolve, reject) => {
+        const valueCountSnapshot = valueCount;
+        setTimeout(() => {
+          if (valueCountSnapshot == valueCount) {
+            reject(new Error('cursor timed out'))
+          }
+        }, 1000);
+        if (nextValueReady) {
+          cursor.value = nextValue;
+          resolve(nextValue || true); // we only want `.next()` to return falsy if no more values are available
+          nextValueReady = false
+          ixCursor?.continue();
+        } else if (cursorDone) {          
+          resolve(null)
+        } else {
+          resolveNext = nextValue => {
+            cursor.value = nextValue;
+            resolve(nextValue);
+            nextValueReady = false
+            resolveNext = null;
+            ixCursor?.continue();
+          };
+        }
+      })
+      resolve(cursor);
+
       request.onsuccess = evt => {
-        const ixCursor: IDBCursorWithValue = (evt.target as any).result;
-        cursor.value = ixCursor?.value;
-        resolveNext(cursor.value);
-        cursor.next = () => new Promise((resolve, reject) => {
-          if (!ixCursor) return reject(new Error('Cursor has either reached the end or is no longer valid'))
-          ixCursor.continue();
-          resolveNext = resolve
-        })
+        valueCount++;        
+        ixCursor = (evt.target as any).result;
+        if (!ixCursor) {
+          cursorDone = true;
+        }                  
+        if (resolveNext) {
+          resolveNext(ixCursor?.value);
+        } else {
+          nextValueReady = true;
+          nextValue = ixCursor?.value;
+        }
       }
     });
 
