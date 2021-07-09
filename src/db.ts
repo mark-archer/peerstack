@@ -1,7 +1,9 @@
-import { compact, groupBy, isArray, isObject, set, sortBy, uniq } from 'lodash';
+import { compact, groupBy, isArray, isObject, reject, set, sortBy, uniq } from 'lodash';
 import { hashObject } from './common';
 import { ISigned, IUser, verifySignedObject } from './user';
 import * as dbix from './dbix'
+import * as dbfs from './dbfs'
+import * as fs from 'fs'
 
 export interface IData extends ISigned {
   id: string,
@@ -116,19 +118,31 @@ export interface PeerstackDBOpts {
   dbName?: string,
   dbVersion?: number,
   onUpgrade?: ((evt: any) => Promise<void>),
-  persistenceLayer: IPersistenceLayer
+  persistenceLayer?: IPersistenceLayer,
+  [key: string]: any
 }
 
 export interface IPersistenceLayer {
-  init: (opts: Omit<PeerstackDBOpts, 'persistenceLayer'>) => Promise<IDB>
+  init: (opts: PeerstackDBOpts) => Promise<IDB>
 }
 
 let db: IDB
 
-export async function init(
-  { dbName = 'peerstack', dbVersion = 6, onUpgrade, persistenceLayer }: PeerstackDBOpts = { persistenceLayer: dbix }
-): Promise<IDB> {
-  const _db = await persistenceLayer.init({ dbName, dbVersion, onUpgrade });  
+export async function init(opts?: PeerstackDBOpts): Promise<IDB> {
+  let persistenceLayer = opts?.persistenceLayer;
+  if (typeof indexedDB !== 'undefined') {
+    persistenceLayer = dbix;
+  } else {
+    persistenceLayer = dbfs;
+    (opts as dbfs.DBFSOpts)._fs = {
+      readFile: path => new Promise((resolve, reject) => fs.readFile(path, 'utf-8', (err, data) => err ? reject(err) : resolve(data))),
+      listFiles: path => new Promise((resolve, reject) => fs.readdir(path, 'utf-8', (err, data) => err ? reject(err) : resolve(data))),
+      writeFile: (path, data) => new Promise((resolve, reject) => fs.writeFile(path, data, (err) => err ? reject(err) : resolve())),
+      deleteFile: path => new Promise((resolve, reject) => fs.unlink(path, (err) => err ? reject(err) : resolve())),
+      mkdir: path => new Promise((resolve, reject) => fs.mkdir(path, { recursive: true }, (err) => err ? reject(err) : resolve())),
+    }    
+  }
+  const _db = await persistenceLayer.init(opts);
   
   db = { ..._db, files: { ..._db.files },  local: { ..._db.local } };
 

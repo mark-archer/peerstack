@@ -1,5 +1,5 @@
 import { isObject } from './common';
-import { IData, Indexes, IDB, ICursor, DBQuery, DBKeyRange, DBKeyArray, DBKeyValue } from './db';
+import { IData, Indexes, IDB, ICursor, DBQuery, DBKeyRange, DBKeyArray, DBKeyValue, PeerstackDBOpts } from './db';
 
 export type IDBQuery = string | number | Date | IDBKeyRange | IDBArrayKey | ArrayBuffer | ArrayBufferView;
 
@@ -18,7 +18,9 @@ export function convertDBQueryToIDBQuery(query: DBQuery): IDBQuery {
   }
 }
 
-export async function init({ dbName, dbVersion, onUpgrade }): Promise<IDB> {
+export async function init(
+  { dbName = 'peerstack', dbVersion = 6, onUpgrade }: PeerstackDBOpts = { }
+): Promise<IDB> {
   if (typeof indexedDB === 'undefined') {
     throw new Error('indexedDB is not currently available')
   }
@@ -113,21 +115,6 @@ export async function init({ dbName, dbVersion, onUpgrade }): Promise<IDB> {
       request.onsuccess = evt => resolve((evt.target as any).result);
     });
 
-  function dbOp(storeName: 'data' | 'files' | 'local', op: 'put' | 'delete' | 'get', value) {
-    return new Promise<any>((resolve, reject) => {
-      const mode: IDBTransactionMode = op == 'get' ? 'readonly' : 'readwrite';
-      const transaction = db.transaction([storeName], mode);
-      transaction.onerror = evt => reject(evt);
-      const request = transaction.objectStore(storeName)[op](value);
-      request.onerror = evt => reject(evt);
-      // if (op == 'get') {
-      request.onsuccess = evt => resolve((evt.target as any).result);
-      // } else {
-      //   transaction.oncomplete = evt => resolve((evt.target as any).result);
-      // }
-    })
-  }
-
   const openCursor = <T>(query?: DBQuery, index?: string, direction?: IDBCursorDirection): Promise<ICursor<T>> =>
     new Promise(async (resolve, reject) => {
       let ixQuery = convertDBQueryToIDBQuery(query);
@@ -202,7 +189,21 @@ export async function init({ dbName, dbVersion, onUpgrade }): Promise<IDB> {
         }
       }
     });
-
+  
+  function dbOp(storeName: 'data' | 'files' | 'local', op: 'put' | 'delete' | 'get', value) {
+    return new Promise<any>((resolve, reject) => {
+      const mode: IDBTransactionMode = op == 'get' ? 'readonly' : 'readwrite';
+      const transaction = db.transaction([storeName], mode);
+      transaction.onerror = evt => reject(evt);
+      const request = transaction.objectStore(storeName)[op](value);
+      request.onerror = evt => reject(evt);
+      // if (op == 'get') {
+      request.onsuccess = evt => resolve((evt.target as any).result);
+      // } else {
+      //   transaction.oncomplete = evt => resolve((evt.target as any).result);
+      // }
+    })
+  }
   
   const baseOps: IDB = {
     find,
