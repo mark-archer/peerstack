@@ -34,6 +34,7 @@ module.exports = {
   externals: {
     "react": "React",
     "react-dom": "ReactDOM",
-    "fs": "fs"
+    "fs": "fs",
+    "react-native-fs": "react-native-fs"
   }
 };

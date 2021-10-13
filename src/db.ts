@@ -3,7 +3,6 @@ import { hashObject } from './common';
 import { ISigned, IUser, verifySignedObject } from './user';
 import * as dbix from './dbix'
 import * as dbfs from './dbfs'
-import * as fs from 'fs'
 
 export interface IData extends ISigned {
   id: string,
@@ -134,13 +133,17 @@ export async function init(opts?: PeerstackDBOpts): Promise<IDB> {
     persistenceLayer = dbix;
   } else {
     persistenceLayer = dbfs;
-    (opts as dbfs.DBFSOpts)._fs = {
-      readFile: path => new Promise((resolve, reject) => fs.readFile(path, 'utf-8', (err, data) => err ? reject(err) : resolve(data))),
-      listFiles: path => new Promise((resolve, reject) => fs.readdir(path, 'utf-8', (err, data) => err ? reject(err) : resolve(data))),
-      writeFile: (path, data) => new Promise((resolve, reject) => fs.writeFile(path, data, (err) => err ? reject(err) : resolve())),
-      deleteFile: path => new Promise((resolve, reject) => fs.unlink(path, (err) => err ? reject(err) : resolve())),
-      mkdir: path => new Promise((resolve, reject) => fs.mkdir(path, { recursive: true }, (err) => err ? reject(err) : resolve())),
-    }    
+    if (!(opts as dbfs.DBFSOpts)._fs) {
+      const fs = require('react-native-fs');
+      (opts as dbfs.DBFSOpts)._fs = {
+        readFile: path => fs.readFile(fs.DocumentDirectoryPath + '/' + path, 'utf8'),
+        listFiles: path => fs.readDir(fs.DocumentDirectoryPath + '/' + path).then(results => results.map(r => r.name)),
+        writeFile: (path, data) => fs.writeFile(fs.DocumentDirectoryPath + '/' + path, data),
+        deleteFile: path => fs.unlink(fs.DocumentDirectoryPath + '/' + path),
+        mkdir: path => fs.mkdir(fs.DocumentDirectoryPath + '/' + path),
+        exists: path => fs.exists(path),
+      }
+    }
   }
   const _db = await persistenceLayer.init(opts);
   

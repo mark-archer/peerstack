@@ -9,9 +9,9 @@
   "private": false,
   "scripts": {
     "test": "jest --coverage --no-cache",
-    "build": "tsc",
+    "build": "webpack --config webpack.config.dev.js; webpack; tsc",
     "package": "yarn webpack",
-    "deploy": "webpack --config webpack.config.dev.js; webpack; tsc; npm version patch; npm publish ."
+    "deploy": "build; npm version patch; npm publish ."
   },
   "devDependencies": {
     "@types/jest": "^26.0.15",

@@ -45,7 +45,7 @@ export function newid(): string {
   // (1625282091498).toString(36) == "kqn6zrvu" (length 8)
   // Number.parseInt("zzzzzzzz", 36) == 2821109907455 == year 2059.  Way too soon so going up to 9 characters
   // Number.parseInt("zzzzzzzzz", 36) == 101559956668415 == year 5188.  
-  // but the max size of 9 left most can only be "f55n5nmuu" == 42720753566838 == 3323.  That'll could still work but only ~ 1100 years
+  // but the max size of 9 left most can only be "f55n5nmuu" == 42720753566838 == 3323.  That could still work but only ~ 1100 years
   // that leaves 16 characters to represent a random number to prevent collisions, 36 ** 16 ~= 8e24
   // this might be a bad idea but I'm going to allocate one more character to the time and one less to the random number
   // the reasoning is I don't want to bake in an upper limit to these numbers that is actually relatively soon in the grand scheme of things
@@ -53,7 +53,7 @@ export function newid(): string {
   // We still have 15 chars for our random number. 36 ** 15 ~= 2e23
   // That is still a huge number and I think (hope) the chance of collision is still so small as to be effectively unique
   // It's also worth mentioning that it _technically_ only needs to be unique within a group.  
-  // I want it to be globally unique but knowing things can still work if ids are only unique within a group gives me a lot of comfort
+  // It's intended to be globally unique but knowing things can still work if ids are only unique within a group gives me a lot of comfort
   // These ids are pretty much guaranteed to be unique within a group and, in light of that, it certainly seems worth the extra character to push the max date out so far
   
   
@@ -431,6 +431,14 @@ export function fromJSON(obj: any, externalReferences?: any) {
   }
   obj = recurse(obj);
   return obj;
+}
+
+export function stringify(obj: any): string {
+  return JSON.stringify(toJSON(obj));
+}
+
+export function parseJSON(json: string): any {
+  return fromJSON(JSON.parse(json));
 }
 
 export function diff(main: any, second: any) {
