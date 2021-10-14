@@ -129,10 +129,12 @@ let db: IDB
 
 export async function init(opts?: PeerstackDBOpts): Promise<IDB> {
   let persistenceLayer = opts?.persistenceLayer;
-  if (typeof indexedDB !== 'undefined') {
-    persistenceLayer = dbix;
-  } else {
-    persistenceLayer = dbrealm;
+  if (!persistenceLayer) {
+    if (typeof indexedDB !== 'undefined') {
+      persistenceLayer = dbix;
+    } else {
+      persistenceLayer = dbrealm;
+    }
   }
   
   // else {
