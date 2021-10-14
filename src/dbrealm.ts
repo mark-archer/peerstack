@@ -2,7 +2,6 @@
 import { parseJSON, stringify } from './common';
 import { DBCursorDirection, DBKeyArray, DBKeyRange, DBQuery, ICursor, IData, IDB, Indexes, PeerstackDBOpts } from './db';
 
-import Realm from "realm";
 import { db, isObject } from '.';
 import { isDate, isEqual, isArray } from 'lodash';
 
@@ -108,6 +107,7 @@ export async function init(
     primaryKey: "id",
   };
 
+  const Realm = require("realm");
   const realm = await Realm.open({
     path: dbName,
     schema: [DataSchema, LocalDataSchema, FilesSchema],
