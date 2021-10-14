@@ -1,7 +1,8 @@
 import { isObject } from './common';
 import { IData, Indexes, IDB, ICursor, DBQuery, DBKeyRange, DBKeyArray, DBKeyValue, PeerstackDBOpts } from './db';
 
-export type IDBQuery = string | number | Date | IDBKeyRange | IDBArrayKey | ArrayBuffer | ArrayBufferView;
+// export type IDBQuery = string | number | Date | IDBKeyRange | IDBArrayKey | ArrayBuffer | ArrayBufferView;
+export type IDBQuery = string | number | Date | IDBKeyRange | ArrayBuffer | ArrayBufferView;
 
 export function convertDBQueryToIDBQuery(query: DBQuery): IDBQuery {
   if (isObject(query)) {
@@ -14,7 +15,8 @@ export function convertDBQueryToIDBQuery(query: DBQuery): IDBQuery {
       return IDBKeyRange.bound(dbQuery.lower, dbQuery.upper, dbQuery.lowerOpen, dbQuery.upperOpen);
     }
   } else {
-    return query as DBKeyValue | DBKeyArray;
+    // return query as DBKeyValue | DBKeyArray;
+    return query as DBKeyValue;
   }
 }
 
@@ -190,7 +192,7 @@ export async function init(
       }
     });
   
-  function dbOp(storeName: 'data' | 'files' | 'local', op: 'put' | 'delete' | 'get', value) {
+  function dbOp(storeName: 'Data' | 'Files' | 'Local', op: 'save' | 'delete' | 'get', value) {
     return new Promise<any>((resolve, reject) => {
       const mode: IDBTransactionMode = op == 'get' ? 'readonly' : 'readwrite';
       const transaction = db.transaction([storeName], mode);
@@ -209,17 +211,17 @@ export async function init(
     find,
     openCursor,
     save,
-    get: id => dbOp('data', 'get', id),
-    delete: id => dbOp('data', 'delete', id),
+    get: id => dbOp('Data', 'get', id),
+    delete: id => dbOp('Data', 'delete', id),
     files: {
-      save: file => dbOp('files', 'put', file),
-      get: id => dbOp('files', 'get', id),
-      delete: id => dbOp('files', 'delete', id),
+      save: file => dbOp('Files', 'save', file),
+      get: id => dbOp('Files', 'get', id),
+      delete: id => dbOp('Files', 'delete', id),
     },
     local: {
-      save: data => dbOp('local', 'put', data),
-      get: id => dbOp('local', 'get', id),
-      delete: id => dbOp('local', 'delete', id),
+      save: data => dbOp('Local', 'save', data),
+      get: id => dbOp('Local', 'get', id),
+      delete: id => dbOp('Local', 'delete', id),
     },
   }
 

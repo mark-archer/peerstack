@@ -2,7 +2,7 @@ import { compact, groupBy, isArray, isObject, reject, set, sortBy, uniq } from '
 import { hashObject } from './common';
 import { ISigned, IUser, verifySignedObject } from './user';
 import * as dbix from './dbix'
-import * as dbfs from './dbfs'
+import * as dbrealm from './dbrealm'
 
 export interface IData extends ISigned {
   id: string,
@@ -132,19 +132,23 @@ export async function init(opts?: PeerstackDBOpts): Promise<IDB> {
   if (typeof indexedDB !== 'undefined') {
     persistenceLayer = dbix;
   } else {
-    persistenceLayer = dbfs;
-    if (!(opts as dbfs.DBFSOpts)._fs) {
-      const fs = require('react-native-fs');
-      (opts as dbfs.DBFSOpts)._fs = {
-        readFile: path => fs.readFile(fs.DocumentDirectoryPath + '/' + path, 'utf8'),
-        listFiles: path => fs.readDir(fs.DocumentDirectoryPath + '/' + path).then(results => results.map(r => r.name)),
-        writeFile: (path, data) => fs.writeFile(fs.DocumentDirectoryPath + '/' + path, data),
-        deleteFile: path => fs.unlink(fs.DocumentDirectoryPath + '/' + path),
-        mkdir: path => fs.mkdir(fs.DocumentDirectoryPath + '/' + path),
-        exists: path => fs.exists(path),
-      }
-    }
+    persistenceLayer = dbrealm;
   }
+  
+  // else {
+  //   persistenceLayer = dbfs;
+  //   if (!(opts as dbrealm.DBFSOpts)._fs) {
+  //     const fs = require('react-native-fs');
+  //     (opts as dbrealm.DBFSOpts)._fs = {
+  //       readFile: path => fs.readFile(fs.DocumentDirectoryPath + '/' + path, 'utf8'),
+  //       listFiles: path => fs.readDir(fs.DocumentDirectoryPath + '/' + path).then(results => results.map(r => r.name)),
+  //       writeFile: (path, data) => fs.writeFile(fs.DocumentDirectoryPath + '/' + path, data),
+  //       deleteFile: path => fs.unlink(fs.DocumentDirectoryPath + '/' + path),
+  //       mkdir: path => fs.mkdir(fs.DocumentDirectoryPath + '/' + path),
+  //       exists: path => fs.exists(path),
+  //     }
+  //   }
+  // }
   const _db = await persistenceLayer.init(opts);
   
   db = { ..._db, files: { ..._db.files },  local: { ..._db.local } };
@@ -358,7 +362,7 @@ export function clearHashCache(groupId: string) {
   }
 }
 
-const blockHashes: {
+export const blockHashes: {
   [groupId: string]: {
     [detailLevel: string]: { [blockId: string]: string }
   }
@@ -413,6 +417,8 @@ export async function getDetailHashes(groupId: string) {
 
   const maxTime = Date.now();
   const cursorModified = await db.openCursor(null, 'modified');
+  await cursorModified.next();
+    
   const minTime = cursorModified?.value?.modified || Date.now();
   const blockHashes = {};
 

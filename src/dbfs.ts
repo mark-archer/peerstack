@@ -260,12 +260,12 @@ export async function init({ dbName = 'peerstack', dbVersion = 1, onUpgrade, _fs
     resolve(null)
   });
 
-  function dbOp(dataStore: DataStore, op: 'get' | 'put' | 'delete', value) {
+  function dbOp(dataStore: DataStore, op: 'get' | 'save' | 'delete', value) {
     // TODO don't write as JSON if `files` datastore
     switch (op) {
       case 'get':
         return readJSON(`${dbName}/${dataStore}/${value}.json`);
-      case 'put':
+      case 'save':
         return writeJSON(`${dbName}/${dataStore}/${value.id}.json`, value);
       case 'delete':
         return fs.deleteFile(`${dbName}/${dataStore}/${value}.json`);
@@ -324,7 +324,7 @@ export async function init({ dbName = 'peerstack', dbVersion = 1, onUpgrade, _fs
         const newValues = fieldNames.map(fn => data[fn]);
         indexes[indexName].add(newValues, d.id);
       }))
-      await dbOp('data', 'put', d)
+      await dbOp('data', 'save', d)
     }
   }
 
@@ -347,12 +347,12 @@ export async function init({ dbName = 'peerstack', dbVersion = 1, onUpgrade, _fs
     delete: _delete,
     get: id => dbOp('data', 'get', id),
     files: {
-      save: file => dbOp('files', 'put', file),
+      save: file => dbOp('files', 'save', file),
       get: id => dbOp('files', 'get', id),
       delete: id => dbOp('files', 'delete', id),
     },
     local: {
-      save: data => dbOp('local', 'put', data),
+      save: data => dbOp('local', 'save', data),
       get: id => dbOp('local', 'get', id),
       delete: id => dbOp('local', 'delete', id),
     },
