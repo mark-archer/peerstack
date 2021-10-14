@@ -61,8 +61,9 @@ function dbQueryToRealmQuery(query?: DBQuery, index?: Indexes): string {
   }
 }
 
+// Realm db must be passed in
 export async function init(
-  { dbName = 'peerstack', dbVersion = 1, onUpgrade }: PeerstackDBOpts = {}
+  { Realm, dbName = 'peerstack', dbVersion = 1, onUpgrade }: PeerstackDBOpts = {}
 ): Promise<IDB> {
 
   const DataSchema = {
@@ -107,7 +108,6 @@ export async function init(
     primaryKey: "id",
   };
 
-  const Realm = require("realm");
   const realm = await Realm.open({
     path: dbName,
     schema: [DataSchema, LocalDataSchema, FilesSchema],
