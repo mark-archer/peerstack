@@ -72,7 +72,7 @@ export async function init(_deviceId: string, _me: IUser, serverUrl?: string) {
   socket.on('answer', (answer: ISDIExchange) => handelAnswer(answer));
 
   socket.on('iceCandidate', async (iceCandidate: ISDIExchange) => {
-    console.log('received ice candidate', iceCandidate.iceCandidates);
+    console.log('received ice candidate', { deviceId: iceCandidate.fromDevice });
     const conn = connections.find(c => c.id == iceCandidate.connectionId)
     if (!conn) {
       console.warn('no connection found for iceCandidate', iceCandidate);
@@ -137,10 +137,9 @@ export async function registerDevice() {
     })
   })
   const otherDevices = await getAvailableDevices();  
-  console.log('availableDevices', otherDevices);
+  console.log('availableDevices', otherDevices.map(d => ({ deviceId: d.deviceId, userId: d.user.id })), otherDevices.length);
   // otherDevices.forEach(device => connectToDevice(device.deviceId))
-  otherDevices.forEach(device => eventHandlers.onDeviceDiscovered(device.deviceId));
-  console.log('registered device', { deviceId, groups: allGroupIds })
+  otherDevices.forEach(device => eventHandlers.onDeviceDiscovered(device.deviceId));  
 }
 
 export async function getAvailableDevices(): Promise<IDeviceRegistration[]> {
@@ -342,11 +341,11 @@ export async function connectToDevice(toDeviceId): Promise<IConnection> {
     const connectionOpenPromise = new Promise(resolve => resolveConnectionOpen = resolve);
     dc.onmessage = e => onRemoteMessage(connection, e.data);
     dc.onopen = e => {
-      console.log('dc connection open to', toDeviceId)
+      console.log('dc connection open to', { deviceId: connection.remoteDeviceId, userId: connection.remoteUser?.id })
       resolveConnectionOpen();
     }
     dc.onclose = e => {
-      console.log("dc.onclose")
+      console.log("dc.onclose: ", { deviceId: connection.remoteDeviceId, userId: connection.remoteUser?.id })
       pc.close();
       garbageCollectConnections();
       eventHandlers.onDeviceDisconnected(connection);
@@ -355,7 +354,6 @@ export async function connectToDevice(toDeviceId): Promise<IConnection> {
     // setTimeout(() => syncData(connection), 1000);
 
     // send offer
-    console.log('ice candidates at offer time', iceCandidates)
     sendOffer({
       connectionId,
       fromDevice: deviceId,
@@ -377,7 +375,7 @@ export async function connectToDevice(toDeviceId): Promise<IConnection> {
     await connectionOpenPromise;
 
     // connection is now established and data connection ready to use
-    console.log(`connection to peer established!`, connectionId, { connections })
+    // console.log(`connection to peer established!`, { deviceId: connection.remoteDeviceId, userId: connection.remoteUser?.id });
 
     eventHandlers.onDeviceConnected(connection);
     checkPendingInvitations(connection);
@@ -444,7 +442,6 @@ async function handelOffer(offer: ISDIExchange) {
     await pc2.setLocalDescription(sdi)
 
     // send answer
-    console.log('ice candidates at answer time', iceCandidates)
     sendAnswer({
       connectionId: offer.connectionId,
       fromDevice: deviceId,
@@ -461,12 +458,12 @@ async function handelOffer(offer: ISDIExchange) {
         connection.send = data => dcSend(connection, data);
         dc.onmessage = e => onRemoteMessage(connection, e.data);
         dc.onopen = e => {
-          console.log('dc2 connection open to', offer.fromDevice)
+          console.log('dc2 connection open to', { deviceId: connection.remoteDeviceId, userId: connection.remoteUser?.id })
           eventHandlers.onDeviceConnected(connection);
           checkPendingInvitations(connection);
         }
         dc.onclose = e => {
-          console.log("dc2.onclose")
+          console.log("dc2.onclose", { deviceId: connection.remoteDeviceId, userId: connection.remoteUser?.id })
           pc2.close();
           garbageCollectConnections();
           eventHandlers.onDeviceDisconnected(connection);

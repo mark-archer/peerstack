@@ -189,7 +189,6 @@ export async function syncDBs(connection: IConnection) {
   if (connection.me.id === connection.remoteUser.id) {
     remoteGroups.unshift(getPersonalGroup(connection.me.id));
   }
-  console.log({ remoteGroups })
   connection.groups = remoteGroups.map(g => g.id);
 
   // await Promise.all(remoteGroups.map(_syncGroup));
@@ -294,7 +293,7 @@ async function handelRemoteCall(connection: IConnection, remoteCall: IRemoteCall
       try {
         if (!connection.remoteUserVerified && fn != signId) {
           await verifyRemoteUser(connection);
-          console.log('remote user verified', connection);
+          // console.log('remote user verified', { deviceId: connection.remoteDeviceId, userId: connection.remoteUser?.id })
         }
         // make the current connection available to the fn when it is called
         currentConnection = connection;
@@ -326,12 +325,12 @@ export function onRemoteMessage(connection: IConnection, message: string | IRemo
   connection.lastAck = Date.now();
   if (message === 'ack') return;
   if (message == 'ping') {
-    console.log('ping!', connection)
+    console.log('ping!', { deviceId: connection.remoteDeviceId, userId: connection.remoteUser?.id })
     connection.send('pong');
     return;
   }
   if (message == 'pong') {
-    console.log('pong!', connection);
+    console.log('pong!', { deviceId: connection.remoteDeviceId, userId: connection.remoteUser?.id })
     return;
   }
   const msgObj = message as IRemoteCall | IRemoteResponse | IRemoteChunk;
