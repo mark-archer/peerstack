@@ -166,6 +166,8 @@ export async function init(opts?: PeerstackDBOpts): Promise<IDB> {
     data.forEach((d: IData) => clearHashCache(d.group));    
   };
 
+  // NOTE: delete has very little use since deleting data that has already propagated to other devices will just get recreated when syncing with those devices
+  //       Currently the only way to remove data from the network is to change it's type to "Deleted" and remove all non-required fields
   db.delete = async (id) => {
     const dbData = await _db.get(id);
     // NOTE: no real validation is here because this is only affects local, you can only affect network with updates (`save`) which is heavily validated
@@ -278,6 +280,8 @@ export async function validateData(db: IDB, datas: IData[]) {
       }
       const dbUser = users[data.id] || await db.get(data.id) as IUser;
       if (dbUser && (data as IUser).publicKey !== dbUser.publicKey) {
+        // This intentionally prevents a user from being rekeyed via a normal update.  
+        // TODO We need a special function to allow a user to rekey themselves. 
         throw new Error(`An attempt was made to update a user but the public keys do not match`);
       }
     }
@@ -346,12 +350,18 @@ export async function getBlockData(group: string, level0BlockId: string) {
 
 export const L5BlockHashes: {
   [groupId: string]: { [blockId: string]: string }
-} = {}
+} = {};
+
+export const blockHashes: {
+  [groupId: string]: {
+    [detailLevel: string]: { [blockId: string]: string }
+  }
+} = {};
 
 export function clearHashCache(groupId: string) {
-  // TODO this could be done much cleaner by sending in the old and new L5 block id
+  // TODO this could be done much cleaner by sending in the old and new L5 block id (old and new modified date)
+  //      Then all you have to do is recalculate the old and new block which should be much faster
   if (groupId === 'users') {
-    // TODO make sure this is working correctly
     // if a user is changed just clear the entire cache for now
     Object.keys(L5BlockHashes).forEach(_groupId => {
       delete L5BlockHashes[_groupId]['users']
@@ -364,15 +374,9 @@ export function clearHashCache(groupId: string) {
   }
 }
 
-export const blockHashes: {
-  [groupId: string]: {
-    [detailLevel: string]: { [blockId: string]: string }
-  }
-} = {};
-
 // l0BlockId example: B18664 | users
 export async function getBlockHashes(groupId: string, detailLevel: number = 0) {
-  if (detailLevel >= 6) {
+  if (detailLevel > 5) {
     detailLevel = 5;
   }
   if (blockHashes[groupId] && blockHashes[groupId][detailLevel]) {

@@ -140,7 +140,7 @@ export async function init(
         }
         realm.write(() => {
           realm.create(storeName, dbValue);
-          console.log('realm created', dbValue)
+          // console.log('realm created', dbValue)
         });
       } else {
         // update
@@ -150,7 +150,7 @@ export async function init(
           dbValue.owner = d.owner;
           dbValue.modified = d.modified;
           dbValue.doc = stringify(d);
-          console.log('realm updated', dbValue)
+          // console.log('realm updated', dbValue)
         });
       }
       return value;
@@ -160,7 +160,7 @@ export async function init(
       if (dbValue) {
         realm.write(() => {
           realm.delete(dbValue);
-          console.log('realm deleted', dbValue)
+          // console.log('realm deleted', dbValue)
         });
       }
       return true;
@@ -185,7 +185,7 @@ export async function init(
             doc: stringify(d)
           }
           realm.create("Data", dbEntry);
-          console.log('realm created', dbEntry)
+          // console.log('realm created', dbEntry)
 
         } else {
           // update
@@ -194,7 +194,7 @@ export async function init(
           dbEntry.owner = d.owner;
           dbEntry.modified = d.modified;
           dbEntry.doc = stringify(d);
-          console.log('realm updated', dbEntry)
+          // console.log('realm updated', dbEntry)
         }
       }
     })
