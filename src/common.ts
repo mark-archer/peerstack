@@ -147,7 +147,7 @@ export function encodeUint8ArrayToBaseN(ary: Uint8Array, radix: number = 64) {
 
 export function decodeUint8ArrayFromBaseN(str: string, radix: number = 64): Uint8Array {
   if (radix === 64) {
-    // TODO take the try-catch out after 1/1/2022
+    // TODO take the try-catch out after all signatures have been converted to new format
     try {
       return base64.base64ToBytes(str);
     } catch {
