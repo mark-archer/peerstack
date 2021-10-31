@@ -106,7 +106,19 @@ export function signMessageWithSecretKey(msg: string, secretKey: string) {
   }
   const msgDecoded = naclUtil.decodeUTF8(msg);
   const msgSigned = nacl.sign(msgDecoded, _secretKey);
-  return encodeUint8ArrayToBaseN(msgSigned);
+  return encodeUint8ArrayToBaseN(msgSigned);  
+}
+
+export function getSignature(msg: string, secretKey: string) {
+  let _secretKey: Uint8Array;
+  if (secretKey.length == 128) {
+    _secretKey = decodeUint8ArrayFromBaseN(secretKey, 36)
+  } else {
+    _secretKey = decodeUint8ArrayFromBaseN(secretKey)
+  }
+  const msgDecoded = naclUtil.decodeUTF8(msg);
+  const sig = nacl.sign.detached(msgDecoded, _secretKey);
+  return encodeUint8ArrayToBaseN(sig);
 }
 
 export function signObjectWithIdAndSecretKey<T>(obj: T, userId: string, secretKey: string): T & ISigned {
@@ -114,7 +126,8 @@ export function signObjectWithIdAndSecretKey<T>(obj: T, userId: string, secretKe
   delete signedObj.signature;
   signedObj.signer = userId;
   const hash = hashObject(signedObj);
-  signedObj.signature = signMessageWithSecretKey(hash, secretKey);
+  // signedObj.signature = signMessageWithSecretKey(hash, secretKey);
+  signedObj.signature = getSignature(hash, secretKey);
   return signedObj;
 }
 
@@ -152,14 +165,37 @@ export function openMessage(signedMsg: string, publicKey: string) {
   return naclUtil.encodeUTF8(msgOpened);
 }
 
+export function verifySignature(message: string, signature: string, publicKey: string) {
+  const messageAry = naclUtil.decodeUTF8(message);
+  const sig = decodeUint8ArrayFromBaseN(signature);  
+  let _publicKey: Uint8Array;
+  if (publicKey.length == 64) {
+    _publicKey = decodeUint8ArrayFromBaseN(publicKey, 36)
+  } else {
+    _publicKey = decodeUint8ArrayFromBaseN(publicKey);
+  }
+  return nacl.sign.detached.verify(messageAry, sig, _publicKey);
+}
+
 export function verifySignedObject(obj: ISigned, publicKey: string) {
   try {
     const signature = obj.signature;
-    const sigHash = openMessage(signature, publicKey);
     delete obj.signature;
     const hash = hashObject(obj);
     obj.signature = signature;
+    let error;
+    try {
+      if (verifySignature(hash, signature, publicKey)) {
+        return true;
+      }
+    } catch (err) {
+      error = err;
+    }
+    const sigHash = openMessage(signature, publicKey);
     if (hash !== sigHash) {
+      if (error) {
+        throw error;
+      }
       throw new Error('signature hash does not match');
     }
   } catch (err) {
