@@ -2,7 +2,7 @@ import * as _ from "lodash";
 import { uniq } from "lodash";
 import { fromJSON, isid, newid, sleep } from "./common";
 import { connections } from "./connections";
-import { checkPermission, getBlockData, getDetailHashes, getBlockIdHashes, getDB, getPersonalGroup, hasPermission, IData, IDB, IGroup, usersGroup } from "./db";
+import { checkPermission, getBlockIds, getDetailHashes, getBlockIdHashes, getDB, getPersonalGroup, hasPermission, IData, IDB, IGroup, usersGroup } from "./db";
 import { IUser, openMessage, signMessage, signObject, verifySignedObject } from "./user";
 
 export type txfn = <T>(data: (string | IRemoteData)) => Promise<T | void> | void
@@ -104,10 +104,18 @@ export async function getRemoteGroups() {
   return readGroups;
 }
 
-export async function getRemoteBlockData(groupId: string, level0BlockId: string) {
+export async function getRemoteBlockIds(groupId: string, level0BlockId: string) {
   const connection: IConnection = currentConnection;
   await checkPermission(connection.remoteUser?.id, groupId, 'read');
-  return getBlockData(groupId, level0BlockId);
+  return getBlockIds(groupId, level0BlockId);
+}
+
+export async function getRemoteData(id: string) {
+  const connection: IConnection = currentConnection;
+  const db = await getDB();
+  const data = await db.get(id);
+  await checkPermission(connection.remoteUser?.id, data.group, 'read');
+  return data;
 }
 
 export async function getRemoteBlockHashes(groupId: string) {
@@ -143,13 +151,20 @@ async function syncBlockId(connection: IConnection, db: IDB, groupId: string, bl
         if (blockId.startsWith('u')) {
           blockId = 'users';
         }
-        const remoteBlockData = await RPC(connection, getRemoteBlockData)(groupId, blockId);
+        const remoteBlockData = await RPC(connection, getRemoteBlockIds)(groupId, blockId);
         for (const remoteData of remoteBlockData) {
           const localData = await db.get(remoteData.id);
-          if (!localData || localData.modified < remoteData.modified || (localData.signature != remoteData.signature && localData.modified == remoteData.modified && Math.random() > .8)) {
+          // if (!localData || localData.modified < remoteData.modified || (localData.signature != remoteData.signature && localData.modified == remoteData.modified && Math.random() > .8)) {
+          if (!localData || localData.modified < remoteData.modified) {
             // console.log('found data diff', { localData, remoteData });
-            await db.save(remoteData);
-            eventHandlers.onRemoteDataSaved(remoteData)
+            RPC(connection, getRemoteData)(remoteData.id)
+              .then(async remoteData => {
+                await db.save(remoteData);
+                eventHandlers.onRemoteDataSaved(remoteData)
+              })
+              .catch(err => {
+                console.error('error syncing remote data', remoteData, err);
+              })
           }
         }
       }
@@ -157,26 +172,19 @@ async function syncBlockId(connection: IConnection, db: IDB, groupId: string, bl
   }
 }
 
-// let syncGroupPromiseChain = Promise.resolve();
 export async function syncGroup(connection: IConnection, remoteGroup: IGroup, db: IDB) {
-  // syncGroupPromiseChain = syncGroupPromiseChain.then(async () => {
-    const groupId = remoteGroup.id;
-    if (groupId !== connection.me.id && groupId !== usersGroup.id) {
-      const localGroup = await db.get(groupId);
-      if (!localGroup || remoteGroup.modified > localGroup.modified) { // TODO potential security hole if we don't have the local group, do we trust the remote user?
-        await db.save(remoteGroup);
-        eventHandlers.onRemoteDataSaved(remoteGroup);
-      } else if (localGroup.type === 'Deleted' && remoteGroup.modified < localGroup.modified) {
-        RPC(connection, pushData)(localGroup);
-        return;
-      }
+  const groupId = remoteGroup.id;
+  if (groupId !== connection.me.id && groupId !== usersGroup.id) {
+    const localGroup = await db.get(groupId);
+    if (!localGroup || remoteGroup.modified > localGroup.modified) { // TODO potential security hole if we don't have the local group, do we trust the remote user?
+      await db.save(remoteGroup);
+      eventHandlers.onRemoteDataSaved(remoteGroup);
+    } else if (localGroup.type === 'Deleted' && remoteGroup.modified < localGroup.modified) {
+      RPC(connection, pushData)(localGroup);
+      return;
     }
-    await syncBlockId(connection, db, groupId);
-  // })
-  // .catch(err => {
-  //   console.error(`error while syncing group`, { remoteDevice: connection.remoteDeviceId, group: remoteGroup}, err)
-  // });
-  // return syncGroupPromiseChain
+  }
+  await syncBlockId(connection, db, groupId);  
 }
 
 export async function syncDBs(connection: IConnection) {
@@ -191,8 +199,8 @@ export async function syncDBs(connection: IConnection) {
   }
   connection.groups = remoteGroups.map(g => g.id);
 
-  // await Promise.all(remoteGroups.map(_syncGroup));
-  for (const remoteGroup of remoteGroups) await _syncGroup(remoteGroup);
+  await Promise.all(remoteGroups.map(_syncGroup));
+  // for (const remoteGroup of remoteGroups) await _syncGroup(remoteGroup);
   console.log(`finished syncing DB with ${connection.remoteDeviceId} in ${Date.now() - startTime} ms`);
 }
 
@@ -234,7 +242,8 @@ export const remotelyCallableFunctions: { [key: string]: Function } = {
   getRemoteGroups,
   getRemoteBlockHashes,
   getRemoteIdBlockHashes,
-  getRemoteBlockData,
+  getRemoteBlockData: getRemoteBlockIds,
+  getRemoteData,
   pushData,
   signId,
 }

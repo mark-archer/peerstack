@@ -335,7 +335,7 @@ export async function getGroupUsers(groupId: string): Promise<IUser[]> {
   return users;
 }
 
-export async function getBlockData(group: string, level0BlockId: string) {
+export async function getBlockIds(group: string, level0BlockId: string): Promise<{id: string, modified: number}[]> {
   if (level0BlockId === 'users') {
     return getGroupUsers(group);
   }
@@ -344,8 +344,8 @@ export async function getBlockData(group: string, level0BlockId: string) {
   const lowerTime = blockNum * BLOCK_SIZE;
   const upperTime = lowerTime + BLOCK_SIZE;
   // const blockData = await db.find(IDBKeyRange.bound([group, lowerTime], [group, upperTime]), 'group-modified');
-  const blockData = await db.find({ lower: [group, lowerTime], upper: [group, upperTime] }, 'group-modified');
-  return blockData;
+  const blockData = await db.find({ lower: [group, lowerTime], upper: [group, upperTime] }, 'group-modified');  
+  return blockData.map(d => ({ id: d.id, modified: d.modified }));
 }
 
 export const L5BlockHashes: {
