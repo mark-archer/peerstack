@@ -156,8 +156,7 @@ async function syncBlockId(connection: IConnection, db: IDB, groupId: string, bl
           const localData = await db.get(remoteData.id);
           // if (!localData || localData.modified < remoteData.modified || (localData.signature != remoteData.signature && localData.modified == remoteData.modified && Math.random() > .8)) {
           if (!localData || localData.modified < remoteData.modified) {
-            // console.log('found data diff', { localData, remoteData });
-            RPC(connection, getRemoteData)(remoteData.id)
+            await RPC(connection, getRemoteData)(remoteData.id)
               .then(async remoteData => {
                 await db.save(remoteData);
                 eventHandlers.onRemoteDataSaved(remoteData)
@@ -199,8 +198,8 @@ export async function syncDBs(connection: IConnection) {
   }
   connection.groups = remoteGroups.map(g => g.id);
 
-  await Promise.all(remoteGroups.map(_syncGroup));
-  // for (const remoteGroup of remoteGroups) await _syncGroup(remoteGroup);
+  // await Promise.all(remoteGroups.map(_syncGroup));
+  for (const remoteGroup of remoteGroups) await _syncGroup(remoteGroup);
   console.log(`finished syncing DB with ${connection.remoteDeviceId} in ${Date.now() - startTime} ms`);
 }
 
