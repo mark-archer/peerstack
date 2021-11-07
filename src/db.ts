@@ -1,4 +1,4 @@
-import { compact, groupBy, isArray, isObject, reject, set, sortBy, uniq } from 'lodash';
+import { compact, groupBy, isArray, isObject, set, sortBy, uniq } from 'lodash';
 import { hashObject } from './common';
 import { ISigned, IUser, verifySignedObject } from './user';
 import * as dbix from './dbix'

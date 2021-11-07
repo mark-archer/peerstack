@@ -202,3 +202,15 @@ export function verifySignedObject(obj: ISigned, publicKey: string) {
     throw new Error('Object signature verification failed: ' + String(err));
   }
 }
+
+export function newData(fields: { group: string, type: string, [key: string]: any} = { group: userId, type: 'Data' }): IData {
+  if (!userId) {
+    console.warn('user has not been initialized so owner and group may be uninitialized')
+  }
+  return {
+    id: newid(),
+    owner: userId,
+    modified: Date.now(),  
+    ...fields
+  }
+}
