@@ -100,7 +100,7 @@ export interface IDB {
   get: <T = IData>(id: string) => Promise<T>
   delete: (id: string) => Promise<void>
   find: <T = IData>(query?: DBQuery, index?: Indexes) => Promise<T[]>
-  openCursor: <T = IData>(query?: DBQuery, index?: Indexes, direction?: DBCursorDirection) => Promise<ICursor<T>>
+  openCursor: <T extends IData>(query?: DBQuery, index?: Indexes, direction?: DBCursorDirection) => Promise<ICursor<T>>
   files: {
     save: (file: IFile) => Promise<void>
     get: (id: string) => Promise<IFile>

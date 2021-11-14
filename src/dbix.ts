@@ -1,4 +1,4 @@
-import { isObject } from './common';
+import { uniq, isArray, isDate, isObject } from 'lodash';
 import { IData, Indexes, IDB, ICursor, DBQuery, DBKeyRange, DBKeyArray, DBKeyValue, PeerstackDBOpts } from './db';
 
 // export type IDBQuery = string | number | Date | IDBKeyRange | IDBArrayKey | ArrayBuffer | ArrayBufferView;
@@ -21,7 +21,7 @@ export function convertDBQueryToIDBQuery(query: DBQuery): IDBQuery {
 }
 
 export async function init(
-  { dbName = 'peerstack', dbVersion = 6, onUpgrade }: PeerstackDBOpts = { }
+  { dbName = 'peerstack', dbVersion = 6, onUpgrade }: PeerstackDBOpts = {}
 ): Promise<IDB> {
   if (typeof indexedDB === 'undefined') {
     throw new Error('indexedDB is not currently available')
@@ -84,15 +84,45 @@ export async function init(
       if (oldVersion < 6) {
         const local = db.createObjectStore("local", { keyPath: 'id' });
       }
+      // if (oldVersion < 7) {
+      //   const kvIndex = db.createObjectStore("keyValueIndex", { keyPath: ['group', 'key', 'value', 'type', 'id'] });
+      //   // @ts-ignore
+      //   // createIndex(keyValueIndex, 'id')
+      // }
       if (onUpgrade) await onUpgrade(evt);
     }
   });
+
+  // interface IIndex {
+  //   group: string,
+  //   key: string,
+  //   value: any,
+  //   type: string,
+  //   id: string
+  // }
 
   const save = (data: IData[]): Promise<any> => new Promise(async (resolve, reject) => {
     const transaction = db.transaction(['data'], 'readwrite');
     transaction.onerror = evt => reject(evt);
     const objectStore = transaction.objectStore('data');
+    // const kvStore = transaction.objectStore('keyValueIndex');
     for (const d of data) {
+      // const indexes: IIndex[] = await find([d.type, 'Index'], 'group-type');
+      // if (indexes) {
+      //   const kvDelete = kvStore.delete(IDBKeyRange.bound([, , , , d.id], [, , , , d.id]))
+      //   kvDelete.onerror = evt => reject(evt);
+      //   indexes.forEach(kv => {
+      //     const ixEntry: IIndex = {
+      //       id: d.id,
+      //       group: d.group,
+      //       type: d.type,
+      //       key: kv.key,
+      //       value: d[kv.key],
+      //     }
+      //     const request = kvStore.put(ixEntry)
+      //     request.onerror = evt => reject(evt);
+      //   })
+      // }
       const request = objectStore.put(d);
       request.onerror = evt => reject(evt);
     }
@@ -107,91 +137,175 @@ export async function init(
       const transaction = db.transaction(['data'], 'readonly');
       transaction.onerror = evt => reject(evt);
       const dataStore = transaction.objectStore('data');
-      let request: IDBRequest;
-      if (index) {
-        request = dataStore.index(index).getAll(ixQuery);
-      } else {
-        request = dataStore.getAll(ixQuery);
-      }
-      request.onerror = evt => reject(evt);
-      request.onsuccess = evt => resolve((evt.target as any).result);
+      // if (String(index) === 'key-value') {
+      //   const kvStore = transaction.objectStore('keyValueIndex');
+      //   const request = kvStore.getAll(ixQuery);
+      //   request.onerror = evt => reject(evt);
+      //   request.onsuccess = async evt => {
+      //     const kvResults = (evt.target as any).result as IIndex[];
+      //     const ids = uniq(kvResults.map(kv => kv.id));
+      //     const results = await Promise.all(ids.map(id => dbOp('data', 'get', id)))
+      //     resolve(results);
+      //   };
+      // } else {
+        let request: IDBRequest;
+        if (index) {
+          request = dataStore.index(index).getAll(ixQuery);
+        } else {
+          request = dataStore.getAll(ixQuery);
+        }
+        request.onerror = evt => reject(evt);
+        request.onsuccess = evt => resolve((evt.target as any).result);
+      // }
     });
 
-  const openCursor = <T>(query?: DBQuery, index?: string, direction?: IDBCursorDirection): Promise<ICursor<T>> =>
-    new Promise(async (resolve, reject) => {
-      let ixQuery = convertDBQueryToIDBQuery(query);
-      if (typeof ixQuery !== 'object') {
-        if (!direction || direction === 'next' || direction == 'nextunique') {
-          ixQuery = IDBKeyRange.lowerBound(query);
-        } else {
-          ixQuery = IDBKeyRange.upperBound(query);
-        }
-      }
-      const transaction = db.transaction(['data'], 'readonly');
-      transaction.onerror = evt => reject(evt);
-      const dataStore = transaction.objectStore('data');
-      let request: IDBRequest;
-      if (index) {
-        request = dataStore.index(index).openCursor(ixQuery, direction);
+  const cursorNext = <T>(query?: DBKeyRange, index?: string, direction?: IDBCursorDirection): Promise<T> => new Promise(async (resolve, reject) => {
+    let ixQuery = convertDBQueryToIDBQuery(query);
+    const transaction = db.transaction(['data'], 'readonly');
+    transaction.onerror = evt => reject(evt);
+    const dataStore = transaction.objectStore('data');
+    let request: IDBRequest;
+    if (index) {
+      request = dataStore.index(index).openCursor(ixQuery, direction);
+    } else {
+      request = dataStore.openCursor(ixQuery, direction);
+    }
+    request.onerror = evt => reject(evt);
+    request.onsuccess = evt => {
+      const ixCursor: IDBCursorWithValue = (evt.target as any).result;
+      ixCursor.value
+      if (!ixCursor) {
+        resolve(null)
       } else {
-        request = dataStore.openCursor(ixQuery, direction);
+        resolve(ixCursor.value);
       }
-      request.onerror = evt => reject(evt);
+    }
+  });
 
-      const cursor: ICursor<T> = {
-        next: null,
-        value: null,
+  const openCursor = async <T extends IData>(query?: DBQuery, index?: string, direction?: IDBCursorDirection): Promise<ICursor<T>> => {
+    if (!direction) {
+      direction = 'next'
+    }
+    let queryObject: DBKeyRange;
+    if (!isObject(query) || isArray(query) || isDate(query)) {
+      if (direction === 'next' || direction == 'nextunique') {
+        queryObject = { lower: query };
+      } else {
+        queryObject = { upper: query };        
       }
-      let resolveNext: (value: T) => void;
-      let nextValue: T;
-      let nextValueReady = false;
-      let ixCursor: IDBCursorWithValue;
-      let cursorDone = false;
-      let valueCount = 0;
+    } else {
+      queryObject = { ...query };
+    }
+    
+    const cursor: ICursor<T> = {
+      next: null,
+      value: null,
+    }
+    let nextValue: Promise<T> = cursorNext(queryObject, index, direction);
+    let cursorDone = false;
+    const indexKeys = index && index.split('-');
 
-      // NOTE this is optimized to prefetch the next value _but_ the cursor will end if any async operation 
-      // happens in between fetches so it has no benefit for now.  
-      cursor.next = () => new Promise((resolve, reject) => {
-        const valueCountSnapshot = valueCount;
-        setTimeout(() => {
-          if (valueCountSnapshot == valueCount) {
-            reject(new Error('cursor timed out'))
-          }
-        }, 1000);
-        if (nextValueReady) {
-          cursor.value = nextValue;
-          resolve(nextValue || true); // we only want `.next()` to return falsy if no more values are available
-          nextValueReady = false
-          ixCursor?.continue();
-        } else if (cursorDone) {
-          resolve(null)
+    cursor.next = async () => {
+      cursor.value = await nextValue;
+      if (cursor.value === null) {
+        cursorDone = true;
+      }      
+      if (!cursorDone) {
+        let queryValues: string | any[];
+        if (index) {
+          queryValues = indexKeys.map(key => cursor.value[key]);          
         } else {
-          resolveNext = nextValue => {
-            cursor.value = nextValue;
-            resolve(nextValue);
-            nextValueReady = false
-            resolveNext = null;
-            ixCursor?.continue();
-          };
+          queryValues = cursor.value.id;
         }
-      })
-      resolve(cursor);
-
-      request.onsuccess = evt => {
-        valueCount++;
-        ixCursor = (evt.target as any).result;
-        if (!ixCursor) {
-          cursorDone = true;
-        }
-        if (resolveNext) {
-          resolveNext(ixCursor?.value);
+        if (direction === 'next' || direction == 'nextunique') {
+          queryObject.lowerOpen = true;
+          queryObject.lower = queryValues;          
         } else {
-          nextValueReady = true;
-          nextValue = ixCursor?.value;
+          queryObject.upperOpen = true;
+          queryObject.upper = queryValues;
         }
+        nextValue = cursorNext(queryObject, index, direction);
       }
-    });
-  
+      return cursor.value;
+    }
+    return cursor;
+  };
+
+  // const openCursor = <T>(query?: DBQuery, index?: string, direction?: IDBCursorDirection): Promise<ICursor<T>> => new Promise(async (resolve, reject) => {
+  //   let ixQuery = convertDBQueryToIDBQuery(query);
+  //   if (typeof ixQuery !== 'object') {
+  //     if (!direction || direction === 'next' || direction == 'nextunique') {
+  //       ixQuery = IDBKeyRange.lowerBound(query);
+  //     } else {
+  //       ixQuery = IDBKeyRange.upperBound(query);
+  //     }
+  //   }
+  //   const transaction = db.transaction(['data'], 'readonly');
+  //   transaction.onerror = evt => reject(evt);
+  //   const dataStore = transaction.objectStore('data');
+  //   let request: IDBRequest;
+  //   if (index) {
+  //     request = dataStore.index(index).openCursor(ixQuery, direction);
+  //   } else {
+  //     request = dataStore.openCursor(ixQuery, direction);
+  //   }
+  //   request.onerror = evt => reject(evt);
+
+  //   const cursor: ICursor<T> = {
+  //     next: null,
+  //     value: null,
+  //   }
+  //   let resolveNext: (value: T) => void;
+  //   let nextValue: T;
+  //   let nextValueReady = false;
+  //   let ixCursor: IDBCursorWithValue;
+  //   let cursorDone = false;
+  //   let valueCount = 0;
+
+  //   // NOTE this is optimized to prefetch the next value _but_ the cursor will end if any async operation 
+  //   // happens in between fetches so it has no benefit for now.  
+  //   cursor.next = () => new Promise((resolve, reject) => {
+  //     const valueCountSnapshot = valueCount;
+  //     setTimeout(() => {
+  //       if (valueCountSnapshot == valueCount) {
+  //         // TODO re-initialize cursor from last value
+  //         reject(new Error('cursor timed out'))
+  //       }
+  //     }, 100);
+  //     if (nextValueReady) {
+  //       cursor.value = nextValue;
+  //       resolve(nextValue || true); // we only want `.next()` to return falsy if no more values are available
+  //       nextValueReady = false
+  //       ixCursor?.continue();
+  //     } else if (cursorDone) {
+  //       resolve(null)
+  //     } else {
+  //       resolveNext = nextValue => {
+  //         cursor.value = nextValue;
+  //         resolve(nextValue);
+  //         nextValueReady = false
+  //         resolveNext = null;
+  //         ixCursor?.continue();
+  //       };
+  //     }
+  //   })
+  //   resolve(cursor);
+
+  //   request.onsuccess = evt => {
+  //     valueCount++;
+  //     ixCursor = (evt.target as any).result;
+  //     if (!ixCursor) {
+  //       cursorDone = true;
+  //     }
+  //     if (resolveNext) {
+  //       resolveNext(ixCursor?.value);
+  //     } else {
+  //       nextValueReady = true;
+  //       nextValue = ixCursor?.value;
+  //     }
+  //   }
+  // });
+
   function dbOp(storeName: 'data' | 'files' | 'local', op: 'put' | 'delete' | 'get', value) {
     return new Promise<any>((resolve, reject) => {
       const mode: IDBTransactionMode = op == 'get' ? 'readonly' : 'readwrite';
@@ -206,7 +320,7 @@ export async function init(
       // }
     })
   }
-  
+
   const baseOps: IDB = {
     find,
     openCursor,
