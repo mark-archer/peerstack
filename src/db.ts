@@ -136,7 +136,7 @@ export async function init(opts?: PeerstackDBOpts): Promise<IDB> {
       persistenceLayer = dbrealm;
     }
   }
-  
+
   // else {
   //   persistenceLayer = dbfs;
   //   if (!(opts as dbrealm.DBFSOpts)._fs) {
@@ -152,8 +152,8 @@ export async function init(opts?: PeerstackDBOpts): Promise<IDB> {
   //   }
   // }
   const _db = await persistenceLayer.init(opts);
-  
-  db = { ..._db, files: { ..._db.files },  local: { ..._db.local } };
+
+  db = { ..._db, files: { ..._db.files }, local: { ..._db.local } };
 
   db.save = async (data: IData | IData[], skipValidation: boolean = false) => {
     if (!isArray(data)) {
@@ -163,7 +163,7 @@ export async function init(opts?: PeerstackDBOpts): Promise<IDB> {
       await validateData(db, data);
     }
     await _db.save(data);
-    data.forEach((d: IData) => clearHashCache(d.group));    
+    data.forEach((d: IData) => clearHashCache(d.group));
   };
 
   // NOTE: delete has very little use since deleting data that has already propagated to other devices will just get recreated when syncing with those devices
@@ -236,7 +236,7 @@ export async function hasPermission(userId: string, group: string | IGroup, acce
   if ((group as any)?.type == 'Deleted' && group.id === group.group) {
     return true
   }
-  
+
   if (group?.type !== 'Group') {
     throw new Error('invalid group specified');
   }
@@ -335,7 +335,7 @@ export async function getGroupUsers(groupId: string): Promise<IUser[]> {
   return users;
 }
 
-export async function getBlockIds(group: string, level0BlockId: string): Promise<{id: string, modified: number}[]> {
+export async function getBlockIds(group: string, level0BlockId: string): Promise<{ id: string, modified: number }[]> {
   if (level0BlockId === 'users') {
     return getGroupUsers(group);
   }
@@ -344,7 +344,7 @@ export async function getBlockIds(group: string, level0BlockId: string): Promise
   const lowerTime = blockNum * BLOCK_SIZE;
   const upperTime = lowerTime + BLOCK_SIZE;
   // const blockData = await db.find(IDBKeyRange.bound([group, lowerTime], [group, upperTime]), 'group-modified');
-  const blockData = await db.find({ lower: [group, lowerTime], upper: [group, upperTime] }, 'group-modified');  
+  const blockData = await db.find({ lower: [group, lowerTime], upper: [group, upperTime] }, 'group-modified');
   return blockData.map(d => ({ id: d.id, modified: d.modified }));
 }
 
@@ -424,7 +424,7 @@ export async function getDetailHashes(groupId: string) {
   const maxTime = Date.now();
   const cursorModified = await db.openCursor(null, 'modified');
   await cursorModified.next();
-    
+
   const minTime = cursorModified?.value?.modified || Date.now();
   const blockHashes = {};
 
@@ -449,7 +449,7 @@ export async function getDetailHashes(groupId: string) {
     })
   }
   L5BlockHashes[groupId] = blockHashes;
-  return blockHashes  
+  return blockHashes
 }
 
 // @ts-ignore
