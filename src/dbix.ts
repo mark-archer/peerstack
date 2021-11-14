@@ -7,7 +7,15 @@ export type IDBQuery = string | number | Date | IDBKeyRange | ArrayBuffer | Arra
 export function convertDBQueryToIDBQuery(query: DBQuery): IDBQuery {
   if (isObject(query)) {
     const dbQuery = query as DBKeyRange;
-    if (dbQuery.lower !== undefined && dbQuery.upper === undefined) {
+    if (dbQuery.lower === null) {
+      dbQuery.lower = undefined;
+    }
+    if (dbQuery.upper === null) {
+      dbQuery.upper = undefined;
+    }
+    if (dbQuery.lower === undefined && dbQuery.upper === undefined) {
+      return null;
+    } else if (dbQuery.lower !== undefined && dbQuery.upper === undefined) {
       return IDBKeyRange.lowerBound(dbQuery.lower, dbQuery.lowerOpen);
     } else if (dbQuery.lower === undefined && dbQuery.upper !== undefined) {
       return IDBKeyRange.upperBound(dbQuery.upper, dbQuery.upperOpen);
