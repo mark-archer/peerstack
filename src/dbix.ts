@@ -169,13 +169,11 @@ export async function init(
     });
 
   const getIXDBCursor = <T extends IData>(query?: DBKeyRange, index?: string, direction?: IDBCursorDirection) => {
-    const returnObj = {
+    const cursorState = {
       reject: null as (err) => any,
       next: null as () => Promise<T>
     }    
 
-    let request: IDBRequest;
-    let transaction: IDBTransaction;
     let ixCursor: IDBCursorWithValue;
     let transactionClosed = false;
     let cursorFinished = false;
@@ -185,8 +183,8 @@ export async function init(
     let resolveNextValue;
     let nPriorResults = 0;
 
-    returnObj.next = () => new Promise((resolve, _reject) => {
-      returnObj.reject = _reject;
+    cursorState.next = () => new Promise((resolve, _reject) => {
+      cursorState.reject = _reject;
       if (transactionClosed && !cursorFinished) {
         restartingCursor = true;
         openTransactionRequest();        
@@ -203,9 +201,9 @@ export async function init(
 
     function openTransactionRequest() {
       transactionClosed = false;
-      transaction = db.transaction(['data'], 'readonly');
-      transaction.onerror = evt => returnObj.reject(evt);
-      transaction.onabort = evt => returnObj.reject(evt);
+      const transaction = db.transaction(['data'], 'readonly');
+      transaction.onerror = evt => cursorState.reject(evt);
+      transaction.onabort = evt => cursorState.reject(evt);
       transaction.oncomplete = evt => {
         if(resolveNextValue && !cursorFinished) {
           restartingCursor = true;
@@ -215,14 +213,11 @@ export async function init(
         }
       }
       const dataStore = transaction.objectStore('data');
-      let ixQuery = convertDBQueryToIDBQuery(query);
-      if (index) {
-        request = dataStore.index(index).openCursor(ixQuery, direction);
-      } else {
-        request = dataStore.openCursor(ixQuery, direction);
-      }
-
-      request.onerror = evt => returnObj.reject(evt);      
+      const ixQuery = convertDBQueryToIDBQuery(query);
+      const request: IDBRequest = index
+        ? dataStore.index(index).openCursor(ixQuery, direction)
+        : dataStore.openCursor(ixQuery, direction);      
+      request.onerror = evt => cursorState.reject(evt);      
       request.onsuccess = evt => {      
         ixCursor = (evt.target as any).result;
         if (!ixCursor) {
@@ -235,10 +230,11 @@ export async function init(
           return;
         }
 
-        if (ixCursor && restartingCursor && priorValue) {
+        // TODO this can probably be simplified - priorValue should always be true unless the cursor is done in which case we shouldn't get here
+        if (restartingCursor && priorValue) {
           restartingCursor = false
           if (!index) {
-            ixCursor.advance(nPriorResults);
+            ixCursor.advance(nPriorResults); // TODO this should probably be +1
             return;
           }
           if (index && priorValue?.id !== ixCursor?.value?.id) {
@@ -249,28 +245,30 @@ export async function init(
             ixCursor.continuePrimaryKey(priorKey, priorValue.id);
             return;
           }
-        }        
-        if (priorValue && priorValue?.id === ixCursor?.value?.id) {
+        }  
+
+        // this is needed because `continuePrimaryKey` gets us to our last value but we want the value after that
+        if (priorValue?.id === ixCursor.value?.id) {
           ixCursor.continue();
           return;
         }
 
-        priorValue = ixCursor?.value;        
+        priorValue = ixCursor.value;        
         nPriorResults++;
 
         if (resolveNextValue) {
-          resolveNextValue(ixCursor?.value);
+          resolveNextValue(ixCursor.value);
           resolveNextValue = null;
           nextValue = null;
-          ixCursor?.continue();
+          ixCursor.continue();
         } else {
-          nextValue = ixCursor?.value;
+          nextValue = ixCursor.value;
         }      
       }    
     }
     openTransactionRequest();
 
-    return returnObj;
+    return cursorState;
   };
 
   const openCursor = async <T extends IData>(query?: DBQuery, index?: string, direction?: IDBCursorDirection): Promise<ICursor<T>> => {
