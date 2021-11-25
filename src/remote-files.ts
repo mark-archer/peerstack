@@ -43,8 +43,8 @@ export async function getFileFromPeers(fileId: string, updateProgress?: (percent
 
 async function getFile(fileId: string) {
   const connection = getCurrentConnection() as IDeviceConnection;
-  const db = await getDB()
-  const file = await db.files.get(fileId)
+  const db = await getDB();
+  const file = await db.files.get(fileId);
   if (!file) return;
 
   // validate peer has permissions to file
@@ -62,7 +62,7 @@ async function getFile(fileId: string) {
     console.log('send dc open', dcSend);
     dcSend.onclose = e => console.log('file transfer data channel closed', e);
     dcSend.onerror = e => console.error('error', e);
-    dcSend.onmessage = e => console.log('message was received from a send only data channel', e)
+    dcSend.onmessage = e => console.log('Error: message was received from a send only data channel', e);
 
     const fileReader = new FileReader();
     let offset = 0;
