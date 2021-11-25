@@ -1,5 +1,5 @@
 import { uniq, isArray, isDate, isObject } from 'lodash';
-import { IData, Indexes, IDB, ICursor, DBQuery, DBKeyRange, DBKeyArray, DBKeyValue, PeerstackDBOpts } from './db';
+import { IData, Indexes, IDB, ICursor, DBQuery, DBKeyRange, DBKeyArray, DBKeyValue, PeerstackDBOpts, IKVIndex } from './db';
 
 // export type IDBQuery = string | number | Date | IDBKeyRange | IDBArrayKey | ArrayBuffer | ArrayBufferView;
 export type IDBQuery = string | number | Date | IDBKeyRange | ArrayBuffer | ArrayBufferView;
@@ -30,7 +30,7 @@ export function convertDBQueryToIDBQuery(query: DBQuery): IDBQuery {
 }
 
 export async function init(
-  { dbName = 'peerstack', dbVersion = 6, onUpgrade }: PeerstackDBOpts = {}
+  { dbName = 'peerstack', dbVersion = 7, onUpgrade }: PeerstackDBOpts = {}
 ): Promise<IDB> {
   if (typeof indexedDB === 'undefined') {
     throw new Error('indexedDB is not currently available')
@@ -41,7 +41,7 @@ export async function init(
     if (keyPath.length == 1) {
       keyPath = keyPath[0];
     }
-    objectStore.createIndex(index, keyPath, { unique: false });
+    objectStore.createIndex(index as string, keyPath, { unique: false });
   }
 
   const db: IDBDatabase = await new Promise(async (resolve, reject) => {
@@ -91,82 +91,141 @@ export async function init(
         createIndex(dataStore, 'type-subject');
       }
       if (oldVersion < 6) {
-        const local = db.createObjectStore("local", { keyPath: 'id' });
+        const localStore = db.createObjectStore("local", { keyPath: 'id' });
       }
-      // if (oldVersion < 7) {
-      //   const kvIndex = db.createObjectStore("keyValueIndex", { keyPath: ['group', 'key', 'value', 'type', 'id'] });
-      //   // @ts-ignore
-      //   // createIndex(keyValueIndex, 'id')
-      // }
+      if (oldVersion < 7) {
+        const kvIndex = db.createObjectStore("keyValueIndex", { keyPath: ['indexId', 'dataId'] });
+        // @ts-ignore
+        createIndex(kvIndex, 'indexId-dataValue')
+        // @ts-ignore
+        createIndex(kvIndex, 'indexId')
+      }
       if (onUpgrade) await onUpgrade(evt);
     }
   });
 
-  // interface IIndex {
-  //   group: string,
-  //   key: string,
-  //   value: any,
-  //   type: string,
-  //   id: string
-  // }
+  interface IKVIndexEntry {
+    indexId: string
+    dataId: string
+    dataValue: string
+  }
+
+  async function buildIndex(transaction: IDBTransaction, ix: IKVIndex) {
+    const kvStore = transaction.objectStore('keyValueIndex');
+    const dataStore = transaction.objectStore('data');
+
+    // delete old values
+    await new Promise((resolve, reject) => {
+      const cursor = kvStore.index('indexId').openCursor(ix.id);
+      cursor.onerror = reject;
+      cursor.onsuccess = (evt) => {
+        const ixCursor = (evt.target as any) as IDBCursorWithValue
+        if (ixCursor) {
+          ixCursor.delete();
+          ixCursor.continue();
+        } else {
+          resolve(null);
+        }
+      }
+    });
+
+    // insert new values
+    await new Promise(async (resolve, reject) => {
+      const cursor: IDBRequest<IDBCursorWithValue> = ix.dataType
+        ? dataStore.index('group-type').openCursor([ix.group, ix.dataType])
+        : dataStore.index('group').openCursor(ix.group);
+      cursor.onerror = reject;
+      cursor.onsuccess = (evt) => {
+        const ixCursor = (evt.target as any) as IDBCursorWithValue        
+        if (ixCursor) {
+          const data = ixCursor.value;
+          const ixEntry: IKVIndexEntry = {
+            indexId: ix.id,
+            dataId: data.id,
+            dataValue: data[ix.key],
+          }
+          kvStore.put(ixEntry);
+          ixCursor.continue();
+        } else {
+          resolve(null);
+        }
+      }
+    });
+  }
 
   const save = (data: IData[]): Promise<any> => new Promise(async (resolve, reject) => {
-    const transaction = db.transaction(['data'], 'readwrite');
+    const transaction = db.transaction(['data', 'keyValueIndex'], 'readwrite');
     transaction.onerror = evt => reject(evt);
     const objectStore = transaction.objectStore('data');
-    // const kvStore = transaction.objectStore('keyValueIndex');
+    const kvStore = transaction.objectStore('keyValueIndex');
+    const indexCache = {} as {[key:string]: IKVIndex[]}
     for (const d of data) {
-      // const indexes: IIndex[] = await find([d.type, 'Index'], 'group-type');
-      // if (indexes) {
-      //   const kvDelete = kvStore.delete(IDBKeyRange.bound([, , , , d.id], [, , , , d.id]))
-      //   kvDelete.onerror = evt => reject(evt);
-      //   indexes.forEach(kv => {
-      //     const ixEntry: IIndex = {
-      //       id: d.id,
-      //       group: d.group,
-      //       type: d.type,
-      //       key: kv.key,
-      //       value: d[kv.key],
-      //     }
-      //     const request = kvStore.put(ixEntry)
-      //     request.onerror = evt => reject(evt);
-      //   })
-      // }
+      const indexes: IKVIndex[] = indexCache[d.group] || await find([d.group, 'Index'], 'group-type');
+      indexCache[d.group] = indexes;
+      indexes
+        .filter(ix => !ix.type || ix.type === d.type)
+        .forEach(ix => {
+          const ixEntry: IKVIndexEntry = {
+            indexId: ix.id,
+            dataId: d.id,
+            dataValue: d[ix.key],
+          }
+          // TODO maybe delete entries with null values
+          const request = kvStore.put(ixEntry)
+          request.onerror = evt => reject(evt);
+        });
+      // when saving type of 'Index', call `buildIndex`
+      if (d.type === 'Index') {
+        await buildIndex(transaction, d as IKVIndex);
+      }
       const request = objectStore.put(d);
-      request.onerror = evt => reject(evt);
+      request.onerror = evt => reject(evt);      
     }
     transaction.oncomplete = evt => {
       resolve((evt.target as any).result);
     };
   });
 
-  const find = <T = IData>(query?: DBQuery, index?: Indexes): Promise<T[]> =>
-    new Promise(async (resolve, reject) => {
-      const ixQuery = convertDBQueryToIDBQuery(query)
-      const transaction = db.transaction(['data'], 'readonly');
-      transaction.onerror = evt => reject(evt);
-      const dataStore = transaction.objectStore('data');
-      // if (String(index) === 'key-value') {
-      //   const kvStore = transaction.objectStore('keyValueIndex'); // todo combine this with the above transaction
-      //   const request = kvStore.getAll(ixQuery);
-      //   request.onerror = evt => reject(evt);
-      //   request.onsuccess = async evt => {
-      //     const kvResults = (evt.target as any).result as IIndex[];
-      //     const ids = uniq(kvResults.map(kv => kv.id));
-      //     const results = await Promise.all(ids.map(id => dbOp('data', 'get', id)))
-      //     resolve(results);
-      //   };
-      // } else {
-        let request: IDBRequest;
-        if (index) {
-          request = dataStore.index(index).getAll(ixQuery);
-        } else {
-          request = dataStore.getAll(ixQuery);
+  const find = <T = IData>(query?: DBQuery, index?: Indexes | IKVIndex): Promise<T[]> => new Promise(async (resolve, reject) => {
+    const transaction = db.transaction(['data', 'keyValueIndex'], 'readonly');
+    transaction.onerror = evt => reject(evt);
+    const dataStore = transaction.objectStore('data');
+    if (isObject(index)) {
+      // prefix all query values with index id
+      if (!isObject(query) || isDate(query)) {
+        query = [index.id, query];  // query by index and value
+      } else if (isArray(query)) {
+        throw new Error('querying by index values of arrays is not supported'); // TODO this might be fine (or at least possible). needs to be tested
+      } else {
+        if (query.lower) {
+          query.lower = [index.id, query.lower as DBKeyValue]
         }
-        request.onerror = evt => reject(evt);
-        request.onsuccess = evt => resolve((evt.target as any).result);
-      // }
-    });
+        if (query.upper) {
+          query.upper = [index.id, query.upper as DBKeyValue]
+        }
+      }
+      const ixQuery = convertDBQueryToIDBQuery(query)
+      const kvStore = transaction.objectStore('keyValueIndex');
+      const request = kvStore.index('indexId-dataValue').getAll(ixQuery);
+      request.onerror = evt => reject(evt);
+      request.onsuccess = async evt => {
+        const kvResults = (evt.target as any).result as IKVIndexEntry[];
+        const ids = uniq(kvResults.map(kv => kv.dataId));
+        const results = await Promise.all(ids.map(id => dbOp('data', 'get', id)))
+        resolve(results);
+      };
+    } else {
+      const ixQuery = convertDBQueryToIDBQuery(query)
+      let request: IDBRequest;
+      if (index) {
+        request = dataStore.index(index).getAll(ixQuery);
+      } else {
+        request = dataStore.getAll(ixQuery);
+      }
+      request.onerror = evt => reject(evt);
+      request.onsuccess = evt => resolve((evt.target as any).result);
+    }
+  });
 
   const getIXDBCursor = <T extends IData>(query?: DBKeyRange, index?: string, direction?: IDBCursorDirection) => {
     const cursorState = {
@@ -271,7 +330,10 @@ export async function init(
     return cursorState;
   };
 
-  const openCursor = async <T extends IData>(query?: DBQuery, index?: string, direction?: IDBCursorDirection): Promise<ICursor<T>> => {
+  const openCursor = async <T extends IData>(query?: DBQuery, index?: Indexes, direction?: IDBCursorDirection): Promise<ICursor<T>> => {
+    if (typeof index !== 'string') {
+      throw new Error('custom indexes not currently supported')
+    }
     if (!direction) {
       direction = 'next'
     }

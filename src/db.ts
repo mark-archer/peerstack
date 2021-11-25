@@ -44,6 +44,12 @@ export interface IFile {
   shareGroups: string[]
 }
 
+export interface IKVIndex extends IData {
+  type: 'Index'
+  dataKey: string // the name of the field to index
+  dataType?: string // if no dataType is specified index will apply to _all_ data in group    
+}
+
 export const usersGroup: IGroup = { type: 'Group', id: 'users', group: 'users', owner: 'users', name: 'Users', modified: Date.now(), members: [], blockedUserIds: [] };
 
 let _personalGroup: IGroup;
@@ -74,6 +80,7 @@ export type Indexes
   | 'group-subject'
   | 'type-subject'
   | 'group-type-subject'
+  | IKVIndex
 
 export interface ICursor<T> {
   value: T
