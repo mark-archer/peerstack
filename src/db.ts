@@ -316,6 +316,10 @@ export async function validateData(db: IDB, datas: IData[]) {
         } else {
           await checkPermission(user.id, data.group, 'write')
         }
+        if (dbData && dbData.type === 'Index' && data.type !== 'Index') {
+          // call delete to remove index entries because this is no longer going to be an Index
+          await db.delete(data.id);
+        }
       }
     } catch (err) {
       throw new Error(`Permissions error: ${err} \n ${JSON.stringify(data, null, 2)}`)

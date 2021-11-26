@@ -110,8 +110,7 @@ export async function init(
     dataValue: string
   }
 
-  async function buildIndex(ix: IKVIndex) {
-    // delete old values
+  async function deleteIndexEntries(ix: IKVIndex) {
     await new Promise((resolve, reject) => {
       const transaction = db.transaction(['keyValueIndex'], 'readwrite');
       const kvStore = transaction.objectStore('keyValueIndex');
@@ -127,8 +126,9 @@ export async function init(
         }
       }
     });
+  }
 
-    // insert new values
+  async function buildIndexEntries(ix: IKVIndex) {
     await new Promise(async (resolve, reject) => {
       // const transIX = db.transaction(['keyValueIndex'], 'readwrite');
       // const kvStore = transIX.objectStore('keyValueIndex');
@@ -161,7 +161,7 @@ export async function init(
   }
 
   const save = (data: IData[]): Promise<any> => new Promise(async (resolve, reject) => {
-    const indexCache = {} as {[key:string]: IKVIndex[]}
+    const indexCache = {} as { [key: string]: IKVIndex[] }
     await Promise.all(uniq(data.map(d => d.group).map(async g => {
       indexCache[g] = await find([g, 'Index'], 'group-type');
     })));
@@ -169,8 +169,8 @@ export async function init(
     transaction.onerror = evt => reject(evt);
     const dataStore = transaction.objectStore('data');
     const kvStore = transaction.objectStore('keyValueIndex');
-    
-    for (const d of data) {      
+
+    for (const d of data) {
       indexCache[d.group]
         .filter(ix => !ix.dataType || ix.dataType === d.type)
         .forEach(ix => {
@@ -184,13 +184,14 @@ export async function init(
           request.onerror = evt => reject(evt);
         });
       const request = dataStore.put(d);
-      request.onerror = evt => reject(evt);      
+      request.onerror = evt => reject(evt);
     }
     transaction.oncomplete = async evt => {
-      // when saving type of 'Index', call `buildIndex`
-      for(const d of data) {
+      // when saving type of 'Index', rebuild index
+      for (const d of data) {
         if (d.type === 'Index') {
-          await buildIndex(d as IKVIndex);
+          await deleteIndexEntries(d as IKVIndex);
+          await buildIndexEntries(d as IKVIndex);
         }
       }
       resolve((evt.target as any).result);
@@ -242,14 +243,14 @@ export async function init(
     const cursorState = {
       reject: null as (err) => any,
       next: null as () => Promise<T>
-    }    
+    }
 
     let ixCursor: IDBCursorWithValue;
     let transactionClosed = false;
     let cursorFinished = false;
     let restartingCursor = false;
     let priorValue: T;
-    let nextValue: T;    
+    let nextValue: T;
     let resolveNextValue;
     let nPriorResults = 0;
 
@@ -257,7 +258,7 @@ export async function init(
       cursorState.reject = _reject;
       if (transactionClosed && !cursorFinished) {
         restartingCursor = true;
-        openTransactionRequest();        
+        openTransactionRequest();
       }
       if (nextValue || cursorFinished) {
         resolve(nextValue);
@@ -275,7 +276,7 @@ export async function init(
       transaction.onerror = evt => cursorState.reject(evt);
       transaction.onabort = evt => cursorState.reject(evt);
       transaction.oncomplete = evt => {
-        if(resolveNextValue && !cursorFinished) {
+        if (resolveNextValue && !cursorFinished) {
           restartingCursor = true;
           openTransactionRequest(); // the transaction closed while we were waiting for a value so open a new one
         } else {
@@ -286,9 +287,9 @@ export async function init(
       const ixQuery = convertDBQueryToIDBQuery(query);
       const request: IDBRequest = index
         ? dataStore.index(index).openCursor(ixQuery, direction)
-        : dataStore.openCursor(ixQuery, direction);      
-      request.onerror = evt => cursorState.reject(evt);      
-      request.onsuccess = evt => {      
+        : dataStore.openCursor(ixQuery, direction);
+      request.onerror = evt => cursorState.reject(evt);
+      request.onsuccess = evt => {
         ixCursor = (evt.target as any).result;
         if (!ixCursor) {
           cursorFinished = true;
@@ -315,7 +316,7 @@ export async function init(
             ixCursor.continuePrimaryKey(priorKey, priorValue.id);
             return;
           }
-        }  
+        }
 
         // this is needed because `continuePrimaryKey` gets us to our last value but we want the value after that
         if (priorValue?.id === ixCursor.value?.id) {
@@ -323,7 +324,7 @@ export async function init(
           return;
         }
 
-        priorValue = ixCursor.value;        
+        priorValue = ixCursor.value;
         nPriorResults++;
 
         if (resolveNextValue) {
@@ -333,8 +334,8 @@ export async function init(
           ixCursor.continue();
         } else {
           nextValue = ixCursor.value;
-        }      
-      }    
+        }
+      }
     }
     openTransactionRequest();
 
@@ -353,14 +354,14 @@ export async function init(
       if (direction === 'next' || direction == 'nextunique') {
         queryObject = { lower: query };
       } else {
-        queryObject = { upper: query };        
+        queryObject = { upper: query };
       }
     } else {
       queryObject = { ...query };
     }
 
     let ixCursor = getIXDBCursor<T>(queryObject, index, direction);
-    
+
     const cursor: ICursor<T> = {
       next: null,
       value: null,
@@ -374,6 +375,14 @@ export async function init(
     return cursor;
   };
 
+  async function deleteData(id: string) {
+    const data: IData = await dbOp('data', 'get', id);
+    if (data.type === 'Index') {
+      await deleteIndexEntries(data as IKVIndex);
+    }
+    return dbOp('data', 'delete', id);
+  }
+
   function dbOp(storeName: 'data' | 'files' | 'local' | 'keyValueIndex', op: 'put' | 'delete' | 'get', value) {
     return new Promise<any>((resolve, reject) => {
       const mode: IDBTransactionMode = op == 'get' ? 'readonly' : 'readwrite';
@@ -386,7 +395,7 @@ export async function init(
       // } else {
       //   transaction.oncomplete = evt => resolve((evt.target as any).result);
       // }
-    })
+    });
   }
 
   const baseOps: IDB = {
@@ -394,7 +403,7 @@ export async function init(
     openCursor,
     save,
     get: id => dbOp('data', 'get', id),
-    delete: id => dbOp('data', 'delete', id),
+    delete: deleteData,
     files: {
       save: file => dbOp('files', 'put', file),
       get: id => dbOp('files', 'get', id),
