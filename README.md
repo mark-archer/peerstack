@@ -46,7 +46,7 @@ Your own server is not necessary. For now you're free to use `https://theque.app
 ## How It Works
 
 Key Concepts
-- [UUIDs](https://en.wikipedia.org/wiki/Universally_unique_identifier) are used as the building block for identifiers (id) to match two copies of data even if the data has changed between the two.  Ids can be more than just a UUID but must at least start with a UUID.
+- [UUIDs](https://en.wikipedia.org/wiki/Universally_unique_identifier) are used as the building block for identifiers (id) to match two copies of data even if the data has changed between the two.  Ids can be more than just a UUID but must at least start with a UUID.[^1]
 - [SHA-2](https://en.wikipedia.org/wiki/SHA-2) hashes are used to determine if two copies of data are identical. 
 - [Unix timestamps](https://en.wikipedia.org/wiki/Unix_time) are stored in the `modified` field on all data.  If two copies of data (same id) are found but they have different hashes (data has changed) then the one with the higher modified value is kept and the other is discarded.  If `modified` is the same on both copies then the local copy is kept and the other copy is discarded.
 
@@ -59,6 +59,8 @@ Note that signed data is not encrypted.  So even though data can come from untru
 Peer-to-peer connections are made via [WebRTC data connections](https://developer.mozilla.org/en-US/docs/Web/API/RTCDataChannel).  To establish these connections we still need a [signaling channel](https://developer.mozilla.org/en-US/docs/Web/API/WebRTC_API/Signaling_and_video_calling#The_signaling_server).  That is currently done with a server using web sockets.  For the sake of simplicity and to get things up and running this has been baked into the library.  There is no reason the signaling (or the entire connection) can't be done via other methods.  This is just the most practical method for web apps right now.  I fully plan to add more options for connecting to other peers as they become feasible in the web ecosystem.
 
 If a native app is made, many more options for finding peers, establishing connections, and transferring data become available.  As long as they use the same method for verifying identity and signatures, they can all work together to create a rich, robust, ubiquitous network of peers.
+
+[^1]: Peerstack uses its own type of UUID that sorts naturally and requires 7 less characters to represent but it is still ultimately just a 128 bit number.
 
 ## Groups
 
