@@ -64,7 +64,7 @@ class DBFSIndex {
   private __indexMap: IndexMap = null;
 
   constructor(
-    readonly name: IndexesOrId,
+    readonly name: string,
     readonly fileName: string
   ) { }
 
@@ -187,7 +187,7 @@ export interface DBFSInfoFile {
   version: number,
   indexes: {
     dataStore: DataStore
-    name: IndexesOrId
+    name: string
   }[]
 }
 
@@ -203,7 +203,7 @@ export async function init({ dbName = 'peerstack', dbVersion = 1, onUpgrade, _fs
         info = { version: 0, indexes: [] };
         await fs.mkdir(`${dbName}`);
       }
-      async function createIndex(dataStore: DataStore, index: IndexesOrId) {
+      async function createIndex(dataStore: DataStore, index: string) {
         // await fs.mkdir(`${dbName}/${dataStore}/indexes/${index}`);
         await fs.mkdir(`${dbName}/${dataStore}/indexes`);
         const blankIndex: IndexMap = {
@@ -251,8 +251,8 @@ export async function init({ dbName = 'peerstack', dbVersion = 1, onUpgrade, _fs
         }
         await writeJSON(infoFile, info);
       }
-      info.indexes.forEach(dbfsIndex => {
-        indexes[dbfsIndex.name] = new DBFSIndex(dbfsIndex.name, `${dbName}/${dbfsIndex.dataStore}/indexes/${dbfsIndex.name}.json`);
+      info.indexes.forEach(dbfsIndex => {        
+        indexes[dbfsIndex.name] = new DBFSIndex(dbfsIndex.name, `${dbName}/${dbfsIndex.dataStore}/indexes/${dbfsIndex.name}.json`);        
       })
     } catch (err) {
       reject(err)
@@ -273,13 +273,16 @@ export async function init({ dbName = 'peerstack', dbVersion = 1, onUpgrade, _fs
   }
 
   const find = async <T = IData>(query?: DBQuery, index?: Indexes): Promise<T[]> => {
-    let _index: IndexesOrId = index || 'id';
-    const ids = await indexes[_index].find(query);
+    let _index = index || 'id';
+    const ids = await indexes[_index as string].find(query);
     return Promise.all(ids.map(id => dbOp('data', 'get', id)))
   }
 
   const openCursor = async <T>(query?: DBQuery, index?: Indexes, direction?: DBCursorDirection): Promise<ICursor<T>> => {
-    let _index: IndexesOrId = index || 'id';
+    if (typeof index !== 'string') {
+      throw new Error('custom indexes are not supported')
+    }
+    let _index: string = index || 'id';
     const indexCursor = await indexes[_index].openCursor(query, direction);
     const cursor: ICursor<T> = {
       value: null,
