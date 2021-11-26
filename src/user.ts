@@ -203,12 +203,14 @@ export function verifySignedObject(obj: ISigned, publicKey: string) {
   }
 }
 
-export function newData(fields: { group: string, type: string, [key: string]: any} = { group: userId, type: 'Data' }): IData {
+export function newData(fields?: Partial<IData>): IData {
   if (!userId) {
     console.warn('user has not been initialized so owner and group may be uninitialized')
   }
-  return {
+  return {    
     id: newid(),
+    type: 'Data',
+    group: userId,
     owner: userId,
     modified: Date.now(),  
     ...fields

@@ -110,16 +110,15 @@ export async function init(
     dataValue: string
   }
 
-  async function buildIndex(transaction: IDBTransaction, ix: IKVIndex) {
-    const kvStore = transaction.objectStore('keyValueIndex');
-    const dataStore = transaction.objectStore('data');
-
+  async function buildIndex(ix: IKVIndex) {
     // delete old values
     await new Promise((resolve, reject) => {
+      const transaction = db.transaction(['keyValueIndex'], 'readwrite');
+      const kvStore = transaction.objectStore('keyValueIndex');
       const cursor = kvStore.index('indexId').openCursor(ix.id);
       cursor.onerror = reject;
       cursor.onsuccess = (evt) => {
-        const ixCursor = (evt.target as any) as IDBCursorWithValue
+        const ixCursor: IDBCursorWithValue = (evt.target as any).result;
         if (ixCursor) {
           ixCursor.delete();
           ixCursor.continue();
@@ -131,12 +130,18 @@ export async function init(
 
     // insert new values
     await new Promise(async (resolve, reject) => {
+      // const transIX = db.transaction(['keyValueIndex'], 'readwrite');
+      // const kvStore = transIX.objectStore('keyValueIndex');
+      const transData = db.transaction(['data'], 'readonly');
+      const dataStore = transData.objectStore('data');
+
       const cursor: IDBRequest<IDBCursorWithValue> = ix.dataType
         ? dataStore.index('group-type').openCursor([ix.group, ix.dataType])
         : dataStore.index('group').openCursor(ix.group);
       cursor.onerror = reject;
+      const ixInserts: Promise<any>[] = [];
       cursor.onsuccess = (evt) => {
-        const ixCursor = (evt.target as any) as IDBCursorWithValue        
+        const ixCursor: IDBCursorWithValue = (evt.target as any).result;
         if (ixCursor) {
           const data = ixCursor.value;
           const ixEntry: IKVIndexEntry = {
@@ -144,44 +149,50 @@ export async function init(
             dataId: data.id,
             dataValue: data[ix.key],
           }
-          kvStore.put(ixEntry);
+          ixInserts.push(
+            dbOp('keyValueIndex', 'put', ixEntry)
+          );
           ixCursor.continue();
         } else {
-          resolve(null);
+          Promise.all(ixInserts).then(() => resolve(null))
         }
       }
     });
   }
 
   const save = (data: IData[]): Promise<any> => new Promise(async (resolve, reject) => {
+    const indexCache = {} as {[key:string]: IKVIndex[]}
+    await Promise.all(uniq(data.map(d => d.group).map(async g => {
+      indexCache[g] = await find([g, 'Index'], 'group-type');
+    })));
     const transaction = db.transaction(['data', 'keyValueIndex'], 'readwrite');
     transaction.onerror = evt => reject(evt);
-    const objectStore = transaction.objectStore('data');
+    const dataStore = transaction.objectStore('data');
     const kvStore = transaction.objectStore('keyValueIndex');
-    const indexCache = {} as {[key:string]: IKVIndex[]}
-    for (const d of data) {
-      const indexes: IKVIndex[] = indexCache[d.group] || await find([d.group, 'Index'], 'group-type');
-      indexCache[d.group] = indexes;
-      indexes
-        .filter(ix => !ix.type || ix.type === d.type)
+    
+    for (const d of data) {      
+      indexCache[d.group]
+        .filter(ix => !ix.dataType || ix.dataType === d.type)
         .forEach(ix => {
           const ixEntry: IKVIndexEntry = {
             indexId: ix.id,
             dataId: d.id,
-            dataValue: d[ix.key],
+            dataValue: d[ix.dataKey],
           }
           // TODO maybe delete entries with null values
           const request = kvStore.put(ixEntry)
           request.onerror = evt => reject(evt);
         });
-      // when saving type of 'Index', call `buildIndex`
-      if (d.type === 'Index') {
-        await buildIndex(transaction, d as IKVIndex);
-      }
-      const request = objectStore.put(d);
+      const request = dataStore.put(d);
       request.onerror = evt => reject(evt);      
     }
-    transaction.oncomplete = evt => {
+    transaction.oncomplete = async evt => {
+      // when saving type of 'Index', call `buildIndex`
+      for(const d of data) {
+        if (d.type === 'Index') {
+          await buildIndex(d as IKVIndex);
+        }
+      }
       resolve((evt.target as any).result);
     };
   });
@@ -363,7 +374,7 @@ export async function init(
     return cursor;
   };
 
-  function dbOp(storeName: 'data' | 'files' | 'local', op: 'put' | 'delete' | 'get', value) {
+  function dbOp(storeName: 'data' | 'files' | 'local' | 'keyValueIndex', op: 'put' | 'delete' | 'get', value) {
     return new Promise<any>((resolve, reject) => {
       const mode: IDBTransactionMode = op == 'get' ? 'readonly' : 'readwrite';
       const transaction = db.transaction([storeName], mode);
