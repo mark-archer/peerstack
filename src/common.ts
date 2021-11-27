@@ -49,14 +49,13 @@ export function newid(): string {
   // that leaves 16 characters to represent a random number to prevent collisions, 36 ** 16 ~= 8e24
   // this might be a bad idea but I'm going to allocate one more character to the time and one less to the random number
   // the reasoning is I don't want to bake in an upper limit to these numbers that is actually relatively soon in the grand scheme of things
-  // now our max time is new Date(Number.parseInt('f55n5nmuua',36)) == +050705-08-09T23:40:06.178Z. 50k years from now.  THAT SHOULD WORK
+  // now our max time is new Date(Number.parseInt('f55n5nmuua',36)) == +050705-08-09T23:40:06.178Z. 50k years from now.  THAT SHOULD WORK :)
   // We still have 15 chars for our random number. 36 ** 15 ~= 2e23
   // That is still a huge number and I think (hope) the chance of collision is still so small as to be effectively unique
   // It's also worth mentioning that it _technically_ only needs to be unique within a group.  
   // It's intended to be globally unique but knowing things can still work if ids are only unique within a group gives me a lot of comfort
   // These ids are pretty much guaranteed to be unique within a group and, in light of that, it certainly seems worth the extra character to push the max date out so far
-  
-  
+    
   const time = Date.now().toString(36).padStart(10,'0'); // e.g: "00kq6xh45f", length == 10
   // Number.parseInt('zzzzzzzz',36).toString().length == 13, 8 digits in base 36 maps to 13 digits in base 10
   const rand1 = _.random(1e14).toString(36).padStart(8,'0').substr(0,8);
