@@ -137,7 +137,9 @@ export const eventHandlers = {
 }
 
 async function syncBlockId(connection: IConnection, db: IDB, groupId: string, blockId: string = '') {
-  console.log(`syncing ${groupId} block ${blockId}`)
+  if (blockId) {
+    console.log(`syncing ${groupId} block ${blockId}`);
+  }
   const localHashes = await getBlockIdHashes(groupId, blockId);
   const remoteHashes = await RPC(connection, getRemoteIdBlockHashes)(groupId, blockId);
   const blockIds = Object.keys(remoteHashes).sort().reverse(); // reverse to do newest first
