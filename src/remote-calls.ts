@@ -200,8 +200,8 @@ export async function syncDBs(connection: IConnection) {
   }
   connection.groups = remoteGroups.map(g => g.id);
 
-  // await Promise.all(remoteGroups.map(_syncGroup));
-  for (const remoteGroup of remoteGroups) await _syncGroup(remoteGroup);
+  await Promise.all(remoteGroups.map(_syncGroup));
+  // for (const remoteGroup of remoteGroups) await _syncGroup(remoteGroup);
   console.log(`finished syncing DB with ${connection.remoteDeviceId} in ${Date.now() - startTime} ms`);
 }
 
