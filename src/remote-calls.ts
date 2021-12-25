@@ -177,8 +177,11 @@ export async function syncGroup(connection: IConnection, remoteGroup: IGroup, db
   const groupId = remoteGroup.id;
   if (groupId !== connection.me.id && groupId !== usersGroup.id) {
     const localGroup = await db.get(groupId);
-    if (!localGroup || remoteGroup.modified > localGroup.modified) { // TODO potential security hole if we don't have the local group, do we trust the remote user?
-      await db.save(remoteGroup);
+    if (!localGroup || remoteGroup.modified > localGroup.modified) { 
+      // TODO potential security hole - if we don't have the local group, do we trust the remote user?
+      //                                we should probably only add new groups via syncing if syncing with self
+      const skipValidation = !localGroup; // if we don't have the local group there's a good chance we can verify it since the signer could be a peer we don't already know
+      await db.save(remoteGroup, skipValidation);
       eventHandlers.onRemoteDataSaved(remoteGroup);
     } else if (localGroup.type === 'Deleted' && remoteGroup.modified < localGroup.modified) {
       RPC(connection, pushData)(localGroup);
