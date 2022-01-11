@@ -45,40 +45,47 @@ export async function init(config?: { id: string, secretKey: string, name?: stri
     if (config.dontStore) {
       return userId;
     }
-    if (!config.dontWarn) {
+    if (config.dontWarn === false) {
       alert("You're about to be asked if you'd like to store a username and password for this site.  It is highly recommend you agree to this unless you're comfortable managing your user id and secret key yourself.")
     }
+    const db = await getDB();
     try {
       // switch name and id so name is shown
       // @ts-ignore
       const creds = await navigator.credentials.create({ password: { id: config.name, password: config.secretKey, name: config.id, iconUrl: config.iconUrl } });
       await navigator.credentials.store(creds);
+      // @ts-ignore
+      const storedCredentials = await navigator.credentials.get({ password: true }).catch(() => 0)      
+      if (storedCredentials) {
+        await db.local.delete(credentialsId);
+        return userId;
+      }    
     } catch { }
-    // @ts-ignore
-    const storedCredentials = await navigator.credentials.get({ password: true }).catch(() => 0)
-    const db = await getDB();
-    if (!storedCredentials) {
-      // can't use credential store so fallback to local storage for now 
-      // TODO find a more secure way to do this
-      await db.local.save({ id: credentialsId, config });
-    } else {
-      await db.local.delete(credentialsId);
-    }
+    
+    // if `navigator.credentials` fails then store in db.local
+    // can't use credential store so fallback to local storage for now 
+    // TODO find a more secure way to do this
+    await db.local.save({ id: credentialsId, config });
     return userId
   }
-  // @ts-ignore
-  const creds = await navigator.credentials.get({ password: true }).catch(() => 0);
-  if (creds) {
+
+  // look up stored credentials - first try credentials then try db.local
+  try {
     // @ts-ignore
-    userId = creds.name;
-    // @ts-ignore
-    secretKey = creds.password;
-  } else {
-    const db = await getDB();
-    config = (await db.local.get(credentialsId)).config;
-    userId = config?.id;
-    secretKey = config?.secretKey;
-  }
+    const creds = await navigator.credentials.get({ password: true }).catch(() => 0);
+    if (creds) {
+      // @ts-ignore
+      userId = creds.name;
+      // @ts-ignore
+      secretKey = creds.password;      
+      return userId
+    }
+  } catch {}
+  // if all else fails try to look it up in db.local
+  const db = await getDB();
+  config = (await db.local.get(credentialsId)).config;
+  userId = config?.id;
+  secretKey = config?.secretKey;
   return userId;
 }
 
