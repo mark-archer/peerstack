@@ -52,10 +52,10 @@ export async function init(config?: { id: string, secretKey: string, name?: stri
     try {
       // switch name and id so name is shown
       // @ts-ignore
-      const creds = await navigator.credentials.create({ password: { id: config.name, password: config.secretKey, name: config.id, iconUrl: config.iconUrl } });
+      const creds = await navigator.credentials.create({ password: { id: config.name || config.id, password: config.secretKey, name: config.id, iconUrl: config.iconUrl } });
       await navigator.credentials.store(creds);
       // @ts-ignore
-      const storedCredentials = await navigator.credentials.get({ password: true }).catch(() => 0)      
+      const storedCredentials = await navigator.credentials.get({ password: true })    
       if (storedCredentials) {
         await db.local.delete(credentialsId);
         return userId;
@@ -72,7 +72,7 @@ export async function init(config?: { id: string, secretKey: string, name?: stri
   // look up stored credentials - first try credentials then try db.local
   try {
     // @ts-ignore
-    const creds = await navigator.credentials.get({ password: true }).catch(() => 0);
+    const creds = await navigator.credentials.get({ password: true });
     if (creds) {
       // @ts-ignore
       userId = creds.name;
@@ -83,7 +83,7 @@ export async function init(config?: { id: string, secretKey: string, name?: stri
   } catch {}
   // if all else fails try to look it up in db.local
   const db = await getDB();
-  config = (await db.local.get(credentialsId)).config;
+  config = (await db.local.get(credentialsId))?.config;
   userId = config?.id;
   secretKey = config?.secretKey;
   return userId;
