@@ -83,6 +83,7 @@ export async function verifyRemoteUser(connection: IConnection) {
       // TODO protect from users stealing other users' ids
       //    this can happen if user1 has never seen user2 before, and user3 creates a user object
       //    with user2's id but a new public/private key, then gives that to user1
+      //    MAYBE ask any other peers if they have this user and if so check that public keys match
       await db.save(connection.remoteUser);
     }
   } catch (err) {
@@ -273,7 +274,8 @@ export async function makeRemoteCall(connection: IConnection, fnName: string, ar
       fnName,
       args
     }
-    remoteCall = signObject(remoteCall);
+    // WebRTC is already encrypted so signing the call object seems wasteful
+    // remoteCall = signObject(remoteCall);
     connection.send(remoteCall);
   } catch (err) {
     rejectRemoteCall(err);
@@ -296,7 +298,8 @@ export const getCurrentConnection = () => currentConnection;
 async function handelRemoteCall(connection: IConnection, remoteCall: IRemoteCall) {
   const { id, fnName, args } = remoteCall;
   try {
-    verifySignedObject(remoteCall as any, connection.remoteUser.publicKey);
+    // WebRTC is already encrypted so verifying at this level seems wasteful (see `verifyRemoteUser` below)
+    // verifySignedObject(remoteCall as any, connection.remoteUser.publicKey);
     const fn = remotelyCallableFunctions[fnName];
     let result;
     let error;
