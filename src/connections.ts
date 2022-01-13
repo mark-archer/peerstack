@@ -75,7 +75,12 @@ export async function init(_deviceId: string, _me: IUser, serverUrl?: string) {
     console.log('received ice candidate', { deviceId: iceCandidate.fromDevice });
     const conn = connections.find(c => c.id == iceCandidate.connectionId)
     if (!conn) {
-      console.warn('no connection found for iceCandidate', iceCandidate);
+      console.warn('no connection found for iceCandidate, storing in anticipation of upcoming connection', iceCandidate);
+      if (!earlyIceCandidates[iceCandidate.connectionId]) {
+        earlyIceCandidates[iceCandidate.connectionId] = [...iceCandidate.iceCandidates];
+      } else {
+        earlyIceCandidates[iceCandidate.connectionId].push(...iceCandidate.iceCandidates);
+      }
       return;
     }
     try {
@@ -152,7 +157,11 @@ export async function getAvailableDevices(): Promise<IDeviceRegistration[]> {
   })
 }
 
+// TODO this could be a memory leak over a long enough period of time
+//      it could also be maliciously exploited to be a memory leak
+const earlyIceCandidates: { [connectionId: string]: RTCIceCandidate[] } = {};
 let iceServers: RTCIceServer[] = null;
+
 async function getIceServers() {
   if (iceServers) return iceServers;
   let _iceServers: RTCIceServer[] = [
@@ -416,10 +425,10 @@ async function handelOffer(offer: ISDIExchange) {
       waitForDataChannel: label => new Promise<RTCDataChannel>((resolve) => pendingDCConns[label] = resolve),
     }
     connections.push(connection);
-
+    
     // gather ice candidates
     const iceCandidates: RTCIceCandidate[] = [];
-
+    
     // send any additional ice candidates through the signalling channel
     pc2.onicecandidate = e => {
       if (!e.candidate) return;
@@ -439,7 +448,16 @@ async function handelOffer(offer: ISDIExchange) {
     // build answer
     const sdi = await pc2.createAnswer();
     if (!sdi) return alert('generated falsy sdi answer: ' + JSON.stringify(sdi));
-    await pc2.setLocalDescription(sdi)
+    await pc2.setLocalDescription(sdi);
+
+    // add any known ice candidates
+    if (earlyIceCandidates[connection.id]) {
+      console.log('found early ice candidates');
+      for (const ic of earlyIceCandidates[connection.id]) {
+        await connection.pc.addIceCandidate(ic);
+      }
+      delete earlyIceCandidates[connection.id];
+    }    
 
     // send answer
     sendAnswer({
