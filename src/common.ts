@@ -2,7 +2,7 @@
 
 import { sha256 } from 'js-sha256';
 import * as _ from 'lodash';
-import * as base64 from "byte-base64";
+import * as base64 from "byte-base64"; // TODO switch this to use `base64-js`
 // import * as uuid from 'uuid';
 
 const stableStringify = require('fast-json-stable-stringify');
