@@ -135,6 +135,9 @@ export interface IPersistenceLayer {
 let db: IDB
 
 export async function init(opts?: PeerstackDBOpts): Promise<IDB> {
+  if (db) {
+    return db;
+  }
   let persistenceLayer = opts?.persistenceLayer;
   if (!persistenceLayer) {
     if (typeof indexedDB !== 'undefined') {
@@ -202,9 +205,11 @@ export async function init(opts?: PeerstackDBOpts): Promise<IDB> {
   return db;
 }
 
+// TODO this is redundant with `init` and should probably be deprecated
 export async function getDB(): Promise<IDB> {
   if (!db) {
-    throw new Error('db has not been initialized')
+    db = await init();
+    // throw new Error('db has not been initialized')
   }
   return db;
 }
