@@ -8,13 +8,25 @@ export interface ISigned {
   signer?: string
 }
 
+export interface IDevice {
+  app: string
+  expires: number
+  pushSubscription?: {
+    endpoint: string
+    expirationTime: number
+    keys: any
+  }
+  subscriptionExpires: number
+}
+
 export interface IUser extends ISigned, IData {
-  type: 'User',
-  group: 'users',
-  id: string,
-  name: string,
-  publicKey: string,
+  type: 'User'
+  group: 'users'
+  id: string
+  name: string
+  publicKey: string
   modified: number
+  devices?: { [deviceId: string]: IDevice }
 }
 
 export function newUser(name?: string): IUser & { secretKey: string } {
