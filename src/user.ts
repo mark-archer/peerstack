@@ -9,6 +9,8 @@ export interface ISigned {
 }
 
 export interface IDevice {
+  id: string
+  userId: string
   app: string
   expires: number
   pushSubscription?: {

@@ -92,6 +92,18 @@ export async function init(_deviceId: string, _me: IUser, serverUrl?: string) {
     }
   });
 
+  Object.keys(onMessageHandlers).forEach(messageType => {
+    socket.on(messageType, args => {
+      onMessageHandlers[messageType]?.forEach(async handler => {
+        try {
+          await handler(args)
+        } catch (err) {
+          console.log('error while handling message', err);
+        }
+      })
+    })
+  })
+
   // // TODO this isn't working so commenting it out for now
   // const heartBeatInterval = _.random(2000, 3000); // more than this leaves them hanging around for some reason
   // console.log('heartbeat interval', heartBeatInterval)
@@ -141,10 +153,10 @@ export async function registerDevice() {
       else resolve(res);
     })
   })
-  const otherDevices = await getAvailableDevices();  
+  const otherDevices = await getAvailableDevices();
   console.log('availableDevices', otherDevices.map(d => ({ deviceId: d.deviceId, userId: d.user.id })), otherDevices.length);
   // otherDevices.forEach(device => connectToDevice(device.deviceId))
-  otherDevices.forEach(device => eventHandlers.onDeviceDiscovered(device.deviceId));  
+  otherDevices.forEach(device => eventHandlers.onDeviceDiscovered(device.deviceId));
 }
 
 export async function getAvailableDevices(): Promise<IDeviceRegistration[]> {
@@ -425,10 +437,10 @@ async function handelOffer(offer: ISDIExchange) {
       waitForDataChannel: label => new Promise<RTCDataChannel>((resolve) => pendingDCConns[label] = resolve),
     }
     connections.push(connection);
-    
+
     // gather ice candidates
     const iceCandidates: RTCIceCandidate[] = [];
-    
+
     // send any additional ice candidates through the signalling channel
     pc2.onicecandidate = e => {
       if (!e.candidate) return;
@@ -457,7 +469,7 @@ async function handelOffer(offer: ISDIExchange) {
         await connection.pc.addIceCandidate(ic);
       }
       delete earlyIceCandidates[connection.id];
-    }    
+    }
 
     // send answer
     sendAnswer({
@@ -506,6 +518,35 @@ async function handelAnswer(answer: ISDIExchange) {
   const connection = connections.find(c => c.id == answer.connectionId)
   if (connection) connection.onAnswer(answer);
   else console.log('could not find connection for answer', answer);
+}
+
+export function emit(messageType: string, args: any) {
+  // TODO try to do through peer connections first
+  return new Promise((resolve, reject) => {
+    socket.emit(messageType, args, (err, res) => {
+      if (err) reject(err);
+      else resolve(res);
+    })
+  })
+}
+
+const onMessageHandlers: { [messageType: string]: ((...args) => any)[] } = {};
+
+export function onMessage(messageType: string, handler: (...args) => any) {
+  // TODO somehow link this to RPC for devices
+  onMessageHandlers[messageType] = onMessageHandlers[messageType] ?? [];
+  onMessageHandlers[messageType].push(handler);
+  if (socket) {
+    socket.on(messageType, args => {
+      onMessageHandlers[messageType]?.forEach(async handler => {
+        try {
+          await handler(args)
+        } catch (err) {
+          console.log('error while handling message', err);
+        }
+      })
+    })
+  }
 }
 
 // @ts-ignore

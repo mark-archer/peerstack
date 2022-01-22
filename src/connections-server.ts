@@ -1,11 +1,27 @@
 import * as _ from 'lodash';
 import { Socket } from 'socket.io';
-import { IUser } from './user';
+import { IDevice, IUser } from './user';
 import { Server } from 'http';
 import { IDeviceRegistration, ISDIExchange } from './connections';
+import webPush from 'web-push';
 
 
-export function init(server: Server, TWILIO_ACCOUNT_SID?, TWILIO_AUTH_TOKEN?) {
+export function init(
+  server: Server, 
+  options: { 
+    TWILIO_ACCOUNT_SID?: string, 
+    TWILIO_AUTH_TOKEN?: string,
+    VAPID_PUBLIC_KEY?: string, 
+    VAPID_PRIVATE_KEY?: string
+  }
+) {
+  const { 
+    TWILIO_ACCOUNT_SID, 
+    TWILIO_AUTH_TOKEN,
+    VAPID_PUBLIC_KEY, 
+    VAPID_PRIVATE_KEY,
+  } = options
+  
   let token;
   if (TWILIO_ACCOUNT_SID && TWILIO_AUTH_TOKEN) {
     try {
@@ -16,6 +32,17 @@ export function init(server: Server, TWILIO_ACCOUNT_SID?, TWILIO_AUTH_TOKEN?) {
     }
   }
 
+  if (!(VAPID_PUBLIC_KEY && VAPID_PRIVATE_KEY)) {
+    console.log("You must set the VAPID_PUBLIC_KEY and VAPID_PRIVATE_KEY" +
+      "environment variables for web-push notifications to work. You can use the following ones:");
+    console.log(webPush.generateVAPIDKeys());
+  } else {
+    webPush.setVapidDetails(
+      'https://peers.app/',
+      VAPID_PUBLIC_KEY,
+      VAPID_PRIVATE_KEY
+    );
+  }
 
   const getIceServers = () => {
     const iceServers: RTCIceServer[] =
@@ -34,8 +61,7 @@ export function init(server: Server, TWILIO_ACCOUNT_SID?, TWILIO_AUTH_TOKEN?) {
     return iceServers;
   }
 
-  let deviceSocket: { [key: string]: Socket } = {};
-  //let socketDevice: { [key: string]: string } = {};
+  let deviceSocket: { [deviceId: string]: Socket } = {};
   let devices: IDeviceRegistration[] = [];
 
   function onSocketConnection(socket: Socket) {
@@ -119,8 +145,57 @@ export function init(server: Server, TWILIO_ACCOUNT_SID?, TWILIO_AUTH_TOKEN?) {
         console.error('iceCandidate failed', err);
       }
     })
+
+    // message should be an encrypted json string of type INotification 
+    const badEndpoints: any = {};
+    socket.on('notify', (params: { device: IDevice, message: string }, callback: Function) => {
+      // TODO extract this functionality out so it can also be called via `POST`
+      const { device, message } = params;
+      try {
+        const connectedDevice = deviceSocket[params.device.id];
+        if (connectedDevice) {
+          // send it through socket connection if available 
+          connectedDevice.emit('notify', params.message)
+          console.log('sent through socket')
+          return callback(null, 'success');
+
+        } else if (device.pushSubscription) {
+          // use web push if subscriptions available 
+          console.log('sending through web-push')
+          const subscription = device.pushSubscription;
+          if (badEndpoints[subscription.endpoint]) {
+            return callback(new Error('not attempting notification because subscription has thrown an error previously'));
+          }
+          if (typeof message !== 'string') {
+            return callback(new Error(`message must be a string encrypted with the receiver's public key`));
+          }
+          // TODO chunk notification if necessary 
+          webPush.sendNotification(subscription, message)
+            .then(() => {
+              console.log('sent through web-push')
+              callback(null, 'success');
+            })
+            .catch(err => {
+              badEndpoints[subscription.endpoint] = true;
+              console.log('error during web-push', err);
+              callback(err);
+            })
+        } else {
+          console.log('no channel', device)
+          callback(null, 'no channel')
+        }
+      } catch (err) {
+        console.error('notify failed', err);
+      }
+    })
   }
 
   const io = require('socket.io')(server);
   io.on('connection', onSocketConnection);
+
+  // // the server also needs to expose VAPID_PUBLIC_KEY via a route like this
+  // router.get('/web-push-public-key', (req, res: Response) => {
+  //   res.send({ VAPID_PUBLIC_KEY })
+  // });
+  
 }

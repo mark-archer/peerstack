@@ -38,6 +38,7 @@
     "tweetnacl": "^1.0.3",
     "tweetnacl-util": "^0.15.1",
     "twilio": "^3.52.0",
+    "web-push": "^3.4.5",
     "webrtc-adapter": "^7.7.0"
   }
 }

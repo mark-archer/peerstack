@@ -36,6 +36,7 @@ module.exports = {
     "react-dom": "ReactDOM",
     "fs": "fs",
     "react-native-fs": "react-native-fs",
-    "realm": "realm"
+    "realm": "realm",
+    "web-push": "web-push"
   }
 };
