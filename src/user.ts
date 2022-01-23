@@ -3,6 +3,9 @@ import * as naclUtil from 'tweetnacl-util';
 import { decodeUint8ArrayFromBaseN, encodeUint8ArrayToBaseN, hashObject, newid } from './common';
 import { getDB, IData } from './db';
 
+module.exports.nacl = nacl;
+module.exports.naclUtil = naclUtil;
+
 export interface ISigned {
   signature?: string
   signer?: string
