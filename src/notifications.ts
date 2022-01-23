@@ -1,5 +1,6 @@
+import { newid } from ".";
 import { connections, emit, onMessage } from "./connections";
-import { IData } from "./db";
+import { getDB, IData } from "./db";
 import * as remoteCalls from "./remote-calls";
 import { IDevice } from "./user";
 
@@ -43,10 +44,11 @@ export async function notifyDevice(device: IDevice, notification: INotification,
 
   const subscription = device.pushSubscription;
   if (subscription) {
+    const messageId = newid();
     let message = JSON.stringify(notification);
     // TODO encrypted notification
     // message = signMessageWithSecretKey(message, theirPublicKey)
-    const result = await emit('notify', { device, message })
+    const result = await emit('notify', { device, messageId, message })
     console.log('notifyDevice result', result)
     return true;    
   }
@@ -54,16 +56,59 @@ export async function notifyDevice(device: IDevice, notification: INotification,
   return false;
 }
 
+export interface INotificationPart {
+  id: string
+  type: 'NotificationPart'
+  partNum: number
+  totalParts: number
+  data: string
+  ttl: number
+}
+
+const notificationPartsCache: { [partId: string]: INotificationPart } = {};
+
+const buildPartId = (id, partNum) => `${id}:part${partNum}`;
+
+async function getNotificationPart(id: string, partNum: number) {
+  const partId = buildPartId(id, partNum);
+  if (!notificationPartsCache[partId]) {
+    const db = await getDB();
+    notificationPartsCache[partId] = await db.local.get(partId);
+  }
+  return notificationPartsCache[partId];
+}
+
 export async function processWebPushNotification(serviceWorkerSelf: any, notification: string) {
   // TODO check if it's a part - if so, check if we have the rest in db otherwise save in db
   if (notification.startsWith('part')) {
     // ex `part1,5,{id}:qwerty....`
     const iColon = notification.indexOf(':');
-    const dataData = notification.substring(iColon);
     const metaData = notification.substring(0, iColon);
-    const [partNum, totalNum, id] = metaData.replace("part", '').split(':').map(s => Number(s));
-    // ...
-    throw new Error('not implemented yet')
+    const [_partNum, _totalParts, id] = metaData.replace("part", '').split(',');
+    const [partNum, totalParts] = [_partNum, _totalParts].map(s => Number(s));
+    const partId = buildPartId(id, partNum);
+    const data = notification.substring(iColon+1);
+    const part: INotificationPart = {
+      id: partId, 
+      type: 'NotificationPart',
+      partNum, 
+      totalParts,
+      data, 
+      ttl: Date.now() + (1000 * 60 * 60 * 24 * 30) // 30 days
+    };
+    notificationPartsCache[partId] = part;
+    const parts: INotificationPart[] = [];
+    const db = await getDB();
+    for (let iPart = 1; iPart <= totalParts; iPart++) {
+      const _part = await getNotificationPart(id, iPart);
+      if (!_part) {
+        await db.local.save(part);
+        return;
+      }
+      parts.push(_part);
+    }
+    await Promise.all(parts.map(p => db.local.delete(p.id)));
+    notification = parts.map(p => p.data).join('');
   }
   // TODO open notification using my secret key (it should be signed with my public key)
   const notificationHydrated: INotification = JSON.parse(notification);

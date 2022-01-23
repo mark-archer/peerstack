@@ -134,7 +134,7 @@ export function init(
         answer.user = user;
         deviceSocket[answer.toDevice].emit('answer', answer);
       } catch (err) {
-        console.error('offer failed', err);
+        console.error('answer failed', err);
       }
     })
 
@@ -148,20 +148,18 @@ export function init(
 
     // message should be an encrypted json string of type INotification 
     const badEndpoints: any = {};
-    socket.on('notify', (params: { device: IDevice, message: string }, callback: Function) => {
+    socket.on('notify', (params: { device: IDevice, messageId: string, message: string }, callback: Function) => {
       // TODO extract this functionality out so it can also be called via `POST`
-      const { device, message } = params;
+      const { device, messageId, message } = params;
       try {
         const connectedDevice = deviceSocket[params.device.id];
         if (connectedDevice) {
           // send it through socket connection if available 
           connectedDevice.emit('notify', params.message)
-          console.log('sent through socket')
           return callback(null, 'success');
 
         } else if (device.pushSubscription) {
           // use web push if subscriptions available 
-          console.log('sending through web-push')
           const subscription = device.pushSubscription;
           if (badEndpoints[subscription.endpoint]) {
             return callback(new Error('not attempting notification because subscription has thrown an error previously'));
@@ -169,19 +167,37 @@ export function init(
           if (typeof message !== 'string') {
             return callback(new Error(`message must be a string encrypted with the receiver's public key`));
           }
-          // TODO chunk notification if necessary 
-          webPush.sendNotification(subscription, message)
+          const webPushChunkSize = 3000;
+          function chunkMessage(message) {
+            let chunks = [];
+            if (message.length <= webPushChunkSize) {
+              chunks.push(message)
+            } else { 
+              const nChunks = Math.ceil(message.length / webPushChunkSize);
+              const chunkLength = Math.ceil(message.length / nChunks);
+              let iChunk = 0;
+              while(iChunk < message.length) {
+                const chunk = message.substr(iChunk, chunkLength);
+                iChunk += chunk.length;
+                chunks.push(chunk)
+              }
+              chunks = chunks.map((chunk, iChunk) => `part${iChunk+1},${chunks.length},${messageId}:${chunk}`)
+            }
+            return chunks;
+          }
+          const chunks = chunkMessage(message);
+          
+          Promise.all(chunks.map(chunk => webPush.sendNotification(subscription, chunk)))
             .then(() => {
-              console.log('sent through web-push')
               callback(null, 'success');
             })
             .catch(err => {
               badEndpoints[subscription.endpoint] = true;
-              console.log('error during web-push', err);
+              console.error('error during web-push', err);
               callback(err);
             })
         } else {
-          console.log('no channel', device)
+          console.log('no channel to send notification through', device)
           callback(null, 'no channel')
         }
       } catch (err) {
