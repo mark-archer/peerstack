@@ -181,7 +181,7 @@ export function init(
                 iChunk += chunk.length;
                 chunks.push(chunk)
               }
-              chunks = chunks.map((chunk, iChunk) => `part${iChunk+1},${chunks.length},${messageId}:${chunk}`)
+              chunks = chunks.map((chunk, iChunk) => `part:${iChunk+1},${chunks.length},${messageId}:${chunk}`)
             }
             return chunks;
           }

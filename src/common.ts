@@ -162,14 +162,14 @@ export function decodeUint8ArrayFromBaseN(str: string, radix: number = 64): Uint
   return new Uint8Array(nums);
 }
 
-export function encodeUint8ArrayToUTF(ary: Uint8Array) {
+export function encodeUint8ArrayToUTF(ary: Uint8Array): string {
   return String.fromCharCode.apply(null, ary);
 }
 
-export function decodeUint8ArrayFromUTF(strAry: string): Uint8Array {
-  var ary = new Uint8Array(strAry.length);
-  for (var i = 0, strLen = strAry.length; i < strLen; i++) {
-    ary[i] = strAry.charCodeAt(i);
+export function decodeUint8ArrayFromUTF(str: string): Uint8Array {
+  var ary = new Uint8Array(str.length);
+  for (var i = 0, strLen = str.length; i < strLen; i++) {
+    ary[i] = str.charCodeAt(i);
   }
   return ary;
 }

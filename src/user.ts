@@ -1,6 +1,15 @@
 import * as nacl from 'tweetnacl';
 import * as naclUtil from 'tweetnacl-util';
-import { decodeUint8ArrayFromBaseN, encodeUint8ArrayToBaseN, hashObject, newid } from './common';
+import { 
+  decodeUint8ArrayFromBaseN, 
+  encodeUint8ArrayToBaseN, 
+  decodeUint8ArrayFromUTF, 
+  encodeUint8ArrayToUTF, 
+  hashObject, 
+  newid, 
+  stringify, 
+  parseJSON 
+} from './common';
 import { getDB, IData } from './db';
 
 module.exports.nacl = nacl;
@@ -30,6 +39,7 @@ export interface IUser extends ISigned, IData {
   id: string
   name: string
   publicKey: string
+  publicBoxKey: string
   modified: number
   devices?: { [deviceId: string]: IDevice }
 }
@@ -37,6 +47,7 @@ export interface IUser extends ISigned, IData {
 export function newUser(name?: string): IUser & { secretKey: string } {
   const userId = newid();
   const newKey = nacl.sign.keyPair();
+  const boxKey = nacl.box.keyPair.fromSecretKey(newKey.secretKey.slice(0, 32))
   return {
     type: 'User',
     id: userId,
@@ -45,6 +56,7 @@ export function newUser(name?: string): IUser & { secretKey: string } {
     name: name || userId,
     secretKey: encodeUint8ArrayToBaseN(newKey.secretKey),
     publicKey: encodeUint8ArrayToBaseN(newKey.publicKey),
+    publicBoxKey: encodeUint8ArrayToBaseN(boxKey.publicKey),
     modified: Date.now(),
   }
 }
@@ -108,11 +120,15 @@ export async function init(config?: { id: string, secretKey: string, name?: stri
 
 export function hydrateUser(id: string, secretKey: string, displayName?: string): IUser {
   const secretKeyAry = decodeUint8ArrayFromBaseN(secretKey);
-  const publicKeyAry = secretKeyAry.slice(secretKeyAry.length / 2);
+  const keyPartLength = secretKeyAry.length / 2; // should be 32
+  const publicKeyAry = secretKeyAry.slice(keyPartLength);
   const publicKey = encodeUint8ArrayToBaseN(publicKeyAry);
+  const boxKey = nacl.box.keyPair.fromSecretKey(secretKeyAry.slice(0, keyPartLength));
+  const publicBoxKey = encodeUint8ArrayToBaseN(boxKey.publicKey);
   return {
     id,
     publicKey,
+    publicBoxKey,
     name: displayName || id,
     group: 'users',
     modified: 1, // don't want to overwrite data in the database with this most minimal user object
@@ -131,6 +147,32 @@ export function signMessageWithSecretKey(msg: string, secretKey: string) {
   const msgDecoded = naclUtil.decodeUTF8(msg);
   const msgSigned = nacl.sign(msgDecoded, _secretKey);
   return encodeUint8ArrayToBaseN(msgSigned);  
+}
+
+export interface IDataBox {
+  fromUserId: string
+  contents: string
+  nonce: string
+}
+
+export function boxDataWithKeys(data: any, toPublicBoxKey: string, fromSecretKey: string, fromUserId: string): IDataBox {
+  let _secretKey: Uint8Array;
+  if (fromSecretKey.length == 128) {
+    _secretKey = decodeUint8ArrayFromBaseN(fromSecretKey, 36)
+  } else {
+    _secretKey = decodeUint8ArrayFromBaseN(fromSecretKey)
+  }
+  const fromSecretBoxKey = _secretKey.slice(0, 32);
+  const _toPublicBoxKey: Uint8Array = decodeUint8ArrayFromBaseN(toPublicBoxKey);
+  const nonce = nacl.randomBytes(24);
+  data = stringify(data);
+  const dataDecoded = decodeUint8ArrayFromUTF(data);
+  const dataBoxed = nacl.box(dataDecoded, nonce, _toPublicBoxKey, fromSecretBoxKey)
+  return {
+    fromUserId,
+    contents: encodeUint8ArrayToBaseN(dataBoxed),
+    nonce: encodeUint8ArrayToBaseN(nonce) 
+  }
 }
 
 export function getSignature(msg: string, secretKey: string) {
@@ -169,6 +211,20 @@ export function signObject<T>(obj: T): T & ISigned {
   return signObjectWithIdAndSecretKey(obj, userId, secretKey);
 }
 
+export function boxDataForPublicKey(data: any, toPublicBoxKey: string) {
+  const fromSecretKey = secretKey;
+  const fromUserId = userId;
+  return boxDataWithKeys(data, toPublicBoxKey, fromSecretKey, fromUserId);
+}
+
+export async function boxDataForUser(data: any, toUserId: string) {
+  const fromSecretKey = secretKey;
+  const fromUserId = userId;
+  const db = await getDB();
+  const toUser: IUser = await db.get(toUserId);
+  return boxDataWithKeys(data, toUser.publicBoxKey, fromSecretKey, fromUserId);
+}
+
 export function openMessage(signedMsg: string, publicKey: string) {
   let _publicKey: Uint8Array;
   if (publicKey.length == 64) {
@@ -187,6 +243,36 @@ export function openMessage(signedMsg: string, publicKey: string) {
     msgOpened = nacl.sign.open(msgDecoded, _publicKey);
   }
   return naclUtil.encodeUTF8(msgOpened);
+}
+
+export function openBoxWithSecretKey(box: IDataBox, fromPublicBoxKey: string, toSecretKey: string): any {
+  let _secretKey: Uint8Array;
+  if (toSecretKey.length == 128) {
+    _secretKey = decodeUint8ArrayFromBaseN(toSecretKey, 36)
+  } else {
+    _secretKey = decodeUint8ArrayFromBaseN(toSecretKey)
+  }
+  const _toSecretKey = _secretKey.slice(0, 32);
+  const boxedData = decodeUint8ArrayFromBaseN(box.contents);
+  const nonce = decodeUint8ArrayFromBaseN(box.nonce);
+  const fromPublicKey = decodeUint8ArrayFromBaseN(fromPublicBoxKey);
+  
+  const dataAry = nacl.box.open(boxedData, nonce, fromPublicKey, _toSecretKey);
+  if (dataAry === null) {
+    console.log('Message was null or verification failed', box)
+    throw new Error('Message was null or verification failed');
+  }
+  const dataStr = encodeUint8ArrayToUTF(dataAry);
+  return parseJSON(dataStr);
+}
+
+export async function openBox(box: IDataBox) {
+  const db = await getDB();
+  const fromUser: IUser = await db.get(box.fromUserId);
+  if (!fromUser) {
+    throw new Error('box sent by unknown user');
+  }
+  return openBoxWithSecretKey(box, fromUser.publicBoxKey, secretKey);
 }
 
 export function verifySignature(message: string, signature: string, publicKey: string) {

@@ -1,18 +1,20 @@
-import { newid } from ".";
+import { newid, user } from ".";
 import { connections, emit, onMessage } from "./connections";
 import { getDB, IData } from "./db";
 import * as remoteCalls from "./remote-calls";
-import { IDevice } from "./user";
+import { boxDataForPublicKey, IDevice, IDataBox, openBoxWithSecretKey, openBox } from "./user";
+
 
 export interface INotification extends NotificationOptions {
   title: string
   data?: IData
 }
 
-onMessage('notify', (notification: string) => {
-  // TODO should be encrypted so I can open it
-  const _notification: INotification = JSON.parse(notification);
-  processNotification(_notification);
+onMessage('notify', (message: string) => {
+  const box: IDataBox = JSON.parse(message);
+  openBox(box).then((notification: INotification) => {
+    processNotification(notification);
+  })
 })
 
 async function isFirstTimeSeen(notification: INotification) {
@@ -34,8 +36,8 @@ export async function processNotification(notification: INotification) {
 
 remoteCalls.remotelyCallableFunctions.processNotification = processNotification;
 
-export async function notifyDevice(device: IDevice, notification: INotification, theirPublicKey: string) {
-  // check if we have a connection to the device
+export async function notifyDevice(device: IDevice, notification: INotification, toPublicBoxKey: string) {
+  // check if we have a connection to the device, if so just send through that
   const conn = connections.find(c => c.remoteDeviceId === device.id);
   if (conn) {
     await remoteCalls.RPC(conn, processNotification)(notification);
@@ -45,9 +47,8 @@ export async function notifyDevice(device: IDevice, notification: INotification,
   const subscription = device.pushSubscription;
   if (subscription) {
     const messageId = newid();
-    let message = JSON.stringify(notification);
-    // TODO encrypted notification
-    // message = signMessageWithSecretKey(message, theirPublicKey)
+    const box = boxDataForPublicKey(notification, toPublicBoxKey);
+    const message = JSON.stringify(box);
     const result = await emit('notify', { device, messageId, message })
     console.log('notifyDevice result', result)
     return true;    
@@ -79,12 +80,11 @@ async function getNotificationPart(id: string, partNum: number) {
 }
 
 export async function processWebPushNotification(serviceWorkerSelf: any, notification: string) {
-  // TODO check if it's a part - if so, check if we have the rest in db otherwise save in db
-  if (notification.startsWith('part')) {
-    // ex `part1,5,{id}:qwerty....`
-    const iColon = notification.indexOf(':');
+  if (notification.startsWith('part:')) {
+    // ex `part:1,5,{id}:qwerty....`
+    const iColon = notification.indexOf(':', 6);
     const metaData = notification.substring(0, iColon);
-    const [_partNum, _totalParts, id] = metaData.replace("part", '').split(',');
+    const [_partNum, _totalParts, id] = metaData.replace("part:", '').split(',');
     const [partNum, totalParts] = [_partNum, _totalParts].map(s => Number(s));
     const partId = buildPartId(id, partNum);
     const data = notification.substring(iColon+1);
@@ -110,8 +110,9 @@ export async function processWebPushNotification(serviceWorkerSelf: any, notific
     await Promise.all(parts.map(p => db.local.delete(p.id)));
     notification = parts.map(p => p.data).join('');
   }
-  // TODO open notification using my secret key (it should be signed with my public key)
-  const notificationHydrated: INotification = JSON.parse(notification);
+  await user.init();
+  const box: IDataBox = JSON.parse(notification);
+  const notificationHydrated: INotification = await user.openBox(box);
   const shouldShow = await isFirstTimeSeen(notificationHydrated);
   if (shouldShow) {
     serviceWorkerSelf.registration.showNotification(notificationHydrated.title, notificationHydrated);
