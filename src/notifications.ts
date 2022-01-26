@@ -2,29 +2,46 @@ import { newid, user } from ".";
 import { connections, emit, onMessage } from "./connections";
 import { getDB, IData } from "./db";
 import * as remoteCalls from "./remote-calls";
-import { boxDataForPublicKey, IDevice, IDataBox, openBoxWithSecretKey, openBox } from "./user";
+import { boxDataForPublicKey, IDevice, IDataBox, openBox } from "./user";
 
 
 export interface INotification extends NotificationOptions {
+  id: string
   title: string
-  data?: IData
+  data?: IData | string
+  dontShow?: boolean
 }
 
 onMessage('notify', (message: string) => {
   const box: IDataBox = JSON.parse(message);
   openBox(box).then((notification: INotification) => {
-    processNotification(notification);
+    notify(notification);
   })
-})
+});
 
-async function isFirstTimeSeen(notification: INotification) {
-  // TODO check if data already exists in db, if no data use hash of notification      
+async function processNotification(notification: INotification) {
+  const db = await getDB();
+  const dbNote = await db.local.get(notification.id);
+  if (dbNote) {
+    return false;
+  }
+  await db.local.save({ 
+    id: notification.id,
+    ttl: Date.now() + (1000 * 60 * 60 * 24 * 14) // 14 days
+  });
+  if (typeof notification.data === 'object') {
+    await db.save(notification.data);
+    notification.data = notification.data?.id;
+  }
+  if (notification.dontShow) {
+    return false;
+  }
   return true;
 }
 
-export async function processNotification(notification: INotification) {
+export async function notify(notification: INotification) {
   try {
-    const shouldShow = await isFirstTimeSeen(notification);
+    const shouldShow = await processNotification(notification);
     if (shouldShow) {
       // This may not work on android? 
       const n = new Notification(notification.title);
@@ -34,27 +51,24 @@ export async function processNotification(notification: INotification) {
   }
 }
 
-remoteCalls.remotelyCallableFunctions.processNotification = processNotification;
+remoteCalls.remotelyCallableFunctions.notify = notify;
 
 export async function notifyDevice(device: IDevice, notification: INotification, toPublicBoxKey: string) {
   // check if we have a connection to the device, if so just send through that
   const conn = connections.find(c => c.remoteDeviceId === device.id);
   if (conn) {
-    await remoteCalls.RPC(conn, processNotification)(notification);
+    await remoteCalls.RPC(conn, notify)(notification);
     return true;
   }
 
-  const subscription = device.pushSubscription;
-  if (subscription) {
-    const messageId = newid();
-    const box = boxDataForPublicKey(notification, toPublicBoxKey);
-    const message = JSON.stringify(box);
-    const result = await emit('notify', { device, messageId, message })
-    console.log('notifyDevice result', result)
-    return true;    
-  }
-
-  return false;
+  // check if we have a web-push subscription, if so use that
+  const messageId = notification.id;
+  const box = boxDataForPublicKey(notification, toPublicBoxKey);
+  const message = JSON.stringify(box);
+  // Note that the server may push the notification through socket.io if available
+  const result = await emit('notify', { device, messageId, message })
+  console.log('notifyDevice result', result)
+  return result === 'success';  
 }
 
 export interface INotificationPart {
@@ -94,7 +108,7 @@ export async function processWebPushNotification(serviceWorkerSelf: any, notific
       partNum, 
       totalParts,
       data, 
-      ttl: Date.now() + (1000 * 60 * 60 * 24 * 30) // 30 days
+      ttl: Date.now() + (1000 * 60 * 60 * 24 * 14) // 14 days
     };
     notificationPartsCache[partId] = part;
     const parts: INotificationPart[] = [];
@@ -112,8 +126,8 @@ export async function processWebPushNotification(serviceWorkerSelf: any, notific
   }
   await user.init();
   const box: IDataBox = JSON.parse(notification);
-  const notificationHydrated: INotification = await user.openBox(box);
-  const shouldShow = await isFirstTimeSeen(notificationHydrated);
+  const notificationHydrated: INotification = await openBox(box);
+  const shouldShow = await processNotification(notificationHydrated);
   if (shouldShow) {
     serviceWorkerSelf.registration.showNotification(notificationHydrated.title, notificationHydrated);
   }  

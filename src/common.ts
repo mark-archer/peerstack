@@ -45,7 +45,7 @@ export function newid(): string {
   // (1625282091498).toString(36) == "kqn6zrvu" (length 8)
   // Number.parseInt("zzzzzzzz", 36) == 2821109907455 == year 2059.  Way too soon so going up to 9 characters
   // Number.parseInt("zzzzzzzzz", 36) == 101559956668415 == year 5188.  
-  // but the max size of 9 left most can only be "f55n5nmuu" == 42720753566838 == 3323.  That could still work but only ~ 1100 years
+  // but the max size of 9 left most can only be "f55n5nmuu" == 42720753566838 == year 3323.  That could still work but only ~ 1300 years
   // that leaves 16 characters to represent a random number to prevent collisions, 36 ** 16 ~= 8e24
   // this might be a bad idea but I'm going to allocate one more character to the time and one less to the random number
   // the reasoning is I don't want to bake in an upper limit to these numbers that is actually relatively soon in the grand scheme of things
