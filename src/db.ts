@@ -5,12 +5,13 @@ import * as dbix from './dbix'
 import * as dbrealm from './dbrealm'
 
 export interface IData extends ISigned {
-  id: string,
-  group: string,
-  type: 'Group' | 'Deleted' | 'User' | 'any' | string,
-  owner: string,
-  modified: number,
-  subject?: string,
+  id: string
+  group: string
+  type: 'Group' | 'Deleted' | 'User' | 'any' | string
+  owner: string
+  modified: number
+  subject?: string
+  ttl?: number // date in ms after which the data should be deleted
   [key: string]: any
 }
 

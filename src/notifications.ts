@@ -1,15 +1,47 @@
-import { newid, user } from ".";
+import { isObject, user } from ".";
 import { connections, emit, onMessage } from "./connections";
 import { getDB, IData } from "./db";
 import * as remoteCalls from "./remote-calls";
-import { boxDataForPublicKey, IDevice, IDataBox, openBox } from "./user";
+import { boxDataForPublicKey, IDevice, IDataBox, openBox, verifySignedObject, IUser, signObject } from "./user";
 
+export type INotificationStatus = 'dontShow' | 'read' | 'dismissed'
 
-export interface INotification extends NotificationOptions {
-  id: string
+export interface INotification extends NotificationOptions, IData {
+  type: 'Notification'
   title: string
-  data?: IData | string
-  dontShow?: boolean
+  received: number
+  data?: IData
+  status?: INotificationStatus
+}
+
+export const eventHandlers = {
+  onNotificationReceived: (notification: INotification) => Promise.resolve(void 0)
+};
+
+async function processNotification(notification: INotification) {
+  const db = await getDB();
+  const dbNote = await db.get(notification.id);
+  if (dbNote) {
+    return false;
+  }
+  const sender: IUser = await db.get(notification.signer);
+  verifySignedObject(notification, sender.publicKey);
+  if (isObject(notification.data)) {
+    await db.save(notification.data);
+    notification.subject = notification.data.id;
+    delete notification.data;
+  }
+  notification.ttl = Date.now() + (1000 * 60 * 60 * 24 * 14) // 14 days
+  notification.group = await user.init(); // put all notifications in my personal group
+  notification.received = Date.now();
+  signObject(notification);
+  await db.save(notification);
+  eventHandlers.onNotificationReceived(notification);
+  
+  if (notification.dontShow) {
+    return false;
+  }
+  return true;
 }
 
 onMessage('notify', (message: string) => {
@@ -18,26 +50,6 @@ onMessage('notify', (message: string) => {
     notify(notification);
   })
 });
-
-async function processNotification(notification: INotification) {
-  const db = await getDB();
-  const dbNote = await db.local.get(notification.id);
-  if (dbNote) {
-    return false;
-  }
-  await db.local.save({ 
-    id: notification.id,
-    ttl: Date.now() + (1000 * 60 * 60 * 24 * 14) // 14 days
-  });
-  if (typeof notification.data === 'object') {
-    await db.save(notification.data);
-    notification.data = notification.data?.id;
-  }
-  if (notification.dontShow) {
-    return false;
-  }
-  return true;
-}
 
 export async function notify(notification: INotification) {
   try {
@@ -130,7 +142,14 @@ export async function processWebPushNotification(serviceWorkerSelf: any, notific
   const shouldShow = await processNotification(notificationHydrated);
   if (shouldShow) {
     serviceWorkerSelf.registration.showNotification(notificationHydrated.title, notificationHydrated);
-  }  
+  }
+  const clients = await serviceWorkerSelf.clients.matchAll({
+    type: 'window',
+    includeUncontrolled: true
+  });
+  clients.forEach(client => {
+    client.postMessage(notificationHydrated);
+  });
 }
 
 
