@@ -202,6 +202,7 @@ export function init(
         }
       } catch (err) {
         console.error('notify failed', err);
+        callback(err);
       }
     })
   }

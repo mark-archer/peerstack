@@ -37,10 +37,11 @@ async function processNotification(notification: INotification) {
   signObject(notification);
   await db.save(notification);
   eventHandlers.onNotificationReceived(notification);
-  
   if (notification.dontShow) {
     return false;
   }
+  // TODO this should maybe be reduced to notification id and subject
+  notification.data = JSON.parse(JSON.stringify(notification));
   return true;
 }
 
@@ -56,7 +57,7 @@ export async function notify(notification: INotification) {
     const shouldShow = await processNotification(notification);
     if (shouldShow) {
       // This may not work on android? 
-      const n = new Notification(notification.title);
+      const n = new Notification(notification.title, notification);
     }    
   } catch (err) {
     console.error('Error processing notification', notification, err);
