@@ -3,6 +3,7 @@ import { getDB, IGroup } from './db';
 import { IConnection, onRemoteMessage } from "./remote-calls";
 import { IUser, signObject, init as initUser } from "./user";
 import { checkPendingInvitations, IInviteAccept, IInviteAcceptType } from "./invitations"
+import { uniq } from "lodash";
 
 export interface ISDIExchange {
   connectionId: string
@@ -139,12 +140,13 @@ export async function init(_deviceId: string, _me: IUser, serverUrl?: string) {
 export async function registerDevice() {
   const db = await getDB();
   const allGroups = (await db.find('Group', 'type')) as IGroup[];
-  const allGroupIds = allGroups.map(g => g.id);
+  let allGroupIds = allGroups.map(g => g.id);
   allGroupIds.push(me.id);
   const pendingInvites = (await db.find(IInviteAcceptType, 'type')) as IInviteAccept[];
   pendingInvites.forEach(invite => {
     allGroupIds.push(invite.invitation.group);
   })
+  allGroupIds = uniq(allGroupIds);
   const registration: IDeviceRegistration = { deviceId, user: me, groups: allGroupIds };
   // TODO try to do it through peers first
   await new Promise((resolve, reject) => {

@@ -2,7 +2,6 @@ import { compact, groupBy, isArray, isObject, set, sortBy, uniq } from 'lodash';
 import { hashObject } from './common';
 import { ISigned, IUser, verifySignedObject } from './user';
 import * as dbix from './dbix'
-import * as dbrealm from './dbrealm'
 
 export interface IData extends ISigned {
   id: string
@@ -144,7 +143,8 @@ export async function init(opts?: PeerstackDBOpts): Promise<IDB> {
     if (typeof indexedDB !== 'undefined') {
       persistenceLayer = dbix;
     } else {
-      persistenceLayer = dbrealm;
+      throw new Error('Indexed DB not available.  You must implement a persistence layer.')
+      // persistenceLayer = dbrealm;
     }
   }
 
