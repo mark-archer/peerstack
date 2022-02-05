@@ -1,5 +1,5 @@
-import { signObject, newUser, signMessageWithSecretKey, openMessage } from './user';
-import { registerDevice, me } from './connections';
+import { signObject, newUser, signMessageWithSecretKey, openMessage, init as initUser } from './user';
+import { registerDevice } from './connections';
 import { getDB, IData, IGroup } from './db';
 import { isid, newid } from './common';
 import { eventHandlers, getCurrentConnection, IConnection, remotelyCallableFunctions, RPC } from './remote-calls';
@@ -8,7 +8,6 @@ export interface IInvitation extends IData {
   type: 'Invitation',
   publicKey: string,
   secretKey: string,
-  expires: number,
   read?: boolean,
   write?: boolean,
   admin?: boolean,
@@ -29,16 +28,17 @@ export interface IInviteAccept extends IData {
 
 export async function createInvitation(group: string, expires?: number, read = true, write = true, admin = false): Promise<IInviteDetails> {
   if (!expires) {
-    expires = Date.now() + 1000 * 60 * 60 * 24 * 30; // in 30 days
+    expires = Date.now() + 1000 * 60 * 60 * 24 * 7; // in 7 days
   }
+  const userId = await initUser()
   const keys = newUser();
   const invitation: IInvitation = {
     id: newid(),
     type: 'Invitation',
     group,
-    owner: me.id,
+    owner: userId,
     modified: Date.now(),
-    expires,
+    ttl: expires,
     read,
     write,
     admin,
@@ -57,12 +57,14 @@ export async function createInvitation(group: string, expires?: number, read = t
 
 export async function acceptInvitation(invite: IInviteDetails) {
   const { id, group, publicKey } = invite;
+  const userId = await initUser()
   const db = await getDB();
+
   const inviteAccept: IInviteAccept = {
     id: newid(),
     type: IInviteAcceptType,
-    group: me.id,
-    owner: me.id,
+    group: userId,
+    owner: userId,
     modified: Date.now(),
     invitation: {
       id,
@@ -135,7 +137,7 @@ async function confirmInvitation(inviteId: string, publicKey: string) {
   if (!invitation || invitation.type !== 'Invitation' || invitation.publicKey !== publicKey) {
     throw new Error('Invalid invitation id or secret');
   }
-  if (invitation.expires < Date.now()) {
+  if (invitation.ttl < Date.now()) {
     throw new Error('invitation has expired');
   }
   const group = await db.get(invitation.group) as IGroup;
