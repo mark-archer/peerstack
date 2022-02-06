@@ -9,7 +9,7 @@ export type INotificationStatus = 'dontShow' | 'read' | 'dismissed'
 export interface INotification extends NotificationOptions, IData {
   type: 'Notification'
   title: string
-  received: number
+  received?: number
   data?: IData
   status?: INotificationStatus
 }
@@ -67,6 +67,8 @@ export async function notify(notification: INotification) {
 remoteCalls.remotelyCallableFunctions.notify = notify;
 
 export async function notifyDevice(device: IDevice, notification: INotification, toPublicBoxKey: string) {
+  signObject(notification);
+  
   // check if we have a connection to the device, if so just send through that
   const conn = connections.find(c => c.remoteDeviceId === device.id);
   if (conn) {

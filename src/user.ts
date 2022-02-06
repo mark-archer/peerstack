@@ -23,15 +23,15 @@ export interface ISigned {
 export interface IDevice {
   id: string
   userId: string
-  name?: string
   app: string
-  expires: number
+  name?: string
+  expires?: number
   pushSubscription?: {
     endpoint: string
     expirationTime: number
     keys: any
   }
-  subscriptionExpires: number
+  subscriptionExpires?: number
 }
 
 export interface IUser extends ISigned, IData {

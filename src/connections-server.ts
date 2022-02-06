@@ -112,6 +112,7 @@ export function init(
         devices = devices.filter(d => d.deviceId != deviceId);
         devices.push(registration);
         console.log('device registered', deviceId);
+        console.log(`Total devices registered: ${devices.length}`);
         if (callback) callback(null, 'success');
       } catch (err) {
         console.error('device registration failed', err);
