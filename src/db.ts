@@ -30,6 +30,7 @@ export interface IGroup extends IData {
   allowPublicViewers?: boolean,
   allowViewerComments?: boolean,
   apps?: string[],
+  inactive?: boolean
 }
 
 export interface IFile {
@@ -275,6 +276,7 @@ export async function validateData(db: IDB, datas: IData[]) {
     if (data.modified > (Date.now() + 60000)) {
       throw new Error(`modified timestamp cannot be in the future`);
     }
+    // TODO also verify time part of id is not in the future
     // TODO verify type is not being changed on existing data (e.g. deleting a user or group)
     if (data.type === 'Group') {
       if (data.id !== data.group) {

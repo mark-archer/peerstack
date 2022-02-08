@@ -137,48 +137,60 @@ export const eventHandlers = {
   },
 }
 
+let pendingBlockSync = Promise.resolve();
 async function syncBlockId(connection: IConnection, db: IDB, groupId: string, blockId: string = '') {
-  if (blockId) {
-    console.log(`syncing ${groupId} block ${blockId}`);
-  }
-  const localHashes = await getBlockIdHashes(groupId, blockId);
-  const remoteHashes = await RPC(connection, getRemoteIdBlockHashes)(groupId, blockId);
-  const blockIds = Object.keys(remoteHashes).sort().reverse(); // reverse to do newest first
-  for (let blockId of blockIds) {
-    const localHash = localHashes[blockId];
-    const remoteHash = remoteHashes[blockId];
-    if (localHash != remoteHash) {
-      if (blockId.length < 6 && !blockId.startsWith('u')) {
-        await syncBlockId(connection, db, groupId, blockId);
-      } else {
-        if (blockId.startsWith('u')) {
-          blockId = 'users';
-        }
-        const remoteBlockData = await RPC(connection, getRemoteBlockIds)(groupId, blockId);
-        for (const remoteData of remoteBlockData) {
-          const localData = await db.get(remoteData.id);
-          // if (!localData || localData.modified < remoteData.modified || (localData.signature != remoteData.signature && localData.modified == remoteData.modified && Math.random() > .8)) {
-          if (!localData || localData.modified < remoteData.modified) {
-            await RPC(connection, getRemoteData)(remoteData.id)
-              .then(async remoteData => {
-                await db.save(remoteData);
-                eventHandlers.onRemoteDataSaved(remoteData)
-              })
-              .catch(err => {
-                console.error('error syncing remote data', remoteData, err);
-              })
+  let unlockBlockSync: () => any;
+  let blockSyncLock = new Promise<void>((resolve) => {
+    unlockBlockSync = resolve;
+  })
+  let thisBlockSync = pendingBlockSync.then(async () => {
+    if (blockId) {
+      console.log(`syncing ${groupId} block ${blockId}`);
+    }
+    const localHashes = await getBlockIdHashes(groupId, blockId);
+    const remoteHashes = await RPC(connection, getRemoteIdBlockHashes)(groupId, blockId);
+    const blockIds = Object.keys(remoteHashes).sort().reverse(); // reverse to do newest first
+    for (let blockId of blockIds) {
+      const localHash = localHashes[blockId];
+      const remoteHash = remoteHashes[blockId];
+      if (localHash != remoteHash) {
+        if (blockId.length < 6 && !blockId.startsWith('u')) {
+          // this assumes all blockIds in this set will, at most, result in `syncBlockId`
+          // so it is okay to unblock `syncBlockId` (which also prevents a deadlock)
+          unlockBlockSync();
+          await syncBlockId(connection, db, groupId, blockId);
+        } else {
+          if (blockId.startsWith('u')) {
+            blockId = 'users';
+          }
+          const remoteBlockData = await RPC(connection, getRemoteBlockIds)(groupId, blockId);
+          for (const remoteData of remoteBlockData) {
+            const localData = await db.get(remoteData.id);
+            // if (!localData || localData.modified < remoteData.modified || (localData.signature != remoteData.signature && localData.modified == remoteData.modified && Math.random() > .8)) {
+            if (!localData || localData.modified < remoteData.modified) {
+              await RPC(connection, getRemoteData)(remoteData.id)
+                .then(async remoteData => {
+                  await db.save(remoteData);
+                  eventHandlers.onRemoteDataSaved(remoteData)
+                })
+                .catch(err => {
+                  console.error('error syncing remote data', remoteData, err);
+                })
+            }
           }
         }
       }
     }
-  }
+  })
+  pendingBlockSync = Promise.race([thisBlockSync, blockSyncLock]);
+  await thisBlockSync;
 }
 
 export async function syncGroup(connection: IConnection, remoteGroup: IGroup, db: IDB) {
   const groupId = remoteGroup.id;
   if (groupId !== connection.me.id && groupId !== usersGroup.id) {
     const localGroup = await db.get(groupId);
-    if (!localGroup || remoteGroup.modified > localGroup.modified) { 
+    if (!localGroup || remoteGroup.modified > localGroup.modified) {
       // TODO potential security hole - if we don't have the local group, do we trust the remote user?
       //                                we should probably only add new groups via syncing if syncing with self
       const skipValidation = !localGroup; // if we don't have the local group there's a good chance we can verify it since the signer could be a peer we don't already know
@@ -189,24 +201,50 @@ export async function syncGroup(connection: IConnection, remoteGroup: IGroup, db
       return;
     }
   }
-  await syncBlockId(connection, db, groupId);  
+  await syncBlockId(connection, db, groupId);
 }
 
 export async function syncDBs(connection: IConnection) {
   const startTime = Date.now();
   const db = await getDB();
   const _syncGroup = (group: IGroup) => syncGroup(connection, group, db);
-  
+
+  // First sync all groups
   let remoteGroups = await RPC(connection, getRemoteGroups)();
-  remoteGroups = _.shuffle(remoteGroups);  // randomize order to try to spread traffic around
+  for (const remoteGroup of remoteGroups) {
+    // TODO don't process remote group unless I've indicated I want to join it (and haven't left it)
+    const localGroup = await db.get(remoteGroup.id);
+    if (!localGroup || localGroup.modified < remoteGroup.modified) {
+      // sync group users before saving the group object to make sure we have the group signer locally
+      await syncBlockId(connection, db, remoteGroup.id, 'users')
+      await db.save(remoteGroup).catch(err => console.log('error saving group', err));
+    }
+  }
+
+  // randomize order to try to spread traffic around
+  remoteGroups = _.shuffle(remoteGroups);
+
+  // add personal group if I'm also the user on the other device
   if (connection.me.id === connection.remoteUser.id) {
+    // TODO: since the connection is me I should sync all users and pull all data, saving without validating
     remoteGroups.unshift(getPersonalGroup(connection.me.id));
   }
+
+  // add group ids to connection for later reference
   connection.groups = remoteGroups.map(g => g.id);
 
-  await Promise.all(remoteGroups.map(_syncGroup));
-  // for (const remoteGroup of remoteGroups) await _syncGroup(remoteGroup);
-  console.log(`finished syncing DB with ${connection.remoteDeviceId} in ${Date.now() - startTime} ms`);
+  // sync active groups completely before syncing inactive groups
+  const activeGroups = remoteGroups.filter(g => !g.inactive);
+  const inactiveGroups = remoteGroups.filter(g => g.inactive);
+  await Promise.all(activeGroups.map(_syncGroup));
+  console.log(`finished syncing active groups with ${connection.remoteDeviceId} in ${Date.now() - startTime} ms`);
+  await Promise.all(inactiveGroups.map(_syncGroup));
+  console.log(`finished syncing inactive groups with ${connection.remoteDeviceId} in ${Date.now() - startTime} ms`);
+
+  // await Promise.all(remoteGroups.map(_syncGroup));
+  // // for (const remoteGroup of remoteGroups) await _syncGroup(remoteGroup);
+
+  // console.log(`finished syncing DB with ${connection.remoteDeviceId} in ${Date.now() - startTime} ms`);
 }
 
 const pushDataAlreadySeen: {
@@ -275,7 +313,8 @@ export async function makeRemoteCall(connection: IConnection, fnName: string, ar
       args
     }
     // WebRTC is already encrypted so signing the call object seems wasteful
-    // remoteCall = signObject(remoteCall);
+    // TODO comment this out in v7
+    remoteCall = signObject(remoteCall);
     connection.send(remoteCall);
   } catch (err) {
     rejectRemoteCall(err);
