@@ -108,7 +108,9 @@ export async function checkPendingInvitations(connection: IConnection) {
       signObject(pendingInvite);
       await db.save(pendingInvite);
       groupJoined = true;
-    } catch { }
+    } catch (err) { 
+      console.error('Error processing invite', pendingInvite, err);
+    }
   }
   if (groupJoined) {
     registerDevice();

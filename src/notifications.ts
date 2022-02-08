@@ -15,7 +15,8 @@ export interface INotification extends NotificationOptions, IData {
 }
 
 export const eventHandlers = {
-  onNotificationReceived: (notification: INotification) => Promise.resolve(void 0)
+  onNotificationReceived: (notification: INotification) => Promise.resolve(void 0),
+  onNotificationClicked: (notification: INotification) => Promise.resolve(void 0),
 };
 
 async function processNotification(notification: INotification) {
@@ -28,10 +29,11 @@ async function processNotification(notification: INotification) {
   verifySignedObject(notification, sender.publicKey);
   if (isObject(notification.data)) {
     await db.save(notification.data);
+    remoteCalls.eventHandlers.onRemoteDataSaved(notification.data);
     notification.subject = notification.data.id;
     delete notification.data;
   }
-  notification.ttl = Date.now() + (1000 * 60 * 60 * 24 * 14) // 14 days
+  notification.ttl = Date.now() + (1000 * 60 * 60 * 24 * 14); // 14 days
   notification.group = await user.init(); // put all notifications in my personal group
   notification.received = Date.now();
   signObject(notification);
@@ -58,6 +60,9 @@ export async function notify(notification: INotification) {
     if (shouldShow) {
       // This may not work on android? 
       const n = new Notification(notification.title, notification);
+      n.onclick = (evt) => {
+        eventHandlers.onNotificationClicked(notification);
+      }      
     }    
   } catch (err) {
     console.error('Error processing notification', notification, err);
@@ -110,7 +115,7 @@ async function getNotificationPart(id: string, partNum: number) {
 
 export async function processWebPushNotification(serviceWorkerSelf: any, notification: string) {
   if (notification.startsWith('part:')) {
-    // ex `part:1,5,{id}:qwerty....`
+    // ex `part:1,5,{id}:gibberish....`
     const iColon = notification.indexOf(':', 6);
     const metaData = notification.substring(0, iColon);
     const [_partNum, _totalParts, id] = metaData.replace("part:", '').split(',');
@@ -155,5 +160,22 @@ export async function processWebPushNotification(serviceWorkerSelf: any, notific
   });
 }
 
-
-
+if (typeof navigator !== 'undefined') {
+  navigator?.serviceWorker?.addEventListener('message', async event => {
+    const data: { type: string, [key:string]: any } = event.data;
+    if (data?.type === 'Notification'){
+      const notification = data as INotification;
+      eventHandlers.onNotificationReceived(notification);
+      if (notification.subject) {
+        const db = await getDB();
+        const _data = await db.get(notification.subject);
+        if (_data) {
+          remoteCalls.eventHandlers.onRemoteDataSaved(_data);
+        }
+      }
+    } else if (data?.type === "NotificationClicked") {
+      // TODO notifications can have different actions so we'll probably need a different or more specific event handler for that
+      eventHandlers.onNotificationClicked(data.notification as INotification)
+    }    
+  });  
+}

@@ -163,10 +163,10 @@ export function init(
           // use web push if subscriptions available 
           const subscription = device.pushSubscription;
           if (badEndpoints[subscription.endpoint]) {
-            return callback(new Error('not attempting notification because subscription has thrown an error previously'));
+            return callback('not attempting notification because subscription has thrown an error previously');
           }
           if (typeof message !== 'string') {
-            return callback(new Error(`message must be a string encrypted with the receiver's public key`));
+            return callback(`message must be a string encrypted with the receiver's public key`);
           }
           const webPushChunkSize = 3000;
           function chunkMessage(message) {

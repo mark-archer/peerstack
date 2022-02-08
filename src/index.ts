@@ -7,4 +7,5 @@ export * as remoteFiles from './remote-files';
 export * as notifications from './notifications';
 export * as invitations from './invitations';
 export * as user from './user';
+export * as serviceWorker from './service-worker';
 
