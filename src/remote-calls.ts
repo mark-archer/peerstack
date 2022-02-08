@@ -313,8 +313,7 @@ export async function makeRemoteCall(connection: IConnection, fnName: string, ar
       args
     }
     // WebRTC is already encrypted so signing the call object seems wasteful
-    // TODO comment this out in v7
-    remoteCall = signObject(remoteCall);
+    // remoteCall = signObject(remoteCall);
     connection.send(remoteCall);
   } catch (err) {
     rejectRemoteCall(err);
