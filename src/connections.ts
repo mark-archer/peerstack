@@ -114,8 +114,7 @@ export async function init(_deviceId: string, _me: IUser, serverUrl?: string) {
   //   connections = connections.filter(c => {
   //     // if (['closed' || 'closing'].includes(c.dc.readyState) || (Date.now() - c.lastAck) > maxAck) {
   //     //   console.log('closing connection', c.device)
-  //     //   c.dc.close();
-  //     //   c.pc.close();
+  //     //   c.close();
   //     //   return false;
   //     // }    
   //     // if (c.dc.readyState === 'open') c.dc.send('ack');
@@ -124,8 +123,7 @@ export async function init(_deviceId: string, _me: IUser, serverUrl?: string) {
   //     // || ['disconnected', 'failed'].includes(c.pc.iceConnectionState)) 
   //     {
   //       console.log('connection closed, removing from list', c)
-  //       c.dc.close();
-  //       c.pc.close();
+  //       c.close();
   //       return false;
   //     } else if(c.dc.readyState === 'open') {
   //       c.dc.send('ack');        
@@ -274,9 +272,7 @@ function dcSendAndCloseOnError(connection: IDeviceConnection, strData: string) {
   try {
     connection.dc.send(strData);
   } catch (err) {
-    connection.dc.close();
-    connection.pc.close();
-    garbageCollectConnections();
+    connection.close();
     throw err;
   }
 }
@@ -284,10 +280,23 @@ function dcSendAndCloseOnError(connection: IDeviceConnection, strData: string) {
 function garbageCollectConnections() {
   for (let i = connections.length - 1; i >= 0; i--) {
     const c = connections[i];
-    if (['closed', 'closing'].includes(c.dc?.readyState)) {
+    if (
+      ['closed', 'closing'].includes(c.dc?.readyState)
+      || ['closed', 'closing'].includes(c.pc?.connectionState)      
+    ) {
       connections.splice(i, 1)
     }
   }
+}
+
+function closeConnection(connection: IDeviceConnection) {
+  connection.dc?.close();
+  connection.pc?.close();
+  const iConn = connections.indexOf(connection);
+  if (iConn >= 0) {
+    connections.splice(iConn, 1);
+  }
+  garbageCollectConnections();
 }
 
 export async function connectToDevice(toDeviceId): Promise<IConnection> {
@@ -338,6 +347,7 @@ export async function connectToDevice(toDeviceId): Promise<IConnection> {
       id: connectionId,
       remoteDeviceId: toDeviceId,
       send: data => dcSend(connection, data),
+      close: () => closeConnection(connection),
       pc,
       dc,
       lastAck: Date.now(),
@@ -369,8 +379,7 @@ export async function connectToDevice(toDeviceId): Promise<IConnection> {
     }
     dc.onclose = e => {
       console.log("dc.onclose: ", { deviceId: connection.remoteDeviceId, userId: connection.remoteUser?.id })
-      pc.close();
-      garbageCollectConnections();
+      connection.close();
       eventHandlers.onDeviceDisconnected(connection);
     }
 
@@ -429,6 +438,7 @@ async function handelOffer(offer: ISDIExchange) {
       id: offer.connectionId,
       remoteDeviceId: offer.fromDevice,
       send: null,
+      close: () => closeConnection(connection),
       pc: pc2,
       dc: null,
       lastAck: Date.now(),
@@ -496,8 +506,7 @@ async function handelOffer(offer: ISDIExchange) {
         }
         dc.onclose = e => {
           console.log("dc2.onclose", { deviceId: connection.remoteDeviceId, userId: connection.remoteUser?.id })
-          pc2.close();
-          garbageCollectConnections();
+          connection.close();
           eventHandlers.onDeviceDisconnected(connection);
         };
       } else if (pendingDCConns[dc.label]) {

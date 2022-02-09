@@ -13,6 +13,7 @@ export interface IConnection {
   lastAck: number //time
   handlers: { [key: string]: ((err: any, result: any) => void) }
   send: txfn
+  close: () => void
   me?: IUser
   remoteUser?: IUser
   remoteUserVerified?: boolean
