@@ -126,7 +126,10 @@ export async function init(config?: { id: string, secretKey: string, name?: stri
 }
 
 export function hydrateUser(id: string, secretKey: string, displayName?: string): IUser {
-  const secretKeyAry = decodeUint8ArrayFromBaseN(secretKey);
+  let secretKeyAry = decodeUint8ArrayFromBaseN(secretKey);
+  if (secretKeyAry.length !== 64) {
+    secretKeyAry = decodeUint8ArrayFromBaseN(secretKey, 36);
+  }
   const keyPartLength = secretKeyAry.length / 2; // should be 32
   const publicKeyAry = secretKeyAry.slice(keyPartLength);
   const publicKey = encodeUint8ArrayToBaseN(publicKeyAry);
