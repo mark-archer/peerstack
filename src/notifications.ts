@@ -12,6 +12,7 @@ export interface INotification extends NotificationOptions, IData {
   received?: number
   data?: IData
   status?: INotificationStatus
+  dontShow?: boolean
 }
 
 export const eventHandlers = {

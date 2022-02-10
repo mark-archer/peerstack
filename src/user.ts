@@ -62,8 +62,12 @@ export function newUser(name?: string): IUser & { secretKey: string } {
   }
 }
 
+// expose public box key for now to update users if needed
+export let publicBoxKey: string;
+
 let userId: string;
 let secretKey: string;
+
 export async function init(config?: { id: string, secretKey: string, name?: string, iconUrl?: string, dontWarn?: boolean, dontStore?: boolean }): Promise<string> {
   if (!config && userId && secretKey) {
     return userId;
@@ -107,7 +111,8 @@ export async function init(config?: { id: string, secretKey: string, name?: stri
       // @ts-ignore
       userId = creds.name;
       // @ts-ignore
-      secretKey = creds.password;      
+      secretKey = creds.password;
+      publicBoxKey = hydrateUser(userId, secretKey).publicBoxKey;      
       return userId
     }
   } catch {}
@@ -116,6 +121,7 @@ export async function init(config?: { id: string, secretKey: string, name?: stri
   config = (await db.local.get(credentialsId))?.config;
   userId = config?.id;
   secretKey = config?.secretKey;
+  publicBoxKey = hydrateUser(userId, secretKey).publicBoxKey;
   return userId;
 }
 
