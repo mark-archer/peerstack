@@ -3,7 +3,7 @@ import { uniq } from "lodash";
 import { fromJSON, isid, newid, sleep } from "./common";
 import { connections } from "./connections";
 import { checkPermission, getBlockIds, getDetailHashes, getBlockIdHashes, getDB, getPersonalGroup, hasPermission, IData, IDB, IGroup, usersGroup } from "./db";
-import { IUser, openMessage, signMessage, signObject, verifySignedObject } from "./user";
+import { keysEqual, IUser, openMessage, signMessage, signObject, verifySignedObject } from "./user";
 
 export type txfn = <T>(data: (string | IRemoteData)) => Promise<T | void> | void
 
@@ -70,7 +70,7 @@ export async function verifyRemoteUser(connection: IConnection) {
     verifySignedObject(connection.remoteUser, connection.remoteUser.publicKey);
     const db = await getDB();
     const dbUser = await db.get(connection.remoteUser.id) as IUser;
-    if (dbUser && dbUser.publicKey !== connection.remoteUser.publicKey) {
+    if (dbUser && !keysEqual(dbUser.publicKey, connection.remoteUser.publicKey)) {
       // TODO allow public keys to change
       //    this will have to happen if a user's private key is compromised so we need to plan for it
       //    The obvious solution is to use some server as a source of truth but that kind of violates the p2p model
@@ -88,7 +88,7 @@ export async function verifyRemoteUser(connection: IConnection) {
       await db.save(connection.remoteUser);
     }
   } catch (err) {
-    throw new Error('remote user failed verification');
+    throw new Error('remote user failed verification: ' + String(err));
   }
   connection.remoteUserVerified = true;
 }

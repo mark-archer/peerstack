@@ -1,6 +1,6 @@
 import { compact, groupBy, isArray, isObject, set, sortBy, uniq } from 'lodash';
 import { hashObject } from './common';
-import { ISigned, IUser, verifySignedObject } from './user';
+import { ISigned, IUser, keysEqual, verifySignedObject } from './user';
 import * as dbix from './dbix'
 
 export interface IData extends ISigned {
@@ -294,7 +294,7 @@ export async function validateData(db: IDB, datas: IData[]) {
         throw new Error(`The signer of a user must be that same user`)
       }
       const dbUser = users[data.id] || await db.get(data.id) as IUser;
-      if (dbUser && (data as IUser).publicKey !== dbUser.publicKey) {
+      if (dbUser && !keysEqual((data as IUser).publicKey, dbUser.publicKey)) {
         // This intentionally prevents a user from being rekeyed via a normal update.  
         // TODO We need a special function to allow a user to rekey themselves. 
         throw new Error(`An attempt was made to update a user but the public keys do not match`);

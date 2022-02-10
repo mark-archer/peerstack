@@ -323,6 +323,19 @@ export function verifySignedObject(obj: ISigned, publicKey: string) {
   }
 }
 
+// This tries to convert keys in old format to new format before comparing
+export function keysEqual(publicKey1: string, publicKey2: string) {
+  if (publicKey1.length == 64) {
+    const keyAry = decodeUint8ArrayFromBaseN(publicKey1, 36);
+    publicKey1 = encodeUint8ArrayToBaseN(keyAry)
+  }
+  if (publicKey2.length == 64) {
+    const keyAry = decodeUint8ArrayFromBaseN(publicKey2, 36);
+    publicKey2 = encodeUint8ArrayToBaseN(keyAry)
+  }
+  return publicKey1 === publicKey2;
+}
+
 export function newData(fields?: Partial<IData>): IData {
   if (!userId) {
     console.warn('user has not been initialized so owner and group may be uninitialized')

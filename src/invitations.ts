@@ -1,4 +1,4 @@
-import { signObject, newUser, signMessageWithSecretKey, openMessage, init as initUser } from './user';
+import { signObject, newUser, signMessageWithSecretKey, openMessage, init as initUser, keysEqual } from './user';
 import { registerDevice } from './connections';
 import { getDB, IData, IGroup } from './db';
 import { isid, newid } from './common';
@@ -136,7 +136,7 @@ async function confirmInvitation(inviteId: string, publicKey: string) {
   const connection = getCurrentConnection();
   const db = await getDB();
   const invitation = await db.get(inviteId) as IInvitation;
-  if (!invitation || invitation.type !== 'Invitation' || invitation.publicKey !== publicKey) {
+  if (!invitation || invitation.type !== 'Invitation' || !keysEqual(invitation.publicKey, publicKey)) {
     throw new Error('Invalid invitation id or secret');
   }
   if (invitation.ttl < Date.now()) {
