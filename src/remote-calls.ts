@@ -205,13 +205,15 @@ export async function syncGroup(connection: IConnection, remoteGroup: IGroup, db
   await syncBlockId(connection, db, groupId);
 }
 
-export async function syncDBs(connection: IConnection) {
+export async function syncDBs(connection: IConnection, apps?: string[]) {
   const startTime = Date.now();
   const db = await getDB();
   const _syncGroup = (group: IGroup) => syncGroup(connection, group, db);
 
-  // First sync all groups
+  // get groups from remote device that it thinks I have permissions too
   let remoteGroups = await RPC(connection, getRemoteGroups)();
+
+  // First sync all group meta data (group object and users in group)
   for (const remoteGroup of remoteGroups) {
     // TODO don't process remote group unless I've indicated I want to join it (and haven't left it)
     const localGroup = await db.get(remoteGroup.id);
@@ -221,6 +223,11 @@ export async function syncDBs(connection: IConnection) {
       await db.save(remoteGroup).catch(err => console.log('error saving group', err));
     }
   }
+
+  // if apps are specified only sync data for groups that are for those apps
+  if (apps?.length) {
+    remoteGroups = remoteGroups.filter(g => g.apps?.length && g.apps.find(a => apps.includes(a)));
+  }  
 
   // randomize order to try to spread traffic around
   remoteGroups = _.shuffle(remoteGroups);

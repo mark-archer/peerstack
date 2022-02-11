@@ -59,11 +59,16 @@ export async function notify(notification: INotification) {
   try {
     const shouldShow = await processNotification(notification);
     if (shouldShow) {
-      // This may not work on android? 
-      const n = new Notification(notification.title, notification);
-      n.onclick = (evt) => {
-        eventHandlers.onNotificationClicked(notification);
-      }      
+      const serviceWorker = await navigator?.serviceWorker?.ready;
+      if (serviceWorker) {
+        serviceWorker.showNotification(notification.title, notification);
+      } else {
+        // This doesn't work on android
+        const n = new Notification(notification.title, notification);
+        n.onclick = (evt) => {
+          eventHandlers.onNotificationClicked(notification);
+        }      
+      }
     }    
   } catch (err) {
     console.error('Error processing notification', notification, err);
@@ -73,23 +78,28 @@ export async function notify(notification: INotification) {
 remoteCalls.remotelyCallableFunctions.notify = notify;
 
 export async function notifyDevice(device: IDevice, notification: INotification, toPublicBoxKey: string) {
-  signObject(notification);
+  try {
+    signObject(notification);
   
-  // check if we have a connection to the device, if so just send through that
-  const conn = connections.find(c => c.remoteDeviceId === device.id);
-  if (conn) {
-    await remoteCalls.RPC(conn, notify)(notification);
-    return true;
+    // check if we have a connection to the device, if so just send through that
+    const conn = connections.find(c => c.remoteDeviceId === device.id);
+    if (conn) {
+      await remoteCalls.RPC(conn, notify)(notification);
+      return true;
+    }
+  
+    // check if we have a web-push subscription, if so use that
+    const messageId = notification.id;
+    const box = boxDataForPublicKey(notification, toPublicBoxKey);
+    const message = JSON.stringify(box);
+    // Note that the server may push the notification through socket.io if available
+    const result = await emit('notify', { device, messageId, message })
+    console.log('notifyDevice result', result)
+    return result === 'success';  
+  } catch (err) {
+    console.log('Error notifying device: ', err)
+    return false;
   }
-
-  // check if we have a web-push subscription, if so use that
-  const messageId = notification.id;
-  const box = boxDataForPublicKey(notification, toPublicBoxKey);
-  const message = JSON.stringify(box);
-  // Note that the server may push the notification through socket.io if available
-  const result = await emit('notify', { device, messageId, message })
-  console.log('notifyDevice result', result)
-  return result === 'success';  
 }
 
 export interface INotificationPart {
@@ -126,7 +136,7 @@ export async function processWebPushNotification(serviceWorkerSelf: any, notific
     const part: INotificationPart = {
       id: partId, 
       type: 'NotificationPart',
-      partNum, 
+      partNum,
       totalParts,
       data, 
       ttl: Date.now() + (1000 * 60 * 60 * 24 * 14) // 14 days

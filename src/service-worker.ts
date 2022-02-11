@@ -20,6 +20,7 @@ export async function init(self) {
     // Enumerate windows, and call window.focus(), or open a new one.
     event.waitUntil(new Promise<void>(async (resolve, reject) => {
       try {
+        const notification = event.notification as notifications.INotification;
         const clients = await self.clients.matchAll({
           type: 'window',
           includeUncontrolled: true
@@ -37,19 +38,19 @@ export async function init(self) {
         }
         if (client) {
           await client.focus();
-          // await client.postMessage({ type: "UpdateLocationHash", hash: event.notification.data?.subject });
+          // await client.postMessage({ type: "UpdateLocationHash", hash: notification.data?.subject });
         } else {
           // no clients found so opening new window
           // const db = await peerstack.db.init();
           // await peerstack.user.init();
           // const dbNotification = await db.get(notification.data.id);
           
-          // client = await self.clients.openWindow(`/#${event.notification.data?.subject}`);
+          // client = await self.clients.openWindow(`/#${notification.data?.subject}`);
           
-          client = await self.clients.openWindow(`/`); // try to let the client decide what to do, don't assume urls to open
+          client = await self.clients.openWindow(`/${notification.id}`);
           await new Promise(resolve => setTimeout(resolve, 1000));
         }
-        await client.postMessage({ type: "NotificationClicked", notification: event.notification.data });
+        await client.postMessage({ type: "NotificationClicked", notification: notification.data });
         return resolve();
       } catch (err) {
         console.error('Error handling notification click', err);
