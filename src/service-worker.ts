@@ -20,7 +20,7 @@ export async function init(self) {
     // Enumerate windows, and call window.focus(), or open a new one.
     event.waitUntil(new Promise<void>(async (resolve, reject) => {
       try {
-        const notification = event.notification as notifications.INotification;
+        const notification = event.notification.data as notifications.INotification;
         const clients = await self.clients.matchAll({
           type: 'window',
           includeUncontrolled: true
@@ -28,26 +28,19 @@ export async function init(self) {
         let client;
         for(let _client of clients) {
           if (_client.url === rootUrl) {
-            // "matched a client via url so focusing on that
+            // matched a client via url so focusing on that
             client = _client;
           }
         }
         if (clients[0]) {
           // didn't match any clients via url but have at least one so focusing on last one
-          client = clients[clients.length-1]; // TODO test this
+          client = clients[clients.length-1];
         }
         if (client) {
           await client.focus();
-          // await client.postMessage({ type: "UpdateLocationHash", hash: notification.data?.subject });
         } else {
           // no clients found so opening new window
-          // const db = await peerstack.db.init();
-          // await peerstack.user.init();
-          // const dbNotification = await db.get(notification.data.id);
-          
-          // client = await self.clients.openWindow(`/#${notification.data?.subject}`);
-          
-          client = await self.clients.openWindow(`/${notification.id}`);
+          client = await self.clients.openWindow(`/#${notification.id}`);
           await new Promise(resolve => setTimeout(resolve, 1000));
         }
         await client.postMessage({ type: "NotificationClicked", notification: notification.data });
