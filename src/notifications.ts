@@ -1,10 +1,10 @@
-import { isObject, user } from ".";
+import { errorAfterTimeout, isObject, user } from ".";
 import { connections, emit, onMessage } from "./connections";
 import { getDB, IData } from "./db";
 import * as remoteCalls from "./remote-calls";
 import { boxDataForPublicKey, IDevice, IDataBox, openBox, verifySignedObject, IUser, signObject } from "./user";
 
-export type INotificationStatus = 'dontShow' | 'read' | 'dismissed'
+export type INotificationStatus = 'read' | 'dismissed'
 
 export interface INotification extends NotificationOptions, IData {
   type: 'Notification'
@@ -39,8 +39,12 @@ async function processNotification(notification: INotification) {
   notification.received = Date.now();
   signObject(notification);
   await db.save(notification);
-  eventHandlers.onNotificationReceived(notification);
-  if (notification.dontShow) {
+  try {
+    await eventHandlers.onNotificationReceived(notification);
+  } catch (err) {
+    console.error('error calling `onNotificationReceived`', err);  
+  }
+  if (notification.dontShow || notification.status) {
     return false;
   }
   // TODO this should maybe be reduced to notification id and subject
@@ -84,8 +88,14 @@ export async function notifyDevice(device: IDevice, notification: INotification,
     // check if we have a connection to the device, if so just send through that
     const conn = connections.find(c => c.remoteDeviceId === device.id);
     if (conn) {
-      await remoteCalls.RPC(conn, notify)(notification);
-      return true;
+      try {
+        await errorAfterTimeout(
+          remoteCalls.RPC(conn, notify)(notification),
+          1000
+        )
+      } catch (err) {
+        console.log('failed to send notification through peer connection', err);
+      }
     }
   
     // check if we have a web-push subscription, if so use that

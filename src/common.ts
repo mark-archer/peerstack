@@ -464,5 +464,17 @@ export async function sleep(ms: number) {
   return new Promise(resolve => setTimeout(resolve, ms));
 }
 
+export async function errorAfterTimeout<T>(promise: Promise<T>, timeoutMs: number = 1000) {
+  let resolve, pid;
+  const timeoutPromise = new Promise((_resolve, reject) => {
+    resolve = _resolve;
+    pid = setTimeout(() => reject(new Error(`timed out after ${timeoutMs}ms`)));
+  });
+  const result = await Promise.race([promise, timeoutPromise]) as T
+  clearTimeout(pid);
+  resolve();
+  return result;
+}
+
 // @ts-ignore
 if (typeof window !== 'undefined') window.common = module.exports;
