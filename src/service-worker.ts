@@ -1,5 +1,7 @@
 import * as notifications from './notifications';
 
+console.log('peerstack service worker');
+
 export async function init(self) {
   self.addEventListener('push', function(event) {
     event.waitUntil(new Promise<void>(async (resolve, reject) => {
@@ -43,7 +45,7 @@ export async function init(self) {
           client = await self.clients.openWindow(`/#${notification.id}`);
           await new Promise(resolve => setTimeout(resolve, 1000));
         }
-        await client.postMessage({ type: "NotificationClicked", notification: notification.data });
+        await client.postMessage({ type: "NotificationClicked", notification });
         return resolve();
       } catch (err) {
         console.error('Error handling notification click', err);

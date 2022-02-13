@@ -1,3 +1,4 @@
+import { cloneDeep } from "lodash";
 import { errorAfterTimeout, isObject, user } from ".";
 import { connections, emit, onMessage } from "./connections";
 import { getDB, IData } from "./db";
@@ -20,7 +21,13 @@ export const eventHandlers = {
   onNotificationClicked: (notification: INotification) => Promise.resolve(void 0),
 };
 
-async function processNotification(notification: INotification) {
+const seenNotificationIds: string[] = []
+
+async function processNotification(notification: INotification): Promise<boolean> {
+  if (seenNotificationIds.includes(notification.id)) {
+    return false;
+  }
+  seenNotificationIds.push(notification.id);
   const db = await getDB();
   const dbNote = await db.get(notification.id);
   if (dbNote) {
@@ -48,7 +55,8 @@ async function processNotification(notification: INotification) {
     return false;
   }
   // TODO this should maybe be reduced to notification id and subject
-  notification.data = JSON.parse(JSON.stringify(notification));
+  // notification.data = JSON.parse(JSON.stringify(notification));
+  notification.data = cloneDeep(notification);
   return true;
 }
 
@@ -91,7 +99,7 @@ export async function notifyDevice(device: IDevice, notification: INotification,
       try {
         await errorAfterTimeout(
           remoteCalls.RPC(conn, notify)(notification),
-          1000
+          2000
         )
       } catch (err) {
         console.log('failed to send notification through peer connection', err);
