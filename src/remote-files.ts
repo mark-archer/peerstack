@@ -1,19 +1,23 @@
 import { shuffle } from "lodash";
+import { sleep } from ".";
 import { hashBlob } from "./common";
 import { chunkSize, connections, IDeviceConnection } from "./connections";
 import { getDB, hasPermission, IData, IFile } from "./db";
-import { getCurrentConnection, remotelyCallableFunctions, RPC } from "./remote-calls";
+import { getCurrentConnection, remotelyCallableFunctions, RPC, verifyRemoteUser } from "./remote-calls";
 
 remotelyCallableFunctions.getFile = getFile;
 
 export async function getFileFromPeers(fileId: string, updateProgress?: (percent: number) => any): Promise<IFile> {
-  // for (const connection of shuffle(connections)) {
-  for (const connection of shuffle(connections.filter(c => c.remoteUserVerified))) {
+  for (const connection of shuffle(connections)) {
+    if (!connection.remoteUserVerified) {
+      await sleep(1000); // hack to wait for connection to be ready
+      await verifyRemoteUser(connection);
+    }
     const file = await RPC(connection, getFile)(fileId).catch(err => console.error('Error getting file from peers', err));
     if (file) {
       return new Promise((resolve, reject) => {
         const dcReceive = connection.pc.createDataChannel(`file-${file.id}`);
-        dcReceive.onopen = e => console.log('receive dc open', e);
+        dcReceive.onopen = e => console.log('receive dc open');
         let receiveBuffer = [];
         let receivedSize = 0;
         dcReceive.onmessage = e => {
@@ -33,8 +37,8 @@ export async function getFileFromPeers(fileId: string, updateProgress?: (percent
               })
           }
         }
-        dcReceive.onbufferedamountlow = e => console.log('buffered amount low', e);
-        dcReceive.onclose = e => console.log('closed', e);
+        dcReceive.onbufferedamountlow = e => console.log('buffered amount low');
+        dcReceive.onclose = e => console.log('dc closed');
         dcReceive.onerror = e => console.log('error', e);
       });
     }

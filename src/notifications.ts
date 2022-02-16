@@ -1,4 +1,3 @@
-import { cloneDeep } from "lodash";
 import { errorAfterTimeout, isObject, user } from ".";
 import { connections, emit, onMessage } from "./connections";
 import { getDB, IData } from "./db";
@@ -55,8 +54,7 @@ async function processNotification(notification: INotification): Promise<boolean
     return false;
   }
   // TODO this should maybe be reduced to notification id and subject
-  // notification.data = JSON.parse(JSON.stringify(notification));
-  notification.data = cloneDeep(notification);
+  notification.data = JSON.parse(JSON.stringify(notification));  
   return true;
 }
 
