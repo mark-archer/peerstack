@@ -10,7 +10,6 @@ remotelyCallableFunctions.getFile = getFile;
 export async function getFileFromPeers(fileId: string, updateProgress?: (percent: number) => any): Promise<IFile> {
   for (const connection of shuffle(connections)) {
     if (!connection.remoteUserVerified) {
-      await sleep(1000); // hack to wait for connection to be ready
       await verifyRemoteUser(connection);
     }
     const file = await RPC(connection, getFile)(fileId).catch(err => console.error('Error getting file from peers', err));

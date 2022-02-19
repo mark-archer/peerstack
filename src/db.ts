@@ -51,7 +51,16 @@ export interface IKVIndex extends IData {
   dataType?: string // if no dataType is specified index will apply to _all_ data in group    
 }
 
-export const usersGroup: IGroup = { type: 'Group', id: 'users', group: 'users', owner: 'users', name: 'Users', modified: Date.now(), members: [], blockedUserIds: [] };
+export const usersGroup: IGroup = { 
+  type: 'Group', 
+  id: 'users', 
+  group: 'users', 
+  owner: 'users', 
+  name: 'Users', 
+  modified: Date.now(), 
+  members: [], 
+  blockedUserIds: [] 
+};
 
 let _personalGroup: IGroup;
 export function getPersonalGroup(myId: string) {

@@ -189,13 +189,25 @@ async function syncBlockId(connection: IConnection, db: IDB, groupId: string, bl
 
 export async function syncGroup(connection: IConnection, remoteGroup: IGroup, db: IDB) {
   const groupId = remoteGroup.id;
+  let localGroup = await db.get(groupId);
+
+  // don't add groups unless adding them from my own device
+  if (!localGroup) {
+    if (connection.remoteUser?.id === connection.me?.id) {
+      await syncBlockId(connection, db, groupId, 'users');
+      await db.save(remoteGroup);
+      localGroup = remoteGroup;
+    } else {
+      return;
+    }
+  }
+
   if (groupId !== connection.me.id && groupId !== usersGroup.id) {
-    const localGroup = await db.get(groupId);
-    if (!localGroup || remoteGroup.modified > localGroup.modified) {
-      // TODO potential security hole - if we don't have the local group, do we trust the remote user?
-      //                                we should probably only add new groups via syncing if syncing with self
-      const skipValidation = !localGroup; // if we don't have the local group there's a good chance we can verify it since the signer could be a peer we don't already know
-      await db.save(remoteGroup, skipValidation);
+    if (remoteGroup.modified > localGroup.modified) {
+      // const skipValidation = !localGroup; // if we don't have the local group there's a good chance we can't verify it since the signer could be a peer we don't already know
+      // await db.save(remoteGroup, skipValidation);
+      await syncBlockId(connection, db, groupId, 'users');
+      await db.save(remoteGroup);
       eventHandlers.onRemoteDataSaved(remoteGroup);
     } else if (localGroup.type === 'Deleted' && remoteGroup.modified < localGroup.modified) {
       RPC(connection, pushData)(localGroup);
@@ -213,16 +225,16 @@ export async function syncDBs(connection: IConnection, apps?: string[]) {
   // get groups from remote device that it thinks I have permissions too
   let remoteGroups = await RPC(connection, getRemoteGroups)();
 
-  // First sync all group meta data (group object and users in group)
-  for (const remoteGroup of remoteGroups) {
-    // TODO don't process remote group unless I've indicated I want to join it (and haven't left it)
-    const localGroup = await db.get(remoteGroup.id);
-    if (!localGroup || localGroup.modified < remoteGroup.modified) {
-      // sync group users before saving the group object to make sure we have the group signer locally
-      await syncBlockId(connection, db, remoteGroup.id, 'users')
-      await db.save(remoteGroup).catch(err => console.log('error saving group', err));
-    }
-  }
+  // // First sync all group meta data (group object and users in group)
+  // for (const remoteGroup of remoteGroups) {
+  //   // TODO don't process remote group unless I've indicated I want to join it (and haven't left it)
+  //   const localGroup = await db.get(remoteGroup.id);
+  //   if (!localGroup || localGroup.modified < remoteGroup.modified) {
+  //     // sync group users before saving the group object to make sure we have the group signer locally
+  //     await syncBlockId(connection, db, remoteGroup.id, 'users')
+  //     await db.save(remoteGroup).catch(err => console.log('error saving group', err));
+  //   }
+  // }
 
   // if apps are specified only sync data for groups that are for those apps
   if (apps?.length) {
