@@ -83,8 +83,8 @@ export async function acceptInvitation(invite: IInviteDetails) {
 
 let pendingInvites: IInviteAccept[];
 export async function checkPendingInvitations(connection: IConnection) {
+  const db = await getDB();
   if (!pendingInvites) {
-    const db = await getDB();
     pendingInvites = (await db.find(IInviteAcceptType, 'type')) as IInviteAccept[];
   }
   let groupJoined = false;
@@ -99,7 +99,6 @@ export async function checkPendingInvitations(connection: IConnection) {
         continue;
       }
       const group = await RPC(connection, confirmInvitation)(invitation.id, invitation.publicKey);
-      const db = await getDB();
       await db.save(group);
       eventHandlers.onRemoteDataSaved(group);
 
@@ -110,6 +109,11 @@ export async function checkPendingInvitations(connection: IConnection) {
       groupJoined = true;
     } catch (err) { 
       console.error('Error processing invite', pendingInvite, err);
+      // TODO: hack, this should probably be removed later
+      // @ts-ignore
+      pendingInvite.type = "Deleted"
+      signObject(pendingInvite);
+      await db.save(pendingInvite);
     }
   }
   if (groupJoined) {
