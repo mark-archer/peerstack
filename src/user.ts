@@ -37,11 +37,9 @@ export interface IDevice {
 export interface IUser extends ISigned, IData {
   type: 'User'
   group: 'users'
-  id: string
   name: string
   publicKey: string
   publicBoxKey: string
-  modified: number
   devices?: { [deviceId: string]: IDevice }
 }
 

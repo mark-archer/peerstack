@@ -342,6 +342,7 @@ export async function connectToDevice(toDeviceId): Promise<IConnection> {
     const answerPromise = new Promise<ISDIExchange>(resolve => onAnswer = resolve);
 
     const pendingDCConns: { [label: string]: ((dc: RTCDataChannel) => any) } = {};
+    const availableDCConns: { [label: string]: RTCDataChannel } = {};
 
     let connection: IDeviceConnection = {
       id: connectionId,
@@ -354,18 +355,30 @@ export async function connectToDevice(toDeviceId): Promise<IConnection> {
       onAnswer,
       handlers: {},
       me,
-      waitForDataChannel: label => new Promise<RTCDataChannel>((resolve) => pendingDCConns[label] = resolve),
+      waitForDataChannel: label => new Promise<RTCDataChannel>((resolve) => {
+        if (availableDCConns[label]) {
+          resolve(availableDCConns[label])
+        } else {
+          pendingDCConns[label] = resolve;
+        }
+      }),
     }
+    
     // listen for data connections
     pc.ondatachannel = e => {
-      let dc = e.channel;
-      if (pendingDCConns[dc.label]) {
+      let dc: RTCDataChannel = e.channel;
+      if (dc.label !== `${connection.id}-data`) {
         dc.onopen = e => {
-          pendingDCConns[dc.label](dc);
-          delete pendingDCConns[dc.label];
+          console.log('pc data channel open', dc.label);
+          if (pendingDCConns[dc.label]) {
+            pendingDCConns[dc.label](dc);
+            delete pendingDCConns[dc.label];
+          }
+          availableDCConns[dc.label] = dc;
         };
-      } else {
-        console.log(`unexpected data channel opened ${dc.label}`)
+        dc.onclose = e => {
+          delete availableDCConns[dc.label];
+        }
       }
     }
     connections.push(connection);
@@ -432,6 +445,7 @@ async function handelOffer(offer: ISDIExchange) {
     const pc2 = new RTCPeerConnection(rtcConfig);
 
     const pendingDCConns: { [label: string]: ((dc: RTCDataChannel) => any) } = {};
+    const availableDCConns: { [label: string]: RTCDataChannel } = {};
 
     // add connection to list    
     const connection: IDeviceConnection = {
@@ -446,7 +460,13 @@ async function handelOffer(offer: ISDIExchange) {
       handlers: {},
       remoteUser: offer.user,
       me: me,
-      waitForDataChannel: label => new Promise<RTCDataChannel>((resolve) => pendingDCConns[label] = resolve),
+      waitForDataChannel: label => new Promise<RTCDataChannel>((resolve) => {
+        if (availableDCConns[label]) {
+          resolve(availableDCConns[label])
+        } else {
+          pendingDCConns[label] = resolve;
+        }
+      }),
     }
     connections.push(connection);
 
@@ -509,13 +529,19 @@ async function handelOffer(offer: ISDIExchange) {
           connection.close();
           eventHandlers.onDeviceDisconnected(connection);
         };
-      } else if (pendingDCConns[dc.label]) {
+      } else  {
         dc.onopen = e => {
-          pendingDCConns[dc.label](dc);
-          delete pendingDCConns[dc.label];
+          console.log('pc2 data channel open', dc.label);
+          if (pendingDCConns[dc.label]) {
+            pendingDCConns[dc.label](dc);
+            delete pendingDCConns[dc.label];
+          }
+          availableDCConns[dc.label] = dc;          
         };
-      } else {
-        console.log(`unexpected data channel ${dc.label}`)
+        dc.onclose = e => {
+          delete availableDCConns[dc.label];
+          console.log('pc2 data channel closed', dc.label);
+        }
       }
     }
   }

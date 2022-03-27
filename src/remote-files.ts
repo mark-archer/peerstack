@@ -6,15 +6,18 @@ import { getCurrentConnection, remotelyCallableFunctions, RPC, verifyRemoteUser 
 
 remotelyCallableFunctions.getFile = getFile;
 
+console.log('remote-files');
+
 export async function getFileFromPeers(fileId: string, updateProgress?: (percent: number) => any): Promise<IFile> {
-  for (const connection of shuffle(connections.filter(c => c.remoteUserVerified))) {
-    // if (!connection.remoteUserVerified) {
-    //   try {
-    //     await verifyRemoteUser(connection);
-    //   } catch (err) {
-    //     console.error('error verifying conneciton')
-    //   }
-    // }
+  // for (const connection of shuffle(connections.filter(c => c.remoteUserVerified))) {
+  for (const connection of connections) {
+    if (!connection.remoteUserVerified) {
+      try {
+        await verifyRemoteUser(connection);
+      } catch (err) {
+        console.error('error verifying conneciton')
+      }
+    }
     const file = await RPC(connection, getFile)(fileId).catch(err => console.error('Error getting file from peers', err));
     if (file) {
       return new Promise((resolve, reject) => {
@@ -22,7 +25,19 @@ export async function getFileFromPeers(fileId: string, updateProgress?: (percent
         dcReceive.onopen = e => console.log('receive dc open');
         let receiveBuffer = [];
         let receivedSize = 0;
+        // let pid;
+        // const TRANSFER_TIMEOUT_MS = 3000;
+        // function refreshWatchDog() {
+        //   clearTimeout(pid);
+        //   pid = setTimeout(() => {
+        //     dcReceive.close();
+        //     console.log('file transfer timed out', dcReceive.label)
+        //     reject(new Error('file transfer timed out'));
+        //   }, TRANSFER_TIMEOUT_MS);
+        // }
+        
         dcReceive.onmessage = e => {
+          // refreshWatchDog();
           receiveBuffer.push(e.data);
           receivedSize += e.data.byteLength;
 
@@ -41,10 +56,13 @@ export async function getFileFromPeers(fileId: string, updateProgress?: (percent
         }
         dcReceive.onbufferedamountlow = e => console.log('buffered amount low');
         dcReceive.onclose = e => console.log('dc closed');
-        dcReceive.onerror = e => console.log('error', e);
+        dcReceive.onerror = e => {
+          console.log('Error receiving file', e);
+          reject(e);
+        }
       });
     }
-  }  
+  }
 }
 
 
@@ -73,42 +91,58 @@ async function getFile(fileId: string) {
     getFilePromise = Promise.resolve();
   }
 
-  getFilePromise = getFilePromise.then(() => {
+  // getFilePromise = 
+  getFilePromise.then(() => new Promise<void>((resolve) => {
     connection.waitForDataChannel(`file-${file.id}`).then(dcSend => {
       console.log('send dc open', dcSend);
-      dcSend.onclose = e => console.log('file transfer data channel closed', e);
-      dcSend.onerror = e => console.error('error', e);
+      dcSend.onclose = e => {
+        console.log('file transfer data channel closed', e);
+        resolve();
+      }
+      dcSend.onerror = e => {
+        console.error('error', e);
+        resolve();
+      }
       dcSend.onmessage = e => console.log('Error: message was received from a send only data channel', e);
-  
+
       const fileReader = new FileReader();
       let offset = 0;
-      fileReader.addEventListener('error', error => console.error('Error reading file:', error));
-      fileReader.addEventListener('abort', event => console.log('File reading aborted:', event));
+      fileReader.addEventListener('error', error => {
+        console.error('Error reading file:', error);
+        resolve();
+      })
+      fileReader.addEventListener('abort', event => {
+        console.log('File reading aborted:', event)
+        resolve()
+      });
       fileReader.addEventListener('load', e => {
         const bytes = e.target.result as ArrayBuffer;
         dcSend.send(bytes);
         offset += bytes.byteLength;
         if (offset < file.size) {
-          readSlice(offset);
+          readSlice();
+        } else {
+          resolve();
         }
       });
-      let waitCounter = 0;
-      const readSlice = o => {
-        if (dcSend.readyState === 'closed' || waitCounter >= 10000) {
+      let backPressure = 0;
+      const maxBufferedAmount = chunkSize * 100;
+      const readSlice = () => {
+        if (dcSend.readyState === 'closed' || 2 ** backPressure >= 1000) {
+          resolve();
           return console.log('connection closed or not processing data, halting file transfer')
         }
-        if (dcSend.bufferedAmount > chunkSize * 64) {
-          waitCounter++;
-          // console.log(`waiting for buffer to get processed`, { waitCounter, waitTimeMs }, dcSend.bufferedAmount);
+        if (dcSend.bufferedAmount > maxBufferedAmount) {
+          console.log(`waiting for buffer to get processed`, { backPressure, waitTimeMs: 2 ** backPressure }, dcSend.bufferedAmount);
           return setTimeout(() => {
-            readSlice(o);
-          }, 1);
+            readSlice();
+          }, 2 ** backPressure++);
         }
-        waitCounter = 0;
-        const slice = file.blob.slice(offset, o + chunkSize);
+        backPressure = 0;
+        const slice = file.blob.slice(offset, offset + chunkSize);
         fileReader.readAsArrayBuffer(slice);
       };
-  
+
       // Event should be better than polling (with setTimeout) but couldn't get it to work
       // dcSend.onbufferedamountlow = e => {
       //   console.log('buffered amount low', e);
@@ -116,9 +150,9 @@ async function getFile(fileId: string) {
       //     readSlice(offset);
       //   }
       // }
-      readSlice(0);
+      readSlice();
     })
-  })
+  }))
 
   getFilePromises[connection.id] = getFilePromise;
 

@@ -109,11 +109,6 @@ export async function checkPendingInvitations(connection: IConnection) {
       groupJoined = true;
     } catch (err) { 
       console.error('Error processing invite', pendingInvite, err);
-      // TODO: hack, this should probably be removed later
-      // @ts-ignore
-      pendingInvite.type = "Deleted"
-      signObject(pendingInvite);
-      await db.save(pendingInvite);
     }
   }
   if (groupJoined) {
