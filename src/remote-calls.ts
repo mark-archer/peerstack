@@ -1,5 +1,4 @@
 import * as _ from "lodash";
-import { uniq } from "lodash";
 import { fromJSON, isid, newid, sleep } from "./common";
 import { connections } from "./connections";
 import { checkPermission, getBlockIds, getDetailHashes, getBlockIdHashes, getDB, getPersonalGroup, hasPermission, IData, IDB, IGroup, usersGroup } from "./db";
@@ -188,33 +187,37 @@ async function syncBlockId(connection: IConnection, db: IDB, groupId: string, bl
 }
 
 export async function syncGroup(connection: IConnection, remoteGroup: IGroup, db: IDB) {
-  const groupId = remoteGroup.id;
-  let localGroup = await db.get(groupId);
-
-  // don't add groups unless adding them from my own device
-  if (!localGroup) {
-    if (connection.remoteUser?.id === connection.me?.id) {
-      await syncBlockId(connection, db, groupId, 'users');
-      await db.save(remoteGroup);
-      localGroup = remoteGroup;
-    } else {
-      return;
+  try {
+    const groupId = remoteGroup.id;
+    let localGroup = await db.get(groupId);
+  
+    // don't add groups unless adding them from my own device
+    if (!localGroup) {
+      if (connection.remoteUser?.id === connection.me?.id) {
+        await syncBlockId(connection, db, groupId, 'users');
+        await db.save(remoteGroup, true);
+        localGroup = remoteGroup;
+      } else {
+        return;
+      }
     }
-  }
-
-  if (groupId !== connection.me.id && groupId !== usersGroup.id) {
-    if (remoteGroup.modified > localGroup.modified) {
-      // const skipValidation = !localGroup; // if we don't have the local group there's a good chance we can't verify it since the signer could be a peer we don't already know
-      // await db.save(remoteGroup, skipValidation);
-      await syncBlockId(connection, db, groupId, 'users');
-      await db.save(remoteGroup);
-      eventHandlers.onRemoteDataSaved(remoteGroup);
-    } else if (localGroup.type === 'Deleted' && remoteGroup.modified < localGroup.modified) {
-      RPC(connection, pushData)(localGroup);
-      return;
+  
+    if (groupId !== connection.me.id && groupId !== usersGroup.id) {
+      if (remoteGroup.modified > localGroup.modified) {
+        // const skipValidation = !localGroup; // if we don't have the local group there's a good chance we can't verify it since the signer could be a peer we don't already know
+        await db.save(remoteGroup);
+        await syncBlockId(connection, db, groupId, 'users');
+        await db.save(remoteGroup);
+        eventHandlers.onRemoteDataSaved(remoteGroup);
+      } else if (localGroup.type === 'Deleted' && remoteGroup.modified < localGroup.modified) {
+        RPC(connection, pushData)(localGroup);
+        return;
+      }
     }
+    await syncBlockId(connection, db, groupId);
+  } catch (err) {
+    console.log('error syncing group')
   }
-  await syncBlockId(connection, db, groupId);
 }
 
 export async function syncDBs(connection: IConnection, apps?: string[]) {
