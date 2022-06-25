@@ -65,6 +65,7 @@ onMessage('notify', (message: string) => {
   })
 });
 
+// NOTE this is named badly - this is for _receiving_ notifications, not sending notifications
 export async function notify(notification: INotification) {
   try {
     const shouldShow = await processNotification(notification);

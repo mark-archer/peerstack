@@ -73,7 +73,7 @@ export async function acceptInvitation(invite: IInviteDetails) {
     },
   }
   signObject(inviteAccept);
-  await db.save(inviteAccept);
+  await db.save(inviteAccept, true);
   if (pendingInvites) {
     pendingInvites.push(inviteAccept);
   }
