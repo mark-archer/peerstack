@@ -79,7 +79,15 @@ export function isid(id: any): boolean {
   //      00kqn91s56yt2gu3yf5vnbg67:
   //      00kqn91s56yt2gu3yf5vnbg67:a:
   //      a:00kqn91s56yt2gu3yf5vnbg67
-  return Boolean(/^[0-9a-z]{25}(:[0-9a-z]+)*$/i.exec(id)) && id.length <= 128 || isid_v1(id);
+  id = String(id);
+  const isV2 = Boolean(/^[0-9a-z]{25}(:[0-9a-z]+)*$/i.exec(id)) && id.length <= 128;
+  if (isV2) {
+    // only consider v2 ids valid if they are less than current time (with 5 min buffer)
+    // This is to prevent people from making ids with times in the future to try to get them to always show up as the "newest" item
+    return idTime(id) < (Date.now() + 300000);
+  }
+  // TODO deprecate v1 ids
+  return isid_v1(id);
 };
 
 export function idTime(id: string): number {
