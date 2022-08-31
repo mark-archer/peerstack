@@ -41,7 +41,7 @@ export function newid(): string {
   
   // This id is going to be a 128 bit number so it fits naturally into memory.
   // 2 ** 128 ~= 3.4e38 is the maximum it can be
-  // For efficient transmission and storage we're going to represent this number with base 36 [0-9a-z]
+  // For efficient transmission, storage, presentation, and usage we're going to represent this number with base 36 [0-9a-z]
   // (3.4e38).toString(36) == "f55n5nmuuaw00000000000000", this is our max in base 36, 25 characters
   // Date.now() =~ 1625282091498, max without more digits is 9999999999999 == year 2286 ~ 250 years, maybe good enough
   // but we're dealing in base 36 not base 10
@@ -57,14 +57,17 @@ export function newid(): string {
   // That is still a huge number and I think (hope) the chance of collision is still so small as to be effectively unique
   // It's also worth mentioning that it _technically_ only needs to be unique within a group.  
   // It's intended to be globally unique but knowing things can still work if ids are only unique within a group gives me a lot of comfort
-  // These ids are pretty much guaranteed to be unique within a group and, in light of that, it certainly seems worth the extra character to push the max date out so far
-    
+  // These ids are pretty much guaranteed to be unique within a group and, in light of that, it certainly seems worth the extra character to 
+  // push the max date out so far
+  
   const time = Date.now().toString(36).padStart(10,'0'); // e.g: "00kq6xh45f", length == 10
+  
+  // because float accuracy drops off with very large numbers, we're going to generate the random number (15 chars) as two parts
   // Number.parseInt('zzzzzzzz',36).toString().length == 13, 8 digits in base 36 maps to 13 digits in base 10
   const rand1 = _.random(1e14).toString(36).padStart(8,'0').substr(0,8);
-  
   // Number.parseInt('zzzzzzz',36).toString().length == 11, 7 digits in base 36 maps to 11 digits in base 10
   const rand2 = _.random(1e12).toString(36).padStart(7,'0').substr(0,7);
+  
   return time + rand1 + rand2;
 }
 
