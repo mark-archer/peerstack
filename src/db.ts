@@ -237,7 +237,7 @@ export const checkPermission = (function <T extends Function>(hasPermission: T):
 
 const groups: { [groupId: string]: IGroup } = {}
 export async function hasPermission(userId: string, group: string | IGroup, accessLevel: 'read' | 'write' | 'admin', db?: IDB): Promise<boolean> {
-  if (group === 'users' && accessLevel === 'read') {
+  if (['users', 'types'].includes(group as any) && accessLevel === 'read') {
     return true;
   }
   if (userId == group || (typeof group === 'object' && userId == group.id)) {
@@ -327,6 +327,11 @@ export async function validateData(db: IDB, datas: IData[]) {
         await hasPermission(user.id, data as IGroup, 'admin');
       } else {
         const dbData = await db.get(data.id);
+        if (data.type === 'Type' || dbData?.type === 'Type') {
+          if (!dbData || dbData.owner === user.id) {
+            return true;
+          }
+        }
         if (dbData && dbData.group != data.group) {
           await checkPermission(user.id, dbData.group, 'write');
           await checkPermission(user.id, data.group, 'write');
