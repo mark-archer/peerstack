@@ -15,53 +15,69 @@ export async function getFileFromPeers(fileId: string, updateProgress?: (percent
       try {
         await verifyRemoteUser(connection);
       } catch (err) {
-        console.error('error verifying conneciton')
+        console.error('error verifying connection', err);
+        continue;
       }
     }
-    const file = await RPC(connection, getFile)(fileId).catch(err => console.error('Error getting file from peers', err));
-    if (file) {
-      return new Promise((resolve, reject) => {
-        const dcReceive = connection.pc.createDataChannel(`file-${file.id}`);
-        dcReceive.onopen = e => console.log('receive dc open');
-        let receiveBuffer = [];
-        let receivedSize = 0;
-        // let pid;
-        // const TRANSFER_TIMEOUT_MS = 3000;
-        // function refreshWatchDog() {
-        //   clearTimeout(pid);
-        //   pid = setTimeout(() => {
-        //     dcReceive.close();
-        //     console.log('file transfer timed out', dcReceive.label)
-        //     reject(new Error('file transfer timed out'));
-        //   }, TRANSFER_TIMEOUT_MS);
-        // }
-        
-        dcReceive.onmessage = e => {
-          // refreshWatchDog();
-          receiveBuffer.push(e.data);
-          receivedSize += e.data.byteLength;
-
-          if (updateProgress) updateProgress(receivedSize / file.size);
-
-          if (receivedSize === file.size) {
-            file.blob = new Blob(receiveBuffer);
-            hashBlob(file.blob, updateProgress)
-              .then(sha => {
-                if (sha != file.id) return reject(new Error('File failed verification after transfer'))
-                receiveBuffer = [];
-                resolve(file);
-                dcReceive.close();
-              })
-          }
-        }
-        dcReceive.onbufferedamountlow = e => console.log('buffered amount low');
-        dcReceive.onclose = e => console.log('dc closed');
-        dcReceive.onerror = e => {
-          console.log('Error receiving file', e);
-          reject(e);
-        }
-      });
+    const promise = getFileFromPeer(fileId, connection, updateProgress);
+    if (promise) {
+      return promise;
     }
+  }
+}
+
+export async function getFileFromPeer(fileId: string, connection?: IDeviceConnection, updateProgress?: (percent: number) => any): Promise<IFile> {
+  if (!connection.remoteUserVerified) {
+    try {
+      await verifyRemoteUser(connection);
+    } catch (err) {
+      console.error('error verifying connection', err);
+      return;
+    }
+  }
+  const file = await RPC(connection, getFile)(fileId).catch(err => console.error('Error getting file from peers', err));
+  if (file) {
+    return new Promise((resolve, reject) => {
+      const dcReceive = connection.pc.createDataChannel(`file-${file.id}`);
+      dcReceive.onopen = e => console.log('receive dc open');
+      let receiveBuffer = [];
+      let receivedSize = 0;
+      // let pid;
+      // const TRANSFER_TIMEOUT_MS = 3000;
+      // function refreshWatchDog() {
+      //   clearTimeout(pid);
+      //   pid = setTimeout(() => {
+      //     dcReceive.close();
+      //     console.log('file transfer timed out', dcReceive.label)
+      //     reject(new Error('file transfer timed out'));
+      //   }, TRANSFER_TIMEOUT_MS);
+      // }
+
+      dcReceive.onmessage = e => {
+        // refreshWatchDog();
+        receiveBuffer.push(e.data);
+        receivedSize += e.data.byteLength;
+
+        if (updateProgress) updateProgress(receivedSize / file.size);
+
+        if (receivedSize === file.size) {
+          file.blob = new Blob(receiveBuffer, { type: file.fileType });
+          hashBlob(file.blob, updateProgress)
+            .then(sha => {
+              if (sha != file.id) return reject(new Error('File failed verification after transfer'))
+              receiveBuffer = [];
+              resolve(file);
+              dcReceive.close();
+            })
+        }
+      }
+      dcReceive.onbufferedamountlow = e => console.log('buffered amount low');
+      dcReceive.onclose = e => console.log('dc closed');
+      dcReceive.onerror = e => {
+        console.log('Error receiving file', e);
+        reject(e);
+      }
+    });
   }
 }
 
