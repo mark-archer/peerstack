@@ -11,13 +11,14 @@ A library for building decentralized, peer-to-peer web applications.
 
 ## Example
 
-### App Code
+### Web App Code
 ```javascript
 const { connections, newid, remoteCalls, user } = require('peerstack');
-// this creates a new user, normally you'd use an existing user
-const me = user.newUser(); 
+// this creates a new user - normally you'd use an existing user
+const me = user.newUser();
+// you should try to use the same deviceId for the life of the device 
 const deviceId = newid();
-connections.init(deviceId, me, yourServerUrl || "https://theque.app/");
+connections.init(deviceId, me, yourServerUrl || "https://peers.app/");
 connections.eventHandlers.onDeviceDiscovered = connections.connectToDevice;
 connections.eventHandlers.onDeviceConnected = async connection => {    
   // syncs data in all shared groups between both devices
@@ -41,7 +42,7 @@ server.listen(port);
 console.log(`server running at http://localhost:${port}/`)
 ```
 
-Your own server is not necessary. For now you're free to use `https://theque.app/` as your signaling server but that may change in the future depending on usage and the evolution of [peerhost](#peer-host).
+Your own server is not necessary. For now you're free to use `https://peers.app/` as your signaling server but that may change in the future depending on usage and the evolution of [peerhost](#peer-host).
 
 ## How It Works
 

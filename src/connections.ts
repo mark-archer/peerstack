@@ -1,9 +1,9 @@
 import { newid, toJSON } from "./common";
 import { getDB, IGroup } from './db';
-import { IConnection, onRemoteMessage } from "./remote-calls";
+import { IConnection, onRemoteMessage, ping, RPC } from "./remote-calls";
 import { IUser, signObject, init as initUser } from "./user";
 import { checkPendingInvitations, IInviteAccept, IInviteAcceptType } from "./invitations"
-import { uniq } from "lodash";
+import { shuffle, uniq } from "lodash";
 
 export interface ISDIExchange {
   connectionId: string
@@ -104,35 +104,6 @@ export async function init(_deviceId: string, _me: IUser, serverUrl?: string) {
       })
     })
   })
-
-  // // TODO this isn't working so commenting it out for now
-  // const heartBeatInterval = _.random(2000, 3000); // more than this leaves them hanging around for some reason
-  // console.log('heartbeat interval', heartBeatInterval)
-  // const maxAck = heartBeatInterval * 3;
-  // const heartbeat = setInterval(() => {
-  //   console.log('heartbeat', connections.length)
-  //   connections = connections.filter(c => {
-  //     // if (['closed' || 'closing'].includes(c.dc.readyState) || (Date.now() - c.lastAck) > maxAck) {
-  //     //   console.log('closing connection', c.device)
-  //     //   c.close();
-  //     //   return false;
-  //     // }    
-  //     // if (c.dc.readyState === 'open') c.dc.send('ack');
-  //     // else c.lastAck = Date.now() // wait for the connection to open before starting Ack timer
-  //     if (c.dc && c.dc.readyState.match(/closed|closing/i))
-  //     // || ['disconnected', 'failed'].includes(c.pc.iceConnectionState)) 
-  //     {
-  //       console.log('connection closed, removing from list', c)
-  //       c.close();
-  //       return false;
-  //     } else if(c.dc.readyState === 'open') {
-  //       c.dc.send('ack');        
-  //     } else {
-  //       console.log('other state', c);
-  //     }
-  //     return true;
-  //   })
-  // }, heartBeatInterval);
 }
 
 export async function registerDevice() {
@@ -219,9 +190,8 @@ export const eventHandlers: {
   onDeviceDisconnected: (connection: IDeviceConnection) => any,
   onSignalingReconnected: () => any,
 } = {
-  onDeviceDiscovered: (deviceId: string) => {
-    // placeholder
-  },
+  // default to `connectToDevice` - automatically connect to every device
+  onDeviceDiscovered: connectToDevice,
   onDeviceConnected: (connection: IDeviceConnection) => {
     // placeholder
   },
@@ -232,6 +202,7 @@ export const eventHandlers: {
     // placeholder
   },
 }
+
 export interface IRemoteChunk {
   type: 'chunk',
   id: string,
@@ -282,12 +253,27 @@ function garbageCollectConnections() {
     const c = connections[i];
     if (
       ['closed', 'closing'].includes(c.dc?.readyState)
-      || ['closed', 'closing'].includes(c.pc?.connectionState)      
+      || ['closed', 'closing'].includes(c.pc?.connectionState)
     ) {
       connections.splice(i, 1)
     }
   }
 }
+
+
+// regularly check if connections are active and close them if not
+setInterval(async () => {
+  const connection = shuffle(connections)[0];
+  if (connection) {
+    try {
+      await RPC(connection, ping)(1, 's');
+      console.log('INFO: connection heartbeat good: ' + connection.id);
+    } catch (err) {
+      console.log('INFO: connection heartbeat failed so closing connection: ' + connection.id);
+      closeConnection(connection);
+    }
+  }
+}, 1000);
 
 function closeConnection(connection: IDeviceConnection) {
   connection.dc?.close();
@@ -304,8 +290,14 @@ export async function connectToDevice(toDeviceId): Promise<IConnection> {
     garbageCollectConnections();
     const existingConnection = connections.find(c => c.remoteDeviceId === toDeviceId);
     if (existingConnection) {
-      console.log('already have a connection to this device so just returning that')
-      return existingConnection;
+      try {
+        await RPC(existingConnection, ping)(1, 's');
+        console.log('already have a connection to this device so just returning that')
+        return existingConnection;
+      } catch {
+        closeConnection(existingConnection);
+        console.log('existing connection failed - building new one')
+      }
     }
     const connectionId = newid();
 
@@ -363,7 +355,7 @@ export async function connectToDevice(toDeviceId): Promise<IConnection> {
         }
       }),
     }
-    
+
     // listen for data connections
     pc.ondatachannel = e => {
       let dc: RTCDataChannel = e.channel;
@@ -529,14 +521,14 @@ async function handelOffer(offer: ISDIExchange) {
           connection.close();
           eventHandlers.onDeviceDisconnected(connection);
         };
-      } else  {
+      } else {
         dc.onopen = e => {
           console.log('pc2 data channel open', dc.label);
           if (pendingDCConns[dc.label]) {
             pendingDCConns[dc.label](dc);
             delete pendingDCConns[dc.label];
           }
-          availableDCConns[dc.label] = dc;          
+          availableDCConns[dc.label] = dc;
         };
         dc.onclose = e => {
           delete availableDCConns[dc.label];
