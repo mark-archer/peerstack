@@ -267,13 +267,12 @@ setInterval(async () => {
   if (connection) {
     try {
       await RPC(connection, ping)(1, 's');
-      console.log('INFO: connection heartbeat good: ' + connection.id);
     } catch (err) {
       console.log('INFO: connection heartbeat failed so closing connection: ' + connection.id);
       closeConnection(connection);
     }
   }
-}, 1000);
+}, 10000);
 
 function closeConnection(connection: IDeviceConnection) {
   connection.dc?.close();
