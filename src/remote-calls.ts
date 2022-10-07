@@ -181,8 +181,8 @@ async function syncBlockId(connection: IConnection, db: IDB, groupId: string, bl
         }
       }
     }
-  })
-  pendingBlockSync = Promise.race([thisBlockSync, blockSyncLock]);
+  });
+  pendingBlockSync = Promise.race([thisBlockSync, blockSyncLock]).catch(err => console.error(`error while syncing blockId`, { groupId, blockId }, err));
   await thisBlockSync;
 }
 
