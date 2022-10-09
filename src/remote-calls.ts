@@ -256,7 +256,7 @@ async function syncBlockId(connection: IConnection, db: IDB, groupId: string, bl
     if (tryFastSync) {
       console.log(`fastSync starting ${groupId}`);
       console.time(`fastSync ${groupId}`);
-      await fastSync(connection, groupId);
+      await fastSync(connection, groupId).catch(err => console.error('error during fastSync', err));
       console.timeEnd(`fastSync ${groupId}`);
     }
 
