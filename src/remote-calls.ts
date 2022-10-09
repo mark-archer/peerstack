@@ -1,8 +1,8 @@
 import * as _ from "lodash";
-import { fromJSON, isid, newid, sleep } from "./common";
-import { connections } from "./connections";
+import { fromJSON, isid, newid, parseJSON, sleep, stringify } from "./common";
+import { connections, chunkSize, me } from "./connections";
 import { checkPermission, getBlockIds, getDetailHashes, getBlockIdHashes, getDB, getPersonalGroup, hasPermission, IData, IDB, IGroup, usersGroup } from "./db";
-import { keysEqual, IUser, openMessage, signMessage, signObject, verifySignedObject } from "./user";
+import { keysEqual, IUser, openMessage, signMessage, verifySignedObject } from "./user";
 
 export type txfn = <T>(data: (string | IRemoteData)) => Promise<T | void> | void
 
@@ -60,6 +60,9 @@ async function signId(id: string) {
 
 export async function verifyRemoteUser(connection: IConnection) {
   try {
+    if (connection.remoteUserVerified) {
+      return;
+    }
     const id = newid();
     const signedId = await RPC(connection, signId)(id);
     const openedId = openMessage(signedId, connection.remoteUser.publicKey);
@@ -137,6 +140,101 @@ export const eventHandlers = {
   },
 }
 
+export async function fastSyncRemote(groupId: string, dataChannelLabel: string, lastModified: number) {
+  try {
+    const _connection: IConnection = currentConnection;
+    await checkPermission(_connection.remoteUser?.id, groupId, 'read');
+    const connection = connections.find(c => c.id === _connection.id);
+
+    const dc = await connection.pc.createDataChannel(dataChannelLabel);
+    let dcClosed = false;
+    dc.onclose = () => dcClosed = true;
+
+    const db = await getDB();
+    const cursor = await db.openCursor({ lower: [groupId, lastModified], upper: [groupId, Infinity] }, 'group-modified', 'next');
+    while (await cursor.next()) {
+      const doc = cursor.value;
+      const json = stringify(doc);
+      // if bigger than chunkSize need to send slow way because it'll overflow the buffer
+      if (json.length > chunkSize) {
+        await RPC(connection, pushData)(doc, true);
+        continue;
+      }
+      while (!dcClosed && (dc.bufferedAmount + json.length) > chunkSize) {
+        console.log('buffer full so waiting');
+        await sleep(1);
+      }
+      if (dcClosed) {
+        console.log('dc closed so breaking loop');
+        break;
+      }
+      dc.send(json);
+    }
+
+    if (!dcClosed) {
+      dc.send('END');
+    }
+  } catch (err) {
+    console.error('error while streaming fastSync', { groupId, dataChannelLabel }, err);
+  }
+}
+
+async function fastSync(_connection: IConnection, groupId: string) {
+  return new Promise<void>(async (resolve) => {
+    await verifyRemoteUser(_connection)
+    const connection = connections.find(c => c.id === _connection.id);
+    const skipValidation = connection.remoteUser.id === me.id;
+
+    const db = await getDB();
+    const lastModifiedCursor = await db.openCursor({ lower: [groupId, -Infinity], upper: [groupId, Infinity] }, 'group-modified', 'prev');
+    let lastModified = 0;
+    while (await lastModifiedCursor.next()) {
+      if (lastModifiedCursor.value?.type !== 'Group') {
+        lastModified = lastModifiedCursor.value.modified;
+        break;
+      }
+    }
+
+    const dcLabel = `stream-sync-${groupId}-${newid()}`;
+    RPC(connection, fastSyncRemote)(groupId, dcLabel, lastModified);
+    // let remotePromiseFinished = false;
+    // remotePromise.catch(() => 0).then(() => sleep(100)).then(() => remotePromiseFinished = true);
+    const dc = await connection.waitForDataChannel(dcLabel);
+
+    const remoteJsonData = [];
+    let streamEOF = false;
+
+    dc.onmessage = (evt) => {
+      const json = evt.data;
+      if (json === 'END') {
+        dc.close();
+      } else {
+        remoteJsonData.push(json);
+      }
+    }
+    let dcClosed = false;
+    dc.onclose = () => {
+      dcClosed = true;
+    }
+    // sequentially process remote data to try to keep things responsive. 
+    while ((!streamEOF && !dcClosed) || remoteJsonData.length) {
+      try {
+        if (!remoteJsonData.length) {
+          await sleep(1);
+          continue;
+        }
+        const docs: IData[] = remoteJsonData.map(json => parseJSON(json));
+        remoteJsonData.length = 0;
+        await db.save(docs, skipValidation);
+        console.log(`fastSynced ${docs.length} docs`);
+      } catch (err) {
+        console.error('error processing remote data during fast sync', err);
+      }
+    }
+    resolve();
+  });
+}
+
 let pendingBlockSync = Promise.resolve();
 async function syncBlockId(connection: IConnection, db: IDB, groupId: string, blockId: string = '') {
   let unlockBlockSync: () => any;
@@ -144,12 +242,24 @@ async function syncBlockId(connection: IConnection, db: IDB, groupId: string, bl
     unlockBlockSync = resolve;
   })
   let thisBlockSync = pendingBlockSync.then(async () => {
+    // if (groupId !== '72500a76054b418db3bc6ebf337b4bfd') {
+    //   return;
+    // }
     if (blockId) {
       console.log(`syncing ${groupId} block ${blockId}`);
     }
     const localHashes = await getBlockIdHashes(groupId, blockId);
     const remoteHashes = await RPC(connection, getRemoteIdBlockHashes)(groupId, blockId);
     const blockIds = Object.keys(remoteHashes).sort().reverse(); // reverse to do newest first
+
+    const tryFastSync = blockId == "" && blockIds.some(bid => bid !== 'u' && localHashes[bid] !== remoteHashes[bid]);
+    if (tryFastSync) {
+      console.log(`fastSync starting ${groupId}`);
+      console.time(`fastSync ${groupId}`);
+      await fastSync(connection, groupId);
+      console.timeEnd(`fastSync ${groupId}`);
+    }
+
     for (let blockId of blockIds) {
       const localHash = localHashes[blockId];
       const remoteHash = remoteHashes[blockId];
@@ -273,7 +383,7 @@ export async function syncDBs(connection: IConnection, apps?: string[]) {
 const pushDataAlreadySeen: {
   [idPlusModified: string]: true
 } = {}
-export async function pushData(data: IData) {
+export async function pushData(data: IData, dontBroadcast?: boolean) {
   const idPlusModified = data.id + data.modified;
   if (pushDataAlreadySeen[idPlusModified]) {
     // console.log('already seen so not saving or forwarding data', data);
@@ -288,17 +398,19 @@ export async function pushData(data: IData) {
     await db.save(data);
     eventHandlers.onRemoteDataSaved(data);
   }
-  connections.forEach(_connection => {
-    // this data was probably pushed from the current connection so resist forwarding it to that one but if it's the only connection available push it to try to get it propagating
-    if (connection == _connection && connections.length > 1) {
-      return;
-    }
-    // TODO make sure we have verified user has read permission to this group otherwise this is a security hole
-    if (_connection.groups?.some(groupId => groupId == data.group)) {
-      // console.log('forwarding data to connection', { data, conn: _connection });
-      RPC(_connection, pushData)(data);
-    }
-  });
+  if (!dontBroadcast) {
+    connections.forEach(_connection => {
+      // this data was probably pushed from the current connection so resist forwarding it to that one but if it's the only connection available push it to try to get it propagating
+      if (connection == _connection && connections.length > 1) {
+        return;
+      }
+      // TODO make sure we have verified user has read permission to this group otherwise this is a security hole
+      if (_connection.groups?.some(groupId => groupId == data.group)) {
+        // console.log('forwarding data to connection', { data, conn: _connection });
+        RPC(_connection, pushData)(data);
+      }
+    });
+  }
 }
 
 // these names have to be done this way so they persist through code minification
@@ -312,6 +424,7 @@ export const remotelyCallableFunctions: { [key: string]: Function } = {
   getRemoteData,
   pushData,
   signId,
+  streamRemoteDataSync: fastSyncRemote,
 }
 
 export function RPC<T extends Function>(connection: IConnection, fn: T): T {

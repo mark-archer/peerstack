@@ -332,6 +332,9 @@ export async function validateData(db: IDB, datas: IData[]) {
             return true;
           }
         }
+        if (dbData && dbData.modified > data.modified) {
+          throw new Error('modified must be newer than the existing doc in db')
+        }
         if (dbData && dbData.group != data.group) {
           await checkPermission(user.id, dbData.group, 'write');
           await checkPermission(user.id, data.group, 'write');
