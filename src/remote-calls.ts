@@ -142,42 +142,45 @@ export const eventHandlers = {
 }
 
 export async function fastSyncRemote(groupId: string, dataChannelLabel: string, lastModified: number) {
-  try {
-    const _connection: IConnection = currentConnection;
-    await checkPermission(_connection.remoteUser?.id, groupId, 'read');
-    const connection = connections.find(c => c.id === _connection.id);
-
-    const dc = await connection.pc.createDataChannel(dataChannelLabel);
-    let dcClosed = false;
-    dc.onclose = () => dcClosed = true;
-
-    const db = await getDB();
-    const cursor = await db.openCursor({ lower: [groupId, lastModified], upper: [groupId, Infinity] }, 'group-modified', 'next');
-    while (await cursor.next()) {
-      const doc = cursor.value;
-      const json = stringify(doc);
-      // if bigger than chunkSize need to send slow way because it'll overflow the buffer
-      if (json.length > chunkSize) {
-        await RPC(connection, pushData)(doc, true);
-        continue;
+  new Promise<void>(async (resolve) => {
+    try {
+      const _connection: IConnection = currentConnection;
+      await checkPermission(_connection.remoteUser?.id, groupId, 'read');
+      const connection = connections.find(c => c.id === _connection.id);
+  
+      const dc = await connection.pc.createDataChannel(dataChannelLabel);
+      let dcClosed = false;
+      dc.onclose = () => dcClosed = true;
+  
+      const db = await getDB();
+      const cursor = await db.openCursor({ lower: [groupId, lastModified], upper: [groupId, Infinity] }, 'group-modified', 'next');
+      while (await cursor.next()) {
+        const doc = cursor.value;
+        const json = stringify(doc);
+        // if bigger than chunkSize need to send slow way because it'll overflow the buffer
+        if (json.length > chunkSize) {
+          await RPC(connection, pushData)(doc, true);
+          continue;
+        }
+        while (!dcClosed && (dc.bufferedAmount + json.length) > chunkSize) {
+          console.log('buffer full so waiting');
+          await sleep(1);
+        }
+        if (dcClosed) {
+          console.log('dc closed so breaking loop');
+          break;
+        }
+        dc.send(json);
       }
-      while (!dcClosed && (dc.bufferedAmount + json.length) > chunkSize) {
-        console.log('buffer full so waiting');
-        await sleep(1);
+  
+      if (!dcClosed) {
+        dc.send('END');
       }
-      if (dcClosed) {
-        console.log('dc closed so breaking loop');
-        break;
-      }
-      dc.send(json);
+    } catch (err) {
+      console.error('error while remote streaming fastSync', { groupId, dataChannelLabel }, err);
     }
-
-    if (!dcClosed) {
-      dc.send('END');
-    }
-  } catch (err) {
-    console.error('error while remote streaming fastSync', { groupId, dataChannelLabel }, err);
-  }
+    resolve();
+  })
 }
 
 async function fastSync(_connection: IConnection, groupId: string) {
@@ -198,7 +201,7 @@ async function fastSync(_connection: IConnection, groupId: string) {
       }
   
       const dcLabel = `stream-sync-${groupId}-${newid()}`;
-      RPC(connection, fastSyncRemote)(groupId, dcLabel, lastModified);
+      await RPC(connection, fastSyncRemote)(groupId, dcLabel, lastModified);
       // let remotePromiseFinished = false;
       // remotePromise.catch(() => 0).then(() => sleep(100)).then(() => remotePromiseFinished = true);
       const dc = await connection.waitForDataChannel(dcLabel);
