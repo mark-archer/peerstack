@@ -1,4 +1,5 @@
 import * as _ from "lodash";
+import { reject } from "lodash";
 import { fromJSON, isid, newid, parseJSON, sleep, stringify } from "./common";
 import { connections, chunkSize, me } from "./connections";
 import { checkPermission, getBlockIds, getDetailHashes, getBlockIdHashes, getDB, getPersonalGroup, hasPermission, IData, IDB, IGroup, usersGroup } from "./db";
@@ -175,61 +176,65 @@ export async function fastSyncRemote(groupId: string, dataChannelLabel: string, 
       dc.send('END');
     }
   } catch (err) {
-    console.error('error while streaming fastSync', { groupId, dataChannelLabel }, err);
+    console.error('error while remote streaming fastSync', { groupId, dataChannelLabel }, err);
   }
 }
 
 async function fastSync(_connection: IConnection, groupId: string) {
-  return new Promise<void>(async (resolve) => {
-    await verifyRemoteUser(_connection)
-    const connection = connections.find(c => c.id === _connection.id);
-    const skipValidation = connection.remoteUser.id === me.id;
-
-    const db = await getDB();
-    const lastModifiedCursor = await db.openCursor({ lower: [groupId, -Infinity], upper: [groupId, Infinity] }, 'group-modified', 'prev');
-    let lastModified = 0;
-    while (await lastModifiedCursor.next()) {
-      if (lastModifiedCursor.value?.type !== 'Group') {
-        lastModified = lastModifiedCursor.value.modified;
-        break;
-      }
-    }
-
-    const dcLabel = `stream-sync-${groupId}-${newid()}`;
-    RPC(connection, fastSyncRemote)(groupId, dcLabel, lastModified);
-    // let remotePromiseFinished = false;
-    // remotePromise.catch(() => 0).then(() => sleep(100)).then(() => remotePromiseFinished = true);
-    const dc = await connection.waitForDataChannel(dcLabel);
-
-    const remoteJsonData = [];
-    let streamEOF = false;
-
-    dc.onmessage = (evt) => {
-      const json = evt.data;
-      if (json === 'END') {
-        dc.close();
-      } else {
-        remoteJsonData.push(json);
-      }
-    }
-    let dcClosed = false;
-    dc.onclose = () => {
-      dcClosed = true;
-    }
-    // sequentially process remote data to try to keep things responsive. 
-    while ((!streamEOF && !dcClosed) || remoteJsonData.length) {
-      try {
-        if (!remoteJsonData.length) {
-          await sleep(1);
-          continue;
+  return new Promise<void>(async (resolve, reject) => {
+    try {
+      await verifyRemoteUser(_connection)
+      const connection = connections.find(c => c.id === _connection.id);
+      const skipValidation = connection.remoteUser.id === me.id;
+  
+      const db = await getDB();
+      const lastModifiedCursor = await db.openCursor({ lower: [groupId, -Infinity], upper: [groupId, Infinity] }, 'group-modified', 'prev');
+      let lastModified = 0;
+      while (await lastModifiedCursor.next()) {
+        if (lastModifiedCursor.value?.type !== 'Group') {
+          lastModified = lastModifiedCursor.value.modified;
+          break;
         }
-        const docs: IData[] = remoteJsonData.map(json => parseJSON(json));
-        remoteJsonData.length = 0;
-        await db.save(docs, skipValidation);
-        console.log(`fastSynced ${docs.length} docs`);
-      } catch (err) {
-        console.error('error processing remote data during fast sync', err);
       }
+  
+      const dcLabel = `stream-sync-${groupId}-${newid()}`;
+      RPC(connection, fastSyncRemote)(groupId, dcLabel, lastModified);
+      // let remotePromiseFinished = false;
+      // remotePromise.catch(() => 0).then(() => sleep(100)).then(() => remotePromiseFinished = true);
+      const dc = await connection.waitForDataChannel(dcLabel);
+  
+      const remoteJsonData = [];
+      let streamEOF = false;
+  
+      dc.onmessage = (evt) => {
+        const json = evt.data;
+        if (json === 'END') {
+          dc.close();
+        } else {
+          remoteJsonData.push(json);
+        }
+      }
+      let dcClosed = false;
+      dc.onclose = () => {
+        dcClosed = true;
+      }
+      // sequentially process remote data to try to keep things responsive. 
+      while ((!streamEOF && !dcClosed) || remoteJsonData.length) {
+        try {
+          if (!remoteJsonData.length) {
+            await sleep(1);
+            continue;
+          }
+          const docs: IData[] = remoteJsonData.map(json => parseJSON(json));
+          remoteJsonData.length = 0;
+          await db.save(docs, skipValidation);
+          console.log(`fastSynced ${docs.length} docs`);
+        } catch (err) {
+          console.error('error processing remote data during fast sync', err);
+        }
+      }
+    } catch (err) {
+      reject(err);
     }
     resolve();
   });
