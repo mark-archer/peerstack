@@ -231,6 +231,7 @@ async function fastSync(_connection: IConnection, groupId: string) {
           const docs: IData[] = remoteJsonData.map(json => parseJSON(json));
           remoteJsonData.length = 0;
           await db.save(docs, skipValidation);
+          docs.map(doc => eventHandlers.onRemoteDataSaved(doc));
           console.log(`fastSynced ${docs.length} docs`);
         } catch (err) {
           console.error('error processing remote data during fast sync', err);
@@ -256,7 +257,7 @@ async function syncBlockId(connection: IConnection, db: IDB, groupId: string, bl
     if (blockId) {
       console.log(`syncing ${groupId} block ${blockId}`);
     }
-    const localHashes = await getBlockIdHashes(groupId, blockId);
+    let localHashes = await getBlockIdHashes(groupId, blockId);
     const remoteHashes = await RPC(connection, getRemoteIdBlockHashes)(groupId, blockId);
     const blockIds = Object.keys(remoteHashes).sort().reverse(); // reverse to do newest first
 
@@ -266,6 +267,7 @@ async function syncBlockId(connection: IConnection, db: IDB, groupId: string, bl
       console.time(`fastSync ${groupId}`);
       await fastSync(connection, groupId).catch(err => console.error('error during fastSync', err));
       console.timeEnd(`fastSync ${groupId}`);
+      localHashes = await getBlockIdHashes(groupId, blockId);
     }
 
     for (let blockId of blockIds) {

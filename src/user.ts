@@ -81,18 +81,20 @@ export async function init(config?: { id: string, secretKey: string, name?: stri
       alert("You're about to be asked if you'd like to store a username and password for this site.  It is highly recommend you agree to this unless you're comfortable managing your user id and secret key yourself.")
     }
     const db = await getDB();
-    try {
-      // switch name and id so name is shown
-      // @ts-ignore
-      const creds = await navigator.credentials.create({ password: { id: config.name || config.id, password: config.secretKey, name: config.id, iconUrl: config.iconUrl } });
-      await navigator.credentials.store(creds);
-      // @ts-ignore
-      const storedCredentials = await navigator.credentials.get({ password: true })    
-      if (storedCredentials) {
-        await db.local.delete(credentialsId);
-        return userId;
-      }    
-    } catch { }
+
+    // // don't use navigator to store creds, it creates problems
+    // try {
+    //   // switch name and id so name is shown
+    //   // @ts-ignore
+    //   const creds = await navigator.credentials.create({ password: { id: config.name || config.id, password: config.secretKey, name: config.id, iconUrl: config.iconUrl } });
+    //   await navigator.credentials.store(creds);
+    //   // @ts-ignore
+    //   const storedCredentials = await navigator.credentials.get({ password: true })    
+    //   if (storedCredentials) {
+    //     await db.local.delete(credentialsId);
+    //     return userId;
+    //   }    
+    // } catch { }
     
     // if `navigator.credentials` fails then store in db.local
     // can't use credential store so fallback to local storage for now 
