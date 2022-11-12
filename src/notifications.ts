@@ -102,33 +102,33 @@ export async function notify(notification: INotification) {
 }
 remoteCalls.remotelyCallableFunctions.notify = notify;
 
-export async function pushDataAsNotification(data: IData) {
-  const notification = dataToNotification(data);
-  signObject(notification);
-  const groupUsers = await getGroupUsers(data.group);
-  for (const user of groupUsers) {
-    for (const device of Object.values(user.devices || {})) {
-      await notifyDevice(device, notification, user.publicBoxKey);
-    }
-  }
-}
+// export async function pushDataAsNotification(data: IData) {
+//   const notification = dataToNotification(data);
+//   signObject(notification);
+//   const groupUsers = await getGroupUsers(data.group);
+//   for (const user of groupUsers) {
+//     for (const device of Object.values(user.devices || {})) {
+//       await notifyDevice(device, notification, user.publicBoxKey);
+//     }
+//   }
+// }
 
-export async function pushDataAsNotificationToUser(data: IData, user: IUser) {
-  const notification = dataToNotification(data);
-  signObject(notification);
-  for (const device of Object.values(user.devices || {})) {
-    await notifyDevice(device, notification, user.publicBoxKey);
-  }
-}
+// export async function pushDataAsNotificationToUser(data: IData, user: IUser) {
+//   const notification = dataToNotification(data);
+//   signObject(notification);
+//   for (const device of Object.values(user.devices || {})) {
+//     await notifyDevice(device, notification, user.publicBoxKey);
+//   }
+// }
 
-export async function pushDataAsNotificationToDevice(device: IDevice, data: IData, toPublicBoxKey?: string) {
-  if (!toPublicBoxKey) {
-    const user: IUser = await (await getDB()).get(device.userId);
-    toPublicBoxKey = user.publicBoxKey;
-  }
-  const notification = dataToNotification(data);
-  return notifyDevice(device, notification, toPublicBoxKey);
-}
+// export async function pushDataAsNotificationToDevice(device: IDevice, data: IData, toPublicBoxKey?: string) {
+//   if (!toPublicBoxKey) {
+//     const user: IUser = await (await getDB()).get(device.userId);
+//     toPublicBoxKey = user.publicBoxKey;
+//   }
+//   const notification = dataToNotification(data);
+//   return notifyDevice(device, notification, toPublicBoxKey);
+// }
 
 export async function notifyDevice(device: IDevice, notification: INotification, toPublicBoxKey: string) {
   if (deviceId === device.id) {
