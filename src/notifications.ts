@@ -1,6 +1,6 @@
 import { errorAfterTimeout, isObject, user } from ".";
 import { connections, deviceId, emit, me, onMessage } from "./connections";
-import { getDB, IData } from "./db";
+import { getDB, getGroupUsers, IData } from "./db";
 import * as remoteCalls from "./remote-calls";
 import { boxDataForPublicKey, IDevice, IDataBox, openBox, verifySignedObject, IUser, signObject } from "./user";
 import { newid } from "./common";
@@ -101,6 +101,25 @@ export async function notify(notification: INotification) {
   }
 }
 remoteCalls.remotelyCallableFunctions.notify = notify;
+
+export async function pushDataAsNotification(data: IData) {
+  const notification = dataToNotification(data);
+  signObject(notification);
+  const groupUsers = await getGroupUsers(data.group);
+  for (const user of groupUsers) {
+    for (const device of Object.values(user.devices || {})) {
+      await notifyDevice(device, notification, user.publicBoxKey);
+    }
+  }
+}
+
+export async function pushDataAsNotificationToUser(data: IData, user: IUser) {
+  const notification = dataToNotification(data);
+  signObject(notification);
+  for (const device of Object.values(user.devices || {})) {
+    await notifyDevice(device, notification, user.publicBoxKey);
+  }
+}
 
 export async function pushDataAsNotificationToDevice(device: IDevice, data: IData, toPublicBoxKey?: string) {
   if (!toPublicBoxKey) {
