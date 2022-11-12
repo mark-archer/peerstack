@@ -1,8 +1,9 @@
 import { errorAfterTimeout, isObject, user } from ".";
-import { connections, emit, onMessage } from "./connections";
+import { connections, deviceId, emit, me, onMessage } from "./connections";
 import { getDB, IData } from "./db";
 import * as remoteCalls from "./remote-calls";
 import { boxDataForPublicKey, IDevice, IDataBox, openBox, verifySignedObject, IUser, signObject } from "./user";
+import { newid } from "./common";
 
 export type INotificationStatus = 'read' | 'dismissed'
 
@@ -13,6 +14,20 @@ export interface INotification extends NotificationOptions, IData {
   data?: IData
   status?: INotificationStatus
   dontShow?: boolean
+}
+
+export function dataToNotification(data: IData): INotification {
+  const notification: INotification = {
+    type: 'Notification',
+    id: newid(),
+    group: data.group,
+    owner: me.id,
+    modified: Date.now(),
+    title: '',
+    data,
+    dontShow: true
+  };
+  return notification;
 }
 
 export const eventHandlers = {
@@ -85,12 +100,26 @@ export async function notify(notification: INotification) {
     console.error('Error processing notification', notification, err);
   }
 }
-
 remoteCalls.remotelyCallableFunctions.notify = notify;
 
+export async function pushDataAsNotificationToDevice(device: IDevice, data: IData, toPublicBoxKey?: string) {
+  if (!toPublicBoxKey) {
+    const user: IUser = await (await getDB()).get(device.userId);
+    toPublicBoxKey = user.publicBoxKey;
+  }
+  const notification = dataToNotification(data);
+  return notifyDevice(device, notification, toPublicBoxKey);
+}
+
 export async function notifyDevice(device: IDevice, notification: INotification, toPublicBoxKey: string) {
+  if (deviceId === device.id) {
+    console.warn('not notifying device because remote device is the same as local device');
+    return; 
+  }
   try {
-    signObject(notification);
+    if (!notification.signature) {
+      signObject(notification);
+    }
   
     // check if we have a connection to the device, if so just send through that
     const conn = connections.find(c => c.remoteDeviceId === device.id);
@@ -104,11 +133,22 @@ export async function notifyDevice(device: IDevice, notification: INotification,
         console.log('failed to send notification through peer connection', err);
       }
     }
+
+    // if (
+    //   !device.pushSubscription ||
+    //   (device.subscriptionExpires && device.subscriptionExpires < Date.now()) 
+    // ) {
+    //   return console.warn('not notifying device because there is no active subscription')
+    // }
   
     // check if we have a web-push subscription, if so use that
     const messageId = notification.id;
     const box = boxDataForPublicKey(notification, toPublicBoxKey);
     const message = JSON.stringify(box);
+    if (message.length > 30e3) {
+      console.warn(`not sending notification because it's greater than 30k characters which will require 10 or more individual web-push notifications`);
+      return false;
+    }
     // Note that the server may push the notification through socket.io if available
     const result = await emit('notify', { device, messageId, message })
     console.log('notifyDevice result', result)
