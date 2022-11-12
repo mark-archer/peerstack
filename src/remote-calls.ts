@@ -1,5 +1,4 @@
 import * as _ from "lodash";
-import { reject } from "lodash";
 import { fromJSON, isid, newid, parseJSON, sleep, stringify } from "./common";
 import { connections, chunkSize, me } from "./connections";
 import { checkPermission, getBlockIds, getDetailHashes, getBlockIdHashes, getDB, getPersonalGroup, hasPermission, IData, IDB, IGroup, usersGroup } from "./db";
@@ -147,11 +146,11 @@ export async function fastSyncRemote(groupId: string, dataChannelLabel: string, 
       const _connection: IConnection = currentConnection;
       await checkPermission(_connection.remoteUser?.id, groupId, 'read');
       const connection = connections.find(c => c.id === _connection.id);
-  
+
       const dc = await connection.pc.createDataChannel(dataChannelLabel);
       let dcClosed = false;
       dc.onclose = () => dcClosed = true;
-  
+
       const db = await getDB();
       const cursor = await db.openCursor({ lower: [groupId, lastModified], upper: [groupId, Infinity] }, 'group-modified', 'next');
       while (await cursor.next()) {
@@ -172,7 +171,7 @@ export async function fastSyncRemote(groupId: string, dataChannelLabel: string, 
         }
         dc.send(json);
       }
-  
+
       if (!dcClosed) {
         dc.send('END');
       }
@@ -189,7 +188,7 @@ async function fastSync(_connection: IConnection, groupId: string) {
       await verifyRemoteUser(_connection)
       const connection = connections.find(c => c.id === _connection.id);
       const skipValidation = connection.remoteUser.id === me.id;
-  
+
       const db = await getDB();
       const lastModifiedCursor = await db.openCursor({ lower: [groupId, -Infinity], upper: [groupId, Infinity] }, 'group-modified', 'prev');
       let lastModified = 0;
@@ -199,16 +198,16 @@ async function fastSync(_connection: IConnection, groupId: string) {
           break;
         }
       }
-  
+
       const dcLabel = `stream-sync-${groupId}-${newid()}`;
       await RPC(connection, fastSyncRemote)(groupId, dcLabel, lastModified);
       // let remotePromiseFinished = false;
       // remotePromise.catch(() => 0).then(() => sleep(100)).then(() => remotePromiseFinished = true);
       const dc = await connection.waitForDataChannel(dcLabel);
-  
+
       const remoteJsonData = [];
       let streamEOF = false;
-  
+
       dc.onmessage = (evt) => {
         const json = evt.data;
         if (json === 'END') {
@@ -310,7 +309,7 @@ export async function syncGroup(connection: IConnection, remoteGroup: IGroup, db
   try {
     const groupId = remoteGroup.id;
     let localGroup = await db.get(groupId);
-  
+
     // don't add groups unless adding them from my own device
     if (!localGroup) {
       if (connection.remoteUser?.id === connection.me?.id) {
@@ -321,7 +320,7 @@ export async function syncGroup(connection: IConnection, remoteGroup: IGroup, db
         return;
       }
     }
-  
+
     if (groupId !== connection.me.id && groupId !== usersGroup.id) {
       if (remoteGroup.modified > localGroup.modified) {
         // const skipValidation = !localGroup; // if we don't have the local group there's a good chance we can't verify it since the signer could be a peer we don't already know
@@ -362,7 +361,7 @@ export async function syncDBs(connection: IConnection, apps?: string[]) {
   // if apps are specified only sync data for groups that are for those apps
   if (apps?.length) {
     remoteGroups = remoteGroups.filter(g => g.apps?.length && g.apps.find(a => apps.includes(a)));
-  }  
+  }
 
   // randomize order to try to spread traffic around
   remoteGroups = _.shuffle(remoteGroups);
