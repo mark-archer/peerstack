@@ -13,6 +13,10 @@ export function isObject(x: any): x is Record<string,any> {
   return _.isObject(x) && !_.isArray(x) && !_.isDate(x) && x !== null;
 }
 
+export function cloneClean(obj: any) {
+  return JSON.parse(JSON.stringify(obj));
+}
+
 export const isArray = (x: any) => _.isArray(x);
 
 // export const guid = uuid.v4;
@@ -149,7 +153,22 @@ export function hashBlob(blob: Blob, progressUpdate?: ((a: number) => any), chun
   });
 };
 
-export function encodeUint8ArrayToBaseN(ary: Uint8Array, radix: number = 64) {
+export function PushNotifications_urlBase64ToUint8Array(base64String: string): Uint8Array {
+  const padding = '='.repeat((4 - base64String.length % 4) % 4);
+  const base64 = (base64String + padding)
+    .replace(/-/g, '+')
+    .replace(/_/g, '/');
+ 
+  const rawData = window.atob(base64);
+  const outputArray = new Uint8Array(rawData.length);
+ 
+  for (let i = 0; i < rawData.length; ++i) {
+    outputArray[i] = rawData.charCodeAt(i);
+  }
+  return outputArray;
+}
+
+export function encodeUint8ArrayToBaseN(ary: Uint8Array, radix: number = 64): string {
   if (radix === 64) {
     return base64.bytesToBase64(ary);
   }

@@ -130,6 +130,14 @@ remoteCalls.remotelyCallableFunctions.notify = notify;
 //   return notifyDevice(device, notification, toPublicBoxKey);
 // }
 
+export async function notifyUsers(users: IUser[], notification: INotification) {
+  for (const user of users) {
+    for (const device of Object.values(user.devices || {})) {
+      notifyDevice(device, notification, user.publicBoxKey);
+    }
+  }
+}
+
 export async function notifyDevice(device: IDevice, notification: INotification, toPublicBoxKey: string) {
   if (deviceId === device.id) {
     console.warn('not notifying device because remote device is the same as local device');

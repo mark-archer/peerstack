@@ -1,6 +1,7 @@
 import { connections, deviceId } from './connections';
 import { getDB, getGroupUsers, hasPermission, IData } from './db';
 import { dataToNotification, notifyDevice } from './notifications';
+import registerServiceWorker from './register-service-worker';
 import { pushData, RPC } from './remote-calls';
 import { signObject } from './user';
 
@@ -14,6 +15,8 @@ export * as notifications from './notifications';
 export * as invitations from './invitations';
 export * as user from './user';
 export * as serviceWorker from './service-worker';
+
+export { registerServiceWorker };
 
 /*
   This is meant to be the primary mechanism to save data moving forward.
