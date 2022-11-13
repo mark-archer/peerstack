@@ -8,20 +8,20 @@ import { INotification, notifyUsers } from "./notifications";
 import { IDevice, IUser, newData, signObject } from "./user";
 
 export function registerServiceWorker(serviceWorkerUrl: string, deviceId: string, me: IUser, vapidPublicKey: string, appName: string) {
-  return new Promise<void>((resolve, reject) => {
+  return new Promise<IUser>((resolve, reject) => {
   // if (process.env.NODE_ENV === 'production' && 'serviceWorker' in navigator) {
     if ('serviceWorker' in navigator) {
-      // The URL constructor is available in all browsers that support SW.
-      const publicUrl = new URL(
-        process.env.PUBLIC_URL!,
-        window.location.toString()
-      );
-      if (publicUrl.origin !== window.location.origin) {
-        // Our service worker won't work if PUBLIC_URL is on a different origin
-        // from what our page is served on. This might happen if a CDN is used to
-        // serve assets; see https://github.com/facebookincubator/create-react-app/issues/2374
-        return reject('origins do not match');
-      }
+      // // The URL constructor is available in all browsers that support SW.
+      // const publicUrl = new URL(
+      //   process.env.PUBLIC_URL!,
+      //   window.location.toString()
+      // );
+      // if (publicUrl.origin !== window.location.origin) {
+      //   // Our service worker won't work if PUBLIC_URL is on a different origin
+      //   // from what our page is served on. This might happen if a CDN is used to
+      //   // serve assets; see https://github.com/facebookincubator/create-react-app/issues/2374
+      //   return reject('origins do not match');
+      // }
       function ready(callbackFunction) {
         if (document.readyState != 'loading')
           callbackFunction()
@@ -30,8 +30,8 @@ export function registerServiceWorker(serviceWorkerUrl: string, deviceId: string
       }
       ready(async () => {
         const registration = await navigator.serviceWorker.register(serviceWorkerUrl)
-        await registerPushSubscription(registration, deviceId, me, vapidPublicKey, appName)
-        resolve();
+        const user = await registerPushSubscription(registration, deviceId, me, vapidPublicKey, appName)
+        resolve(user);
       })
       // window.addEventListener('load', () => {});
     }  
@@ -108,6 +108,7 @@ async function registerPushSubscription(registration: ServiceWorkerRegistration,
     notifyUsers(users, notification);
   }
   console.log('my devices', me.devices);
+  return me;
 }
 
 // export function unregister() {

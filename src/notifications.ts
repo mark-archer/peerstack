@@ -1,6 +1,6 @@
 import { errorAfterTimeout, isObject, user } from ".";
 import { connections, deviceId, emit, me, onMessage } from "./connections";
-import { getDB, getGroupUsers, IData } from "./db";
+import { getDB, IData } from "./db";
 import * as remoteCalls from "./remote-calls";
 import { boxDataForPublicKey, IDevice, IDataBox, openBox, verifySignedObject, IUser, signObject } from "./user";
 import { newid } from "./common";
