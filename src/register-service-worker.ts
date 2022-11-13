@@ -7,39 +7,42 @@ import { getDB } from "./db";
 import { INotification, notifyUsers } from "./notifications";
 import { IDevice, IUser, newData, signObject } from "./user";
 
-export default function registerServiceWorker(serviceWorkerUrl: string, deviceId: string, me: IUser, vapidPublicKey: string, appName: string) {
+export function registerServiceWorker(serviceWorkerUrl: string, deviceId: string, me: IUser, vapidPublicKey: string, appName: string) {
+  return new Promise<void>((resolve, reject) => {
   // if (process.env.NODE_ENV === 'production' && 'serviceWorker' in navigator) {
-  if ('serviceWorker' in navigator) {
-    // The URL constructor is available in all browsers that support SW.
-    const publicUrl = new URL(
-      process.env.PUBLIC_URL!,
-      window.location.toString()
-    );
-    if (publicUrl.origin !== window.location.origin) {
-      // Our service worker won't work if PUBLIC_URL is on a different origin
-      // from what our page is served on. This might happen if a CDN is used to
-      // serve assets; see https://github.com/facebookincubator/create-react-app/issues/2374
-      return;
-    }
-
-    function ready(callbackFunction) {
-      if (document.readyState != 'loading')
-        callbackFunction()
-      else
-        document.addEventListener("DOMContentLoaded", callbackFunction)
-    }
-    ready(async () => {
-      const registration = await navigator.serviceWorker.register(serviceWorkerUrl)
-      await registerPushSubscription(registration, deviceId, me, vapidPublicKey, appName)
-    })
-    // window.addEventListener('load', () => {});
-  }
+    if ('serviceWorker' in navigator) {
+      // The URL constructor is available in all browsers that support SW.
+      const publicUrl = new URL(
+        process.env.PUBLIC_URL!,
+        window.location.toString()
+      );
+      if (publicUrl.origin !== window.location.origin) {
+        // Our service worker won't work if PUBLIC_URL is on a different origin
+        // from what our page is served on. This might happen if a CDN is used to
+        // serve assets; see https://github.com/facebookincubator/create-react-app/issues/2374
+        return reject('origins do not match');
+      }
+      function ready(callbackFunction) {
+        if (document.readyState != 'loading')
+          callbackFunction()
+        else
+          document.addEventListener("DOMContentLoaded", callbackFunction)
+      }
+      ready(async () => {
+        const registration = await navigator.serviceWorker.register(serviceWorkerUrl)
+        await registerPushSubscription(registration, deviceId, me, vapidPublicKey, appName)
+        resolve();
+      })
+      // window.addEventListener('load', () => {});
+    }  
+  });
 }
 
 async function registerPushSubscription(registration: ServiceWorkerRegistration, deviceId: string, me: IUser, vapidPublicKey: string, appName: string) {
   let subscription: PushSubscription = await registration.pushManager.getSubscription();
   const db = await getDB();
   const hashBefore = hashObject(me);
+  me = await db.get(me.id);
 
   const device: IDevice = get(me, `devices.${deviceId}`) || { id: deviceId };
   device.app = appName;

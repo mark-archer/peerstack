@@ -1,7 +1,7 @@
 import { connections, deviceId } from './connections';
 import { getDB, getGroupUsers, hasPermission, IData } from './db';
 import { dataToNotification, notifyDevice } from './notifications';
-import registerServiceWorker from './register-service-worker';
+import { registerServiceWorker } from './register-service-worker';
 import { pushData, RPC } from './remote-calls';
 import { signObject } from './user';
 
