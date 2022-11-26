@@ -50,6 +50,11 @@ async function processNotification(notification: INotification): Promise<boolean
   const sender: IUser = await db.get(notification.signer);
   verifySignedObject(notification, sender.publicKey);
   if (isObject(notification.data)) {
+    // // TODO test this
+    // const dbData = await db.get(notification.data.id);
+    // if (dbData && dbData.modified >= notification.data.modified) {
+    //   return false;
+    // }
     await db.save(notification.data);
     remoteCalls.eventHandlers.onRemoteDataSaved(notification.data);
     notification.subject = notification.data.id;

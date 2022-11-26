@@ -349,3 +349,8 @@ export function newData(fields?: Partial<IData>): IData {
     ...fields
   }
 }
+
+export function generateRandomSecureString() {
+  const newKey = nacl.sign.keyPair();
+  return encodeUint8ArrayToBaseN(newKey.secretKey).replace(/[\/\+\=]/g, '');
+}
