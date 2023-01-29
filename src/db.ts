@@ -1,5 +1,5 @@
-import { compact, groupBy, isArray, isObject, set, sortBy, uniq } from 'lodash';
-import { hashObject } from './common';
+import { cloneDeep, compact, groupBy, isArray, isObject, set, sortBy, uniq } from 'lodash';
+import { hashObject, idTime } from './common';
 import { ISigned, IUser, keysEqual, verifySignedObject } from './user';
 import * as dbix from './dbix'
 
@@ -11,7 +11,21 @@ export interface IData extends ISigned {
   modified: number
   subject?: string
   ttl?: number // date in ms after which the data should be deleted
-  [key: string]: any
+  // [key: string]: any
+}
+
+export interface IDataChange extends ISigned {
+  id: string
+  group: string
+  subject: string
+  modified: number
+  received: number
+  changeSet: {
+    op: 'set' | 'rm'
+    path: string
+    value?: any
+  }[]
+  newObjectSignature?: string
 }
 
 export interface IGroupMember {
@@ -114,7 +128,7 @@ export type DBQuery = DBKeyValue | DBKeyArray | DBKeyRange
 
 export interface IDB {
   save: (data: IData | IData[], skipValidation?: boolean) => Promise<void>
-  get: <T = IData>(id: string) => Promise<T>
+  get: <T extends IData>(id: string) => Promise<T>
   delete: (id: string) => Promise<void>
   find: <T = IData>(query?: DBQuery, index?: Indexes) => Promise<T[]>
   openCursor: <T extends IData>(query?: DBQuery, index?: Indexes, direction?: DBCursorDirection) => Promise<ICursor<T>>
@@ -142,12 +156,16 @@ export interface IPersistenceLayer {
   init: (opts: PeerstackDBOpts) => Promise<IDB>
 }
 
-let db: IDB
 
+let dbPromise: Promise<IDB>;
 export async function init(opts?: PeerstackDBOpts): Promise<IDB> {
-  if (db) {
-    return db;
+  if (dbPromise) {
+    return dbPromise;    
   }
+  let db: IDB;
+  let resolveDbPromise
+  dbPromise = new Promise(resolve => resolveDbPromise = resolve);
+  
   let persistenceLayer = opts?.persistenceLayer;
   if (!persistenceLayer) {
     if (typeof indexedDB !== 'undefined') {
@@ -213,16 +231,13 @@ export async function init(opts?: PeerstackDBOpts): Promise<IDB> {
     return _db.files.save(file);
   }
 
-  return db;
+  resolveDbPromise(db);
+  return dbPromise;
 }
 
 // TODO this is redundant with `init` and should probably be deprecated
 export async function getDB(): Promise<IDB> {
-  if (!db) {
-    db = await init();
-    // throw new Error('db has not been initialized')
-  }
-  return db;
+  return init();
 }
 
 export const checkPermission = (function <T extends Function>(hasPermission: T): T {
@@ -272,9 +287,35 @@ export async function hasPermission(userId: string, group: string | IGroup, acce
   return Boolean(memberWithAccess);
 }
 
+export async function validateChangesets(db: IDB, changeSets: IDataChange[]) {
+  const subjects = uniq(changeSets.map(d => d.subject));
+  const datas: IData[] = [];
+  for (const subject of subjects) {
+    const dbData = await db.get(subject);
+    const data: IData = cloneDeep(dbData || {} as any);
+    const changes = sortBy(changeSets.filter(d => d.subject === subject), 'modified');
+    changes.forEach(change => {
+      change.changeSet.forEach(cs => {
+        if (cs.op === 'set') {
+          set(data, cs.path, cs.value);
+        }
+        else if (cs.op === 'rm') {
+          set(data, cs.path, undefined);
+        }
+        else {
+          throw new Error(`unrecognized op ${cs.op}`);
+        }
+      });
+      data.modified = change.modified;
+    });
+  }
+  await validateData(db, datas);
+  return datas;
+}
+
 const users: { [userId: string]: IUser } = {};
 export async function validateData(db: IDB, datas: IData[]) {
-  const requiredFields = ['modified', 'type', 'group', 'id', 'owner', 'signature', 'signer'];
+  const requiredFields = ['modified', 'type', 'group', 'id', 'owner'];
   for (const data of datas) {
     if (!isObject(data)) {
       throw new Error('data must be an object')
@@ -285,7 +326,9 @@ export async function validateData(db: IDB, datas: IData[]) {
     if (data.modified > (Date.now() + 60000)) {
       throw new Error(`modified timestamp cannot be in the future`);
     }
-    // TODO also verify time part of id is not in the future
+    if (idTime(data.id) > (Date.now() + 60000)) {
+      throw new Error(`time part of id cannot be in the future`);
+    }
     // TODO verify type is not being changed on existing data (e.g. deleting a user or group)
     if (data.type === 'Group') {
       if (data.id !== data.group) {
@@ -298,9 +341,6 @@ export async function validateData(db: IDB, datas: IData[]) {
       }
       if (data.owner !== data.id) {
         throw new Error(`The owner of a user must be that same user`);
-      }
-      if (data.signer !== data.id) {
-        throw new Error(`The signer of a user must be that same user`)
       }
       const dbUser = users[data.id] || await db.get(data.id) as IUser;
       if (dbUser && !keysEqual((data as IUser).publicKey, dbUser.publicKey)) {

@@ -1,7 +1,6 @@
 import { newid } from "./common";
 import { IConnection, testError, IRemoteChunk, RPC, ping, IRemoteData, onRemoteMessage, IRemoteCall } from "./remote-calls";
 import { newUser, signMessage, signObject } from "./user";
-import { should } from 'should';
 
 describe('connection', () => {
   const localDeviceId = newid();

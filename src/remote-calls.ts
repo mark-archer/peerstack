@@ -422,8 +422,7 @@ export async function pushData(data: IData, dontBroadcast?: boolean) {
   }
 }
 
-// these names have to be done this way so they persist through code minification
-export const remotelyCallableFunctions: { [key: string]: Function } = {
+const remotelyCallableFunctions: { [key: string]: Function } = {
   ping,
   testError,
   getRemoteGroups,
@@ -434,6 +433,10 @@ export const remotelyCallableFunctions: { [key: string]: Function } = {
   pushData,
   signId,
   streamRemoteDataSync: fastSyncRemote,
+}
+
+export function setRemotelyCallableFunction(fn: Function, name?: string) {
+  remotelyCallableFunctions[name || fn.name] = fn;
 }
 
 export function RPC<T extends Function>(connection: IConnection, fn: T): T {

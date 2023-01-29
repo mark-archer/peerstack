@@ -2,11 +2,13 @@ import { hashObject } from "./common";
 import { newUser, signMessage, openMessage, signObject, verifySignedObject, init } from "./user"
 import * as _ from 'lodash';
 import 'should';
+import { initDBWithMemoryMock } from "./db-mock";
 
 describe('user', () => {
 
   const me = newUser();
   beforeAll(async () => {
+    await initDBWithMemoryMock()
     await init(me);
   })
 
@@ -31,14 +33,14 @@ describe('user', () => {
     const obj = { name: 'mark', date: new Date() }
     const signedObj = signObject(obj);
     signedObj.name = 'some other name'
-    expect(() => verifySignedObject(signedObj, me.publicKey)).toThrow(/signature hash does not match/)
+    expect(() => verifySignedObject(signedObj, me.publicKey)).toThrow(/Object signature verification failed/);
   })
 
-  test('object hashs are 64 chars and signatures 256 chars', () => {
+  test('object hashes are 64 chars and signatures 172 chars', () => {
     const obj = { nums: _.range(1000000), propA: 'A', propB: 'B' };
     const hash = hashObject(obj);
     hash.length.should.equal(64);
     const signature = signMessage(hash);
-    signature.length.should.equal(256);
+    signature.length.should.equal(172);
   })
 })

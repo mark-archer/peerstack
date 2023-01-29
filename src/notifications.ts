@@ -105,7 +105,9 @@ export async function notify(notification: INotification) {
     console.error('Error processing notification', notification, err);
   }
 }
-remoteCalls.remotelyCallableFunctions.notify = notify;
+
+// remoteCalls.remotelyCallableFunctions.notify = notify;
+remoteCalls.setRemotelyCallableFunction(notify);
 
 // export async function pushDataAsNotification(data: IData) {
 //   const notification = dataToNotification(data);

@@ -2,7 +2,7 @@ import { signObject, newUser, signMessageWithSecretKey, openMessage, init as ini
 import { registerDevice } from './connections';
 import { getDB, IData, IGroup } from './db';
 import { isid, newid } from './common';
-import { eventHandlers, getCurrentConnection, IConnection, remotelyCallableFunctions, RPC } from './remote-calls';
+import { eventHandlers, getCurrentConnection, IConnection, RPC, setRemotelyCallableFunction } from './remote-calls';
 
 export interface IInvitation extends IData {
   type: 'Invitation',
@@ -129,7 +129,8 @@ async function verifyInvitationSender(inviteId: string, idToSign: string) {
   }
 }
 
-remotelyCallableFunctions.verifyInvitationSender = verifyInvitationSender;
+// remotelyCallableFunctions.verifyInvitationSender = verifyInvitationSender;
+setRemotelyCallableFunction(verifyInvitationSender);
 
 async function confirmInvitation(inviteId: string, publicKey: string) {
   const connection = getCurrentConnection();
@@ -158,4 +159,5 @@ async function confirmInvitation(inviteId: string, publicKey: string) {
   return group
 }
 
-remotelyCallableFunctions.confirmInvitation = confirmInvitation;
+// remotelyCallableFunctions.confirmInvitation = confirmInvitation;
+setRemotelyCallableFunction(verifyInvitationSender);

@@ -2,9 +2,10 @@ import { shuffle } from "lodash";
 import { hashBlob } from "./common";
 import { chunkSize, connections, IDeviceConnection } from "./connections";
 import { getDB, hasPermission, IData, IFile } from "./db";
-import { getCurrentConnection, remotelyCallableFunctions, RPC, verifyRemoteUser } from "./remote-calls";
+import { getCurrentConnection, RPC, setRemotelyCallableFunction, verifyRemoteUser } from "./remote-calls";
 
-remotelyCallableFunctions.getFile = getFile;
+// remotelyCallableFunctions.getFile = getFile;
+setRemotelyCallableFunction(getFile);
 
 console.log('remote-files');
 

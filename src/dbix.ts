@@ -37,6 +37,9 @@ export async function init(
   }
 
   function createIndex(objectStore: IDBObjectStore, index: Indexes) {
+    if (typeof index !== 'string') {
+      throw new Error('only strings are supported')
+    }
     let keyPath: string[] | string = index.split('-');
     if (keyPath.length == 1) {
       keyPath = keyPath[0];
@@ -147,7 +150,7 @@ export async function init(
           const ixEntry: IKVIndexEntry = {
             indexId: ix.id,
             dataId: data.id,
-            dataValue: data[ix.key],
+            dataValue: data[ix.dataKey],
           }
           ixInserts.push(
             dbOp('keyValueIndex', 'put', ixEntry)

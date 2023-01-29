@@ -48,7 +48,7 @@ describe('db', () => {
   test.skip('indexedDB baseOps CRUD', async () => {
     const db = await getDB();
     const id = newid();
-    let data: IData = { type: 'any', id, group: id, owner: id, signature: null, test: 4, modified: Date.now() }
+    let data: IData = { type: 'any', id, group: id, owner: id, signature: null, modified: Date.now() }
 
     // CREATE
     await db.save(data)
