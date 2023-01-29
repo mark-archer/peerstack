@@ -1,14 +1,14 @@
 import * as nacl from 'tweetnacl';
 import * as naclUtil from 'tweetnacl-util';
-import { 
-  decodeUint8ArrayFromBaseN, 
-  encodeUint8ArrayToBaseN, 
-  decodeUint8ArrayFromUTF, 
-  encodeUint8ArrayToUTF, 
-  hashObject, 
-  newid, 
-  stringify, 
-  parseJSON 
+import {
+  decodeUint8ArrayFromBaseN,
+  encodeUint8ArrayToBaseN,
+  decodeUint8ArrayFromUTF,
+  encodeUint8ArrayToUTF,
+  hashObject,
+  newid,
+  stringify,
+  parseJSON
 } from './common';
 import { getDB, IData } from './db';
 
@@ -95,7 +95,7 @@ export async function init(config?: { id: string, secretKey: string, name?: stri
     //     return userId;
     //   }    
     // } catch { }
-    
+
     // if `navigator.credentials` fails then store in db.local
     // can't use credential store so fallback to local storage for now 
     // TODO find a more secure way to do this
@@ -112,10 +112,10 @@ export async function init(config?: { id: string, secretKey: string, name?: stri
       userId = creds.name;
       // @ts-ignore
       secretKey = creds.password;
-      publicBoxKey = hydrateUser(userId, secretKey).publicBoxKey;      
+      publicBoxKey = hydrateUser(userId, secretKey).publicBoxKey;
       return userId
     }
-  } catch {}
+  } catch { }
   // if all else fails try to look it up in db.local
   const db = await getDB();
   config = (await db.local.get(credentialsId))?.config;
@@ -156,7 +156,7 @@ export function signMessageWithSecretKey(msg: string, secretKey: string) {
   }
   const msgDecoded = naclUtil.decodeUTF8(msg);
   const msgSigned = nacl.sign(msgDecoded, _secretKey);
-  return encodeUint8ArrayToBaseN(msgSigned);  
+  return encodeUint8ArrayToBaseN(msgSigned);
 }
 
 export interface IDataBox {
@@ -181,7 +181,7 @@ export function boxDataWithKeys(data: any, toPublicBoxKey: string, fromSecretKey
   return {
     fromUserId,
     contents: encodeUint8ArrayToBaseN(dataBoxed),
-    nonce: encodeUint8ArrayToBaseN(nonce) 
+    nonce: encodeUint8ArrayToBaseN(nonce)
   }
 }
 
@@ -266,7 +266,7 @@ export function openBoxWithSecretKey(box: IDataBox, fromPublicBoxKey: string, to
   const boxedData = decodeUint8ArrayFromBaseN(box.contents);
   const nonce = decodeUint8ArrayFromBaseN(box.nonce);
   const fromPublicKey = decodeUint8ArrayFromBaseN(fromPublicBoxKey);
-  
+
   const dataAry = nacl.box.open(boxedData, nonce, fromPublicKey, _toSecretKey);
   if (dataAry === null) {
     console.log('Message was null or verification failed', box)
@@ -287,7 +287,7 @@ export async function openBox(box: IDataBox) {
 
 export function verifySignature(message: string, signature: string, publicKey: string) {
   const messageAry = naclUtil.decodeUTF8(message);
-  const sig = decodeUint8ArrayFromBaseN(signature);  
+  const sig = decodeUint8ArrayFromBaseN(signature);
   let _publicKey: Uint8Array;
   if (publicKey.length == 64) {
     _publicKey = decodeUint8ArrayFromBaseN(publicKey, 36)
@@ -336,18 +336,19 @@ export function keysEqual(publicKey1: string, publicKey2: string) {
   return publicKey1 === publicKey2;
 }
 
-export function newData(fields?: Partial<IData>): IData {
+export function newData<T>(fields?: Partial<IData> & T): IData & T {
   if (!userId) {
     console.warn('user has not been initialized so owner and group may be uninitialized')
   }
-  return {    
+  const value: IData & T = {
     id: newid(),
     type: 'Data',
     group: userId,
     owner: userId,
-    modified: Date.now(),  
+    modified: Date.now(),
     ...fields
   }
+  return value
 }
 
 export function generateRandomSecureString() {

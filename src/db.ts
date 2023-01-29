@@ -1,4 +1,4 @@
-import { cloneDeep, compact, groupBy, isArray, isObject, set, sortBy, uniq } from 'lodash';
+import { cloneDeep, compact, groupBy, isArray, isObject, set, sortBy, uniq, unset } from 'lodash';
 import { hashObject, idTime } from './common';
 import { ISigned, IUser, keysEqual, verifySignedObject } from './user';
 import * as dbix from './dbix'
@@ -15,17 +15,14 @@ export interface IData extends ISigned {
 }
 
 export interface IDataChange extends ISigned {
-  id: string
-  group: string
+  // id: string
+  // group: string
   subject: string
   modified: number
-  received: number
-  changeSet: {
-    op: 'set' | 'rm'
-    path: string
-    value?: any
-  }[]
+  set?: [string, any][]
+  rm?: string[]
   newObjectSignature?: string
+  received?: number
 }
 
 export interface IGroupMember {
@@ -65,15 +62,15 @@ export interface IKVIndex extends IData {
   dataType?: string // if no dataType is specified index will apply to _all_ data in group    
 }
 
-export const usersGroup: IGroup = { 
-  type: 'Group', 
-  id: 'users', 
-  group: 'users', 
-  owner: 'users', 
-  name: 'Users', 
-  modified: Date.now(), 
-  members: [], 
-  blockedUserIds: [] 
+export const usersGroup: IGroup = {
+  type: 'Group',
+  id: 'users',
+  group: 'users',
+  owner: 'users',
+  name: 'Users',
+  modified: Date.now(),
+  members: [],
+  blockedUserIds: []
 };
 
 let _personalGroup: IGroup;
@@ -160,12 +157,12 @@ export interface IPersistenceLayer {
 let dbPromise: Promise<IDB>;
 export async function init(opts?: PeerstackDBOpts): Promise<IDB> {
   if (dbPromise) {
-    return dbPromise;    
+    return dbPromise;
   }
   let db: IDB;
   let resolveDbPromise
   dbPromise = new Promise(resolve => resolveDbPromise = resolve);
-  
+
   let persistenceLayer = opts?.persistenceLayer;
   if (!persistenceLayer) {
     if (typeof indexedDB !== 'undefined') {
@@ -295,16 +292,11 @@ export async function validateChangesets(db: IDB, changeSets: IDataChange[]) {
     const data: IData = cloneDeep(dbData || {} as any);
     const changes = sortBy(changeSets.filter(d => d.subject === subject), 'modified');
     changes.forEach(change => {
-      change.changeSet.forEach(cs => {
-        if (cs.op === 'set') {
-          set(data, cs.path, cs.value);
-        }
-        else if (cs.op === 'rm') {
-          set(data, cs.path, undefined);
-        }
-        else {
-          throw new Error(`unrecognized op ${cs.op}`);
-        }
+      change.set.forEach(([path, value]) => {
+        set(data, path, value);
+      });
+      change.rm.forEach((path) => {
+        unset(data, path);
       });
       data.modified = change.modified;
     });
