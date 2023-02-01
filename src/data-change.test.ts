@@ -2,7 +2,7 @@ import { newUser, signMessage, openMessage, init, newData } from "./user"
 import * as _ from 'lodash';
 import 'should';
 import { initDBWithMemoryMock } from "./db-mock";
-import { flattenObject, getChanges } from "./data-change";
+import { applyChange, flattenObject, getChanges } from "./data-change";
 
 describe('user', () => {
 
@@ -105,7 +105,6 @@ describe('user', () => {
       )
     })
 
-
     test('empty to value', () => {
       expect(
         getChanges({}, { a: 1 })
@@ -141,6 +140,178 @@ describe('user', () => {
       )
     })
 
+    test('complex change', () => {
+      const d = new Date();
+      expect(
+        getChanges(
+          { a: { b: [1, 2, 3] }, d: d, dd: d },
+          { ddd: d, d: d, a: { b: [1, 3] }, c: { d: null } }
+        )
+      ).toEqual(
+        {
+          set: [
+            ['a.b.1', 3],
+            ['c', { d: null }],
+            ['ddd', d],
+          ],
+          rm: [
+            'a.b.2',
+            'dd'
+          ]
+        }
+      )
+    })
+
+    test('complex object, no change', () => {
+      const d = new Date();
+      expect(
+        getChanges(
+          { ddd: d, d: d, a: { b: [1, 3] }, c: { d: null } },
+          { ddd: d, d: d, a: { b: [1, 3] }, c: { d: null } }
+        )
+      ).toEqual(
+        {
+          set: [],
+          rm: []
+        }
+      )
+    })
+
+    test('sub objects removed', () => {
+      const d = new Date();
+      expect(
+        getChanges(
+          { ary: [1,2,3], obj: { a: 1, b: 2 }, n: 1 },
+          { n: 2 }
+        )
+      ).toEqual(
+        {
+          set: [['n', 2]],
+          rm: ['ary', 'obj']
+        }
+      )
+    })
+
+    test('sub objects emptied', () => {
+      const d = new Date();
+      expect(
+        getChanges(
+          { ary: [1,2,3], obj: { a: 1, b: 2 }, n: 1 },
+          { n: 2, ary: [], obj: {} }
+        )
+      ).toEqual(
+        {
+          set: [
+            ['ary', []],
+            ['n', 2],
+            ['obj', {}],
+          ],
+          rm: []
+          // rm: [
+          //   'ary.0',
+          //   'ary.1',
+          //   'ary.2',
+          //   'obj.a',
+          //   'obj.b',
+          // ]
+        }
+      )
+    })
+
+    test('sub objects added', () => {
+      const d = new Date();
+      expect(
+        getChanges(
+          { n: 2 },
+          { ary: [1,2,3], obj: { a: 1, b: 2 }, n: 1 },
+        )
+      ).toEqual(
+        {
+          set: [
+            ['ary', [1,2,3]],
+            ['n', 1],
+            ['obj', { a: 1, b: 2 }],            
+          ],
+          rm: []
+        }
+      )
+    })
+
+    test('sub sub objects removed', () => {
+      expect(
+        getChanges(
+          { ary: [1,[1]], obj: { a: 1, b: { c: 3 }, d: [1, 2] } },
+          { ary: [1], obj: { a: 1, d: [2] } }
+        )
+      ).toEqual(
+        {
+          set: [['obj.d.0', 2]],
+          rm: [
+            'ary.1', 
+            'obj.b',
+            'obj.d.1',
+          ]
+        }
+      )
+    })
+
+    test('empty array added', () => {
+      expect(
+        getChanges(
+          { ary: [1,[1]], obj: { a: 1, b: { c: 3 }, d: [1, 2] } },
+          { ary: [1], obj: { a: 1, d: [2] } }
+        )
+      ).toEqual(
+        {
+          set: [['obj.d.0', 2]],
+          rm: [
+            'ary.1', 
+            'obj.b',
+            'obj.d.1',
+          ]
+        }
+      )
+    })
+
+    test('array to obj', () => {
+      expect(
+        getChanges(
+          { a: [1] },
+          { a: { n: 1 } }
+        )
+      ).toEqual(
+        {
+          set: [['a', { n: 1 }]],
+          rm: []
+        }
+      )
+    })
+  })
+
+  describe('applyChange', () => {
+    test('simple set', () => {
+      expect(
+        applyChange({}, { set: [['a', 1]], rm: []})
+      ).toEqual(
+        { a: 1 }
+      )
+    })
+
+    test('new array', () => {
+      expect(
+        applyChange({}, { set: [['a.0', 1]], rm: []})
+      ).toEqual(
+        { a: [1] }
+      )
+    })
+
+    test('new empty array', () => {
+      expect(
+        applyChange({}, { set: [['a', [] as any]], rm: []})
+      ).toEqual(
+        { a: [] }
+      )
+    })
   })
 
 })
