@@ -1,4 +1,4 @@
-import { cloneDeep, compact, groupBy, isArray, isObject, set, sortBy, uniq, unset } from 'lodash';
+import { compact, groupBy, isArray, isObject, set, sortBy, uniq } from 'lodash';
 import { hashObject, idTime } from './common';
 import { ISigned, IUser, keysEqual, verifySignedObject } from './user';
 import * as dbix from './dbix'
@@ -11,18 +11,7 @@ export interface IData extends ISigned {
   modified: number
   subject?: string
   ttl?: number // date in ms after which the data should be deleted
-  // [key: string]: any
-}
-
-export interface IDataChange extends ISigned {
-  // id: string
-  // group: string
-  subject: string
-  modified: number
-  set?: [string, any][]
-  rm?: string[]
-  newObjectSignature?: string
-  received?: number
+  [key: string]: any
 }
 
 export interface IGroupMember {
@@ -284,30 +273,9 @@ export async function hasPermission(userId: string, group: string | IGroup, acce
   return Boolean(memberWithAccess);
 }
 
-export async function validateChangesets(db: IDB, changeSets: IDataChange[]) {
-  const subjects = uniq(changeSets.map(d => d.subject));
-  const datas: IData[] = [];
-  for (const subject of subjects) {
-    const dbData = await db.get(subject);
-    const data: IData = cloneDeep(dbData || {} as any);
-    const changes = sortBy(changeSets.filter(d => d.subject === subject), 'modified');
-    changes.forEach(change => {
-      change.set.forEach(([path, value]) => {
-        set(data, path, value);
-      });
-      change.rm.forEach((path) => {
-        unset(data, path);
-      });
-      data.modified = change.modified;
-    });
-  }
-  await validateData(db, datas);
-  return datas;
-}
-
 const users: { [userId: string]: IUser } = {};
 export async function validateData(db: IDB, datas: IData[]) {
-  const requiredFields = ['modified', 'type', 'group', 'id', 'owner'];
+  const requiredFields = ['modified', 'type', 'group', 'id', 'owner', 'signature', 'signer'];
   for (const data of datas) {
     if (!isObject(data)) {
       throw new Error('data must be an object')
@@ -333,6 +301,9 @@ export async function validateData(db: IDB, datas: IData[]) {
       }
       if (data.owner !== data.id) {
         throw new Error(`The owner of a user must be that same user`);
+      }
+      if (data.signer !== data.id) {
+        throw new Error(`The signer of a user must be that same user`)
       }
       const dbUser = users[data.id] || await db.get(data.id) as IUser;
       if (dbUser && !keysEqual((data as IUser).publicKey, dbUser.publicKey)) {
