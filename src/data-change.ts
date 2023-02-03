@@ -1,7 +1,7 @@
 import { isArray, isObject, isDate, uniq, set, unset, isEqual } from "lodash";
 import { me } from "./connections";
 import { checkPermission, getDB, hasPermission, IData, validateData } from "./db";
-import { ISigned, signObject } from './user';
+import { ISigned, IUser, signObject, verifySignedObject } from './user';
 // import { isObject } from "./common";
 
 export interface IChange {
@@ -81,7 +81,7 @@ export interface IDataChange extends IChange, ISigned {
 }
 
 // this is to save changes made locally - we need a different function to save remote changes
-export async function saveData<T extends IData>(data: T) {
+export async function saveChange<T extends IData>(data: T) {
   const db = await getDB();
   const dbData = await db.get(data.id);
   await validateData(db, [data]);
@@ -104,15 +104,26 @@ export async function saveData<T extends IData>(data: T) {
     modified: data.modified,
     ...change
   }
+  signObject(dataChange);
+  dataChange.received = Date.now();
   // await db.changes.save(dataChange);
   return dataChange;
 }
 
 export async function receiveChange(dataChange: IDataChange) {
   const db = await getDB();
+
+  delete dataChange.received;
+  const publicKey = (await db.get(dataChange.signer) as IUser).publicKey;
+  verifySignedObject(dataChange, publicKey);
+  dataChange.received = Date.now();
   const dbData = await db.get(dataChange.subject);
   const data = applyChange(dbData, dataChange);
-  await db.save(data);
+  // this also does validation and expects `signer` and `signature` are updated correctly
+  // this prevents merging multiple changes from different users which is particularly desireable
+  // the validation should occur on the _change_ and this should remove `signer` and `signature` and save without validation
+  // this same logic should be used in `saveChange` above so users don't accidentally create invalid changes
+  await db.save(data); 
   // await db.changes.save(dataChange);
   return data;
 }
