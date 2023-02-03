@@ -1,28 +1,16 @@
-import { isArray, isObject, isDate, sortBy, get, uniq, compact, set, unset, isEqual } from "lodash";
+import { isArray, isObject, isDate, uniq, set, unset, isEqual } from "lodash";
 // import { isObject } from "./common";
-
-export type ILeaf = boolean | number | string | Date | null
-
-export interface IObj {
-  [key: string]: ILeaf | IObj | IObj[]
-}
-
-// TODO these aren't typed correct and will allow most things
-export type IEmptyArray = [];
-export type IEmptyObject = {};
-
-export type IFlat = [string, ILeaf | IEmptyArray | IEmptyObject][]
 
 export interface IChange {
   set: [string, any][],
   rm: string[],
 }
 
-export function isObj(x: any): x is IObj {
+function isObj(x: any) {
   return isObject(x) && !isArray(x) && !isDate(x) && x !== null;
 }
 
-export function isLeaf(x: unknown): x is ILeaf {
+export function isLeaf(x: unknown) {
   return !isObject(x) || isDate(x) || x === null;
 }
 
@@ -31,22 +19,9 @@ export function isEmptyObj(x: any): x is {} {
 }
 
 export function isEmptyArray(x: any): x is [] {
-  return isArray(x) && x.length === 0;
+  return isArray(x) && Object.keys(x).length === 0;
 }
 
-export function flattenObject(obj: Record<string, any> | any[], pathPrefix: string = ''): IFlat {
-  const pathValues: IFlat = [];
-  for (const [pathPart, value] of Object.entries(obj)) {
-    const path = pathPrefix + pathPart;
-    if (isLeaf(value) || isEmptyObj(value) || isEmptyArray(value)) {
-      pathValues.push([path, value]);
-    } else {
-      const subPathValues = flattenObject(value, path + '.');
-      pathValues.push(...subPathValues);
-    }
-  }
-  return pathValues;
-}
 
 export function getChanges(objFrom: any, objTo: any): IChange {
   const changes: IChange = {

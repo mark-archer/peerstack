@@ -2,7 +2,7 @@ import { newUser, init } from "./user"
 import * as _ from 'lodash';
 import 'should';
 import { initDBWithMemoryMock } from "./db-mock";
-import { applyChange, flattenObject, getChanges } from "./data-change";
+import { applyChange, getChanges, isEmptyArray } from "./data-change";
 
 describe('data-change', () => {
 
@@ -13,62 +13,12 @@ describe('data-change', () => {
     await init(me);
   })
 
-  describe('flattenObject', () => {
-    test('date', () => {
-      const d = new Date();
-      expect(
-        flattenObject({ d })
-      ).toEqual(
-        [["d", d]]
-      )
-    })
-
-    test('array', () => {
-      expect(
-        flattenObject([1, 'a'])
-      ).toEqual(
-        [
-          ["0", 1],
-          ["1", 'a'],
-        ]
-      )
-    })
-
-    test('complex object', () => {
-      const d = new Date();
-      const data = {
-        n: 1, d, b: true, s: 'a', ary: [2, d, false, 'b'],
-        obj: {
-          n: 1, d, b: true, s: 'a', ary: [2, d, false, 'b']
-        },
-        null: null,
-        undefined: undefined,
-      };
-
-      expect(
-        flattenObject(data)
-      ).toEqual(
-        [
-          ['n', 1],
-          ['d', d],
-          ['b', true],
-          ['s', 'a'],
-          ['ary.0', 2],
-          ['ary.1', d],
-          ['ary.2', false],
-          ['ary.3', 'b'],
-          ['obj.n', 1],
-          ['obj.d', d],
-          ['obj.b', true],
-          ['obj.s', 'a'],
-          ['obj.ary.0', 2],
-          ['obj.ary.1', d],
-          ['obj.ary.2', false],
-          ['obj.ary.3', 'b'],
-          ['null', null],
-          ['undefined', undefined],
-        ]
-      )
+  describe('isEmptyArray', () => {
+    test('array with nonnumeric key', () => {
+      const ary = [];
+      // @ts-ignore
+      ary.a = 1;
+      expect(isEmptyArray(ary)).toEqual(false);
     })
   })
 
@@ -347,7 +297,7 @@ describe('data-change', () => {
       )
     })
 
-    test('array to obj (with same path any values)', () => {
+    test('array to obj (with same key and value)', () => {
       expect(
         getChanges(
           { a: [1] },
@@ -361,7 +311,7 @@ describe('data-change', () => {
       )
     })
 
-    test('obj with numeric path', () => {
+    test('obj with numeric key', () => {
       expect(
         getChanges(
           { a: { "0": 1 } },
@@ -370,6 +320,23 @@ describe('data-change', () => {
       ).toEqual(
         {
           set: [['a.0', 2]],
+          rm: []
+        }
+      )
+    })
+
+    test('array with nonnumeric key', () => {
+      const ary1 = [1]; const ary2 = [2];
+      //@ts-ignore
+      ary1.n = 1; ary2.n = 2;
+      expect(
+        getChanges(
+          ary1,
+          ary2,
+        )
+      ).toEqual(
+        {
+          set: [['0', 2],['n', 2]],
           rm: []
         }
       )
