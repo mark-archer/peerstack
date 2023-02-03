@@ -7,10 +7,14 @@ export interface IObj {
   [key: string]: ILeaf | IObj | IObj[]
 }
 
-export type IFlat = [string, ILeaf | IObj][]
+// TODO these aren't typed correct and will allow most things
+export type IEmptyArray = [];
+export type IEmptyObject = {};
+
+export type IFlat = [string, ILeaf | IEmptyArray | IEmptyObject][]
 
 export interface IChange {
-  set: IFlat,
+  set: [string, any][],
   rm: string[],
 }
 
@@ -44,52 +48,6 @@ export function flattenObject(obj: Record<string, any> | any[], pathPrefix: stri
   return pathValues;
 }
 
-export function getChanges_v1(objFrom: any, objTo: any): IChange {
-  let flatFrom = flattenObject(objFrom);
-  let flatTo = flattenObject(objTo);
-
-  flatFrom = sortBy(flatFrom, ([path]) => path);
-  flatTo = sortBy(flatTo, ([path]) => path);
-
-  const changes: IChange = {
-    set: [],
-    rm: [],
-  };
-
-  let iFrom = 0;
-  let iTo = 0;
-  while (iFrom < flatFrom.length || iTo < flatTo.length) {
-    const [pathFrom, valueFrom] = flatFrom[iFrom] || [];
-    const [pathTo, valueTo] = flatTo[iTo] || [];
-
-    if (pathFrom === pathTo) {
-      if (valueFrom !== valueTo) {
-        changes.set.push(flatTo[iTo]);
-      }
-      iFrom++;
-      iTo++;
-    } else if (!pathFrom || pathFrom > pathTo) {
-      changes.set.push(flatTo[iTo]);
-      iTo++;
-    } else { // !pathTo || pathFrom < pathTo
-      let pathFromParts = pathFrom.split('.');
-      while(pathFromParts.length > 1) {
-        const pathMinusOne = pathFromParts
-          .slice(0, pathFromParts.length - 1)
-          .join('.');
-        if (get(objTo, pathMinusOne)) {
-          break;
-        }
-        pathFromParts.length--;
-      }
-      changes.rm.push(pathFromParts.join('.'));
-      iFrom++;
-    }
-  }
-  changes.rm = compact(uniq(changes.rm));
-  return changes;
-}
-
 export function getChanges(objFrom: any, objTo: any): IChange {
   const changes: IChange = {
     set: [],
@@ -97,7 +55,7 @@ export function getChanges(objFrom: any, objTo: any): IChange {
   };
 
   const allKeys = uniq([
-    ...Object.keys(objFrom), 
+    ...Object.keys(objFrom),
     ...Object.keys(objTo),
   ]).sort();
 
@@ -109,8 +67,8 @@ export function getChanges(objFrom: any, objTo: any): IChange {
     }
     if (toVal === undefined) {
       changes.rm.push(key);
-    } else if (      
-      (!isEmptyObj(toVal) && isObj(toVal) && isObj(fromVal)) || 
+    } else if (
+      (!isEmptyObj(toVal) && isObj(toVal) && isObj(fromVal)) ||
       (!isEmptyArray(toVal) && isArray(toVal) && isArray(fromVal))
     ) {
       const subChanges = getChanges(fromVal, toVal);
@@ -125,7 +83,7 @@ export function getChanges(objFrom: any, objTo: any): IChange {
   return changes;
 }
 
-export function applyChange(toObj: IObj, change: IChange) {
+export function applyChange(toObj: any, change: IChange) {
   change.set.forEach(([path, value]) => {
     set(toObj, path, value);
   });
