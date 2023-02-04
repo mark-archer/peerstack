@@ -1,4 +1,5 @@
 import { isArray } from "lodash";
+import { IDataChange } from "./data-change";
 import { DBQuery, IData, IDB, IFile, Indexes, IPersistenceLayer, init as initDB } from "./db"
 
 
@@ -29,7 +30,8 @@ class MemoryCollection<T extends { id: string }> {
 export async function initMemoryDB() {
   const dataCollection = new MemoryCollection<IData>();
   const filesCollection = new MemoryCollection<IFile>();
-  const localCollection = new MemoryCollection<IData>();
+  const localCollection = new MemoryCollection<any>();
+  const changesCollection = new MemoryCollection<IDataChange>();
 
   let db: IDB = {
     save: dataCollection.save,
@@ -39,21 +41,23 @@ export async function initMemoryDB() {
     find: dataCollection.find,
     openCursor: dataCollection.openCursor,
     files: {
-      // save: (file: IFile) => Promise<void>
-      // get: (id: string) => Promise<IFile>
-      // delete: (id: string) => Promise<void>
       save: file => filesCollection.save(file),
       get: filesCollection.get,
       delete: filesCollection.delete,
     },
     local: {
-      // save: (data: any) => Promise<void>
-      // get: (id: string) => Promise<any>
-      // delete: (id: string) => Promise<void>
       save: localCollection.save,
       get: localCollection.get,
       delete: localCollection.delete,
     },
+    changes: {
+      save: changesCollection.save,
+      get: changesCollection.get,
+      delete: changesCollection.delete,
+      openCursor: (group: string, lastReceived: number) => {
+        throw new Error("Not implemented")
+      }
+    }
   }
   return db;
 }

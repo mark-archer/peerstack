@@ -1,4 +1,5 @@
 import { isArray, isObject, isDate, uniq, set, unset, isEqual } from "lodash";
+import { newid } from "./common";
 import { me } from "./connections";
 import { checkPermission, getDB, hasPermission, IData, validateData } from "./db";
 import { ISigned, IUser, signObject, verifySignedObject } from './user';
@@ -72,7 +73,7 @@ export function applyChange(toObj: any, change: IChange) {
 }
 
 export interface IDataChange extends IChange, ISigned {
-  // id: string
+  id: string
   group: string
   subject: string
   modified: number
@@ -85,28 +86,43 @@ export async function saveChange<T extends IData>(data: T) {
   const db = await getDB();
   const dbData = await db.get(data.id);
   await validateData(db, [data]);
-  const change = getChange(dbData, data);
+
+  // TODO delete fields that shouldn't be included in change (e.g. signer, signature, modified?)
+
+  let dataChange: IDataChange;
   if (dbData && dbData.group !== data.group) {
     const deleteOld: IDataChange = {
+      id: newid(),
       group: dbData.group,
       subject: dbData.id,
       modified: data.modified,
       subjectDeleted: true,
       rm: [],
-      set: [],      
+      set: [],
     }
     signObject(deleteOld);
-    // await db.changes.save(deleteOld);
-  }
-  const dataChange: IDataChange = {
-    group: data.group,
-    subject: data.id,
-    modified: data.modified,
-    ...change
+    deleteOld.received = Date.now(),
+    await db.changes.save(deleteOld);
+    dataChange = {
+      id: newid(),
+      group: data.group,
+      modified: data.modified,
+      subject: data.id,
+      received: Date.now(),
+      ...getChange(undefined, data)
+    }
+  } else {
+    dataChange = {
+      id: newid(),
+      group: data.group,
+      subject: data.id,
+      modified: data.modified,
+      ...getChange(dbData, data)
+    }
   }
   signObject(dataChange);
   dataChange.received = Date.now();
-  // await db.changes.save(dataChange);
+  await db.changes.save(dataChange);
   return dataChange;
 }
 
@@ -124,6 +140,11 @@ export async function receiveChange(dataChange: IDataChange) {
   // the validation should occur on the _change_ and this should remove `signer` and `signature` and save without validation
   // this same logic should be used in `saveChange` above so users don't accidentally create invalid changes
   await db.save(data); 
-  // await db.changes.save(dataChange);
+  await db.changes.save(dataChange);
   return data;
+}
+
+export async function getChanges(group: string, lastReceived: number) {
+  const db = await getDB();
+  db.changes
 }

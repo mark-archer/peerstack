@@ -1,4 +1,5 @@
 import { uniq, isArray, isDate, isObject } from 'lodash';
+import { IDataChange } from './data-change';
 import { IData, Indexes, IDB, ICursor, DBQuery, DBKeyRange, DBKeyArray, DBKeyValue, PeerstackDBOpts, IKVIndex } from './db';
 
 // export type IDBQuery = string | number | Date | IDBKeyRange | IDBArrayKey | ArrayBuffer | ArrayBufferView;
@@ -30,7 +31,7 @@ export function convertDBQueryToIDBQuery(query: DBQuery): IDBQuery {
 }
 
 export async function init(
-  { dbName = 'peerstack', dbVersion = 7, onUpgrade }: PeerstackDBOpts = {}
+  { dbName = 'peerstack', dbVersion = 8, onUpgrade }: PeerstackDBOpts = {}
 ): Promise<IDB> {
   if (typeof indexedDB === 'undefined') {
     throw new Error('indexedDB is not currently available')
@@ -102,6 +103,13 @@ export async function init(
         createIndex(kvIndex, 'indexId-dataValue')
         // @ts-ignore
         createIndex(kvIndex, 'indexId')
+      }
+      if (oldVersion < 8) {
+        const kvIndex = db.createObjectStore("changes", { keyPath: 'id' });
+        // @ts-ignore
+        createIndex(kvIndex, 'group-received');
+        // @ts-ignore
+        createIndex(kvIndex, 'subject');
       }
       if (onUpgrade) await onUpgrade(evt);
     }
@@ -242,7 +250,7 @@ export async function init(
     }
   });
 
-  const getIXDBCursor = <T extends IData>(query?: DBKeyRange, index?: string, direction?: IDBCursorDirection) => {
+  const getIXDBCursor = <T extends { id: string } = IData>(query?: DBKeyRange, index?: string, direction?: IDBCursorDirection, objectStore: 'data' | 'changes' = 'data') => {
     const cursorState = {
       reject: null as (err) => any,
       next: null as () => Promise<T>
@@ -275,7 +283,7 @@ export async function init(
 
     function openTransactionRequest() {
       transactionClosed = false;
-      const transaction = db.transaction(['data'], 'readonly');
+      const transaction = db.transaction([objectStore], 'readonly');
       transaction.onerror = evt => cursorState.reject(evt);
       transaction.onabort = evt => cursorState.reject(evt);
       transaction.oncomplete = evt => {
@@ -286,7 +294,7 @@ export async function init(
           transactionClosed = true;
         }
       }
-      const dataStore = transaction.objectStore('data');
+      const dataStore = transaction.objectStore(objectStore);
       const ixQuery = convertDBQueryToIDBQuery(query);
       const request: IDBRequest = index
         ? dataStore.index(index).openCursor(ixQuery, direction)
@@ -345,7 +353,7 @@ export async function init(
     return cursorState;
   };
 
-  const openCursor = async <T extends IData>(query?: DBQuery, index?: Indexes, direction?: IDBCursorDirection): Promise<ICursor<T>> => {
+  const openCursor = async <T extends { id: string } = IData>(query?: DBQuery, index?: Indexes, direction?: IDBCursorDirection, objectStore: 'data' | 'changes' = 'data'): Promise<ICursor<T>> => {
     if (typeof index !== 'string') {
       throw new Error('custom indexes not currently supported')
     }
@@ -363,7 +371,7 @@ export async function init(
       queryObject = { ...query };
     }
 
-    let ixCursor = getIXDBCursor<T>(queryObject, index, direction);
+    let ixCursor = getIXDBCursor<T>(queryObject, index, direction, objectStore);
 
     const cursor: ICursor<T> = {
       next: null,
@@ -386,18 +394,14 @@ export async function init(
     return dbOp('data', 'delete', id);
   }
 
-  function dbOp(storeName: 'data' | 'files' | 'local' | 'keyValueIndex', op: 'put' | 'delete' | 'get', value) {
+  function dbOp(storeName: 'data' | 'files' | 'local' | 'keyValueIndex' | 'changes', op: 'put' | 'delete' | 'get', value) {
     return new Promise<any>((resolve, reject) => {
-      const mode: IDBTransactionMode = op == 'get' ? 'readonly' : 'readwrite';
+      const mode: IDBTransactionMode = op === 'get' ? 'readonly' : 'readwrite';
       const transaction = db.transaction([storeName], mode);
       transaction.onerror = evt => reject(evt);
       const request = transaction.objectStore(storeName)[op](value);
       request.onerror = evt => reject(evt);
-      // if (op == 'get') {
       request.onsuccess = evt => resolve((evt.target as any).result);
-      // } else {
-      //   transaction.oncomplete = evt => resolve((evt.target as any).result);
-      // }
     });
   }
 
@@ -417,6 +421,17 @@ export async function init(
       get: id => dbOp('local', 'get', id),
       delete: id => dbOp('local', 'delete', id),
     },
+    changes: {
+      save: data => dbOp('changes', 'put', data),
+      get: id => dbOp('changes', 'get', id),
+      delete: id => dbOp('changes', 'delete', id),
+      openCursor: (group: string, lastReceived: number) => {
+        // @ts-ignore
+        const index: Indexes = 'group-received';
+        const query: DBQuery = { lower: [group, lastReceived], upper: [group, Infinity] };
+        return openCursor<IDataChange>(query, index, 'next', 'changes');
+      }
+    }
   }
 
   return baseOps;

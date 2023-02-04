@@ -2,6 +2,7 @@ import { compact, groupBy, isArray, isObject, set, sortBy, uniq } from 'lodash';
 import { hashObject, idTime } from './common';
 import { ISigned, IUser, keysEqual, verifySignedObject } from './user';
 import * as dbix from './dbix'
+import { IDataChange } from './data-change';
 
 export interface IData extends ISigned {
   id: string
@@ -127,6 +128,12 @@ export interface IDB {
     save: (data: any) => Promise<void>
     get: (id: string) => Promise<any>
     delete: (id: string) => Promise<void>
+  },
+  changes: {
+    save: (data: IDataChange) => Promise<void>
+    get: (id: string) => Promise<IDataChange>
+    delete: (id: string) => Promise<void>
+    openCursor: (group: string, lastReceived: number) => Promise<ICursor<IDataChange>>
   },
 }
 
