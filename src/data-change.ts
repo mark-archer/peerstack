@@ -147,11 +147,8 @@ export async function saveChanges<T extends IData>(data: T) {
   await db.save(data);
 
   const changes = getDataChanges(dbData, data);
-  // TODO update changes.save to be able to take an array
-  for (const change of changes) {
-    signObject(change);
-    await db.changes.save(change);
-  }
+  changes.forEach(signObject);
+  await db.changes.save(changes);
   return changes;
 }
 

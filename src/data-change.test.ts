@@ -1,4 +1,4 @@
-import { newUser, init, newData, signObject } from "./user"
+import { newUser, init, newData, signObject, newGroup } from "./user"
 import * as _ from 'lodash';
 import 'should';
 import { initDBWithMemoryMock } from "./db-mock";
@@ -16,13 +16,7 @@ describe('data-change', () => {
     await init(me);
     await db.save(me);
     await db.save(peer);
-    myGroup = newData({ 
-      type: 'Group',
-      blockedUserIds: [],
-      members: [],
-      name: 'My Group',
-    });
-    myGroup.group = myGroup.id;
+    myGroup = newGroup();
     signObject(myGroup);
     await db.save(myGroup)
   })
@@ -498,5 +492,32 @@ describe('data-change', () => {
       expect(dbChanges).toMatchObject(expectedChanges);
     })
 
+    test('create group and update group', async () => {
+      // create group
+      let data = newGroup();
+      expect(await db.changes.getSubjectChanges(data.id)).toEqual([]);
+      await saveChanges(data);
+      let dbData = await db.get(data.id);
+      expect(dbData).toEqual(data);
+      let dbChanges = await db.changes.getSubjectChanges(data.id);
+      expect(dbChanges.length).toEqual(1);
+      expect(dbChanges[0].value).toEqual(data);
+      
+      // update group
+      data.name = "Better Group Name";
+      data.modified++;
+      await saveChanges(data);
+      dbData = await db.get(data.id);
+      expect(dbData).toEqual(data);
+      dbChanges = await db.changes.getSubjectChanges(data.id, data.modified);
+      expect(dbChanges.length).toEqual(1);
+      expect(dbChanges).toMatchObject([
+        { path: 'name', value: 'Better Group Name' }
+      ])
+    });
+
+    test('reject changes due to lack of permissions', () => {
+
+    })
   })
 })

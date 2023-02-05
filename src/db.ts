@@ -130,7 +130,7 @@ export interface IDB {
     delete: (id: string) => Promise<void>
   },
   changes: {
-    save: (data: IDataChange) => Promise<void>
+    save: (data: IDataChange | IDataChange[]) => Promise<void>
     get: (id: string) => Promise<IDataChange>
     delete: (id: string) => Promise<void>
     openCursor: (group: string, lastReceived: number) => Promise<ICursor<IDataChange>>

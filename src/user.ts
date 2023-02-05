@@ -10,7 +10,7 @@ import {
   stringify,
   parseJSON
 } from './common';
-import { getDB, IData } from './db';
+import { getDB, IData, IGroup } from './db';
 
 module.exports.nacl = nacl;
 module.exports.naclUtil = naclUtil;
@@ -351,6 +351,18 @@ export function newData<T>(fields?: Partial<IData> & T): IData & T {
     ...fields
   }
   return value
+}
+
+export function newGroup(fields?: Partial<IGroup>): IGroup {
+  const group: IGroup = newData({ 
+    type: 'Group',
+    blockedUserIds: [],
+    members: [],
+    name: 'New Group',
+    ...fields
+  });
+  group.group = group.id;
+  return group;
 }
 
 export function generateRandomSecureString() {
