@@ -1,7 +1,6 @@
 import { isArray, isObject, isDate, uniq, set, unset, isEqual, sortBy } from "lodash";
 import { newid } from "./common";
-import { me } from "./connections";
-import { checkPermission, getDB, hasPermission, IData, validateData } from "./db";
+import { getDB, hasPermission, IData } from "./db";
 import { ISigned, IUser, signObject, verifySignedObject } from './user';
 // import { isObject } from "./common";
 
@@ -119,34 +118,38 @@ export function getDataChanges<T extends IData, U extends IData>(dataFrom?: T, d
   // changing groups
   if (dataFrom.group !== dataTo.group) {
     // delete out of `from` group and create in `to` group
+    const deleteFrom = getDataChanges(dataFrom, undefined);
+    deleteFrom.forEach(c => c.modified = dataTo.modified);
     return [
-      ...getDataChanges(dataFrom, undefined),
+      ...deleteFrom,
       ...getDataChanges(undefined, dataTo),
     ]
   }
-  
+
   // update 
-  const changes = getChanges(dataFrom, dataTo);
-  return changes.map(change => {
-    return {
+  const ignoredFields = ['signer', 'signature', 'modified'];
+  return getChanges(dataFrom, dataTo)
+    .filter(change => !ignoredFields.includes(change.path))
+    .map(change => ({
       id: newid(),
       group: dataTo.group,
       subject: dataTo.id,
       modified: dataTo.modified,
       ...change
-    }
-  });
+    }));
 }
 
 // this is to save changes made locally - we need a different function to save remote changes
-export async function saveChange<T extends IData>(data: T) {
+export async function saveChanges<T extends IData>(data: T) {
   const db = await getDB();
   const dbData = await db.get(data.id);
-  await validateData(db, [data]);
+  signObject(data);
+  await db.save(data);
 
   const changes = getDataChanges(dbData, data);
-  changes.forEach(c => signObject(c));
+  // TODO update changes.save to be able to take an array
   for (const change of changes) {
+    signObject(change);
     await db.changes.save(change);
   }
   return changes;
@@ -159,8 +162,13 @@ export async function receiveChanges(changes: IDataChange[]) {
 
   const signers: { [signer: string]: IUser } = {}
   const subjects: { [subject: string]: IData } = {};
-  const subjectsDeleted: { [subject: string]: string} = {};
+  const subjectsDeleted: { [subject: string]: string } = {};
   const existingChanges: { [subject: string]: IDataChange[] } = {};
+
+  // TODO somewhere we need to remove signer and signature from the "data" object since they may not be valid anymore
+  // unless this user "me" has permissions to make the change, in which case "me" should sign
+  // the object before it's saved that way other users can do a "deep" sync directly with the objects if needed
+  // think more about this...
 
   // verify changes
   for (const change of changes) {
@@ -172,7 +180,7 @@ export async function receiveChanges(changes: IDataChange[]) {
     }
     const data = subjects[change.subject];
     if (data.type === "Group") {
-      await hasPermission(signer.id, data.group, 'admin');      
+      await hasPermission(signer.id, data.group, 'admin');
     } else {
       await hasPermission(signer.id, change.group, 'write');
     }
@@ -189,11 +197,11 @@ export async function receiveChanges(changes: IDataChange[]) {
     // TODO check if this is a change for an object that was already deleted - not allowed unless the path is empty
 
     let data = subjects[change.subject] || await db.get(change.subject);
-    
+
     if (data.modified > change.modified) {
       // TODO what if change.group !== data.group?
-      const _existingChanges = 
-        existingChanges[change.subject] || 
+      const _existingChanges =
+        existingChanges[change.subject] ||
         await db.changes.getSubjectChanges(change.subject, change.modified);
       existingChanges[change.subject] = _existingChanges;
       const newerChangeExists = _existingChanges.find(c => change.path.startsWith(c.path) && change.modified <= c.modified);
@@ -204,13 +212,13 @@ export async function receiveChanges(changes: IDataChange[]) {
     if (change.subjectDeleted) {
       subjectsDeleted[change.subject] = change.group;
     }
-    
+
     data = applyChanges(data, change);
     if (data.modified < change.modified) {
       // TODO this will be inefficient for lots of changes made at the same time
-      data.modified = change.modified;      
+      data.modified = change.modified;
     }
-    subjects[change.subject] = data;    
+    subjects[change.subject] = data;
   }
 
   // write changes
@@ -224,7 +232,7 @@ export async function receiveChanges(changes: IDataChange[]) {
       await db.save(data, true);
     }
   }
-  
+
   return Object.values(subjects);
 }
 

@@ -1,4 +1,4 @@
-import { isArray } from "lodash";
+import { cloneDeep, isArray } from "lodash";
 import { IDataChange } from "./data-change";
 import { DBQuery, IData, IDB, IFile, Indexes, IPersistenceLayer, init as initDB } from "./db"
 
@@ -11,10 +11,10 @@ class MemoryCollection<T extends { id: string }> {
     if (!isArray(data)) {
       data = [data]
     }
-    data.forEach(d => this.collection[d.id] = d);
+    data.forEach(d => this.collection[d.id] = cloneDeep(d));
   }
 
-  get = async (id: string) => this.collection[id];
+  get = async (id: string) => cloneDeep(this.collection[id]);
 
   delete = async (id: string) => (delete this.collection[id], void 0);
 
@@ -59,7 +59,8 @@ export async function initMemoryDB() {
       },
       getSubjectChanges: async (subject, modified?) => {
         return Object.values(changesCollection.collection)
-          .filter(c => c.subject === subject && (modified === undefined || c.modified >= modified));
+          .filter(c => c.subject === subject && (modified === undefined || c.modified >= modified))
+          .map(cloneDeep);
       }
     }
   }

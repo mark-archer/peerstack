@@ -47,7 +47,7 @@ export function newUser(name?: string): IUser & { secretKey: string } {
   const userId = newid();
   const newKey = nacl.sign.keyPair();
   const boxKey = nacl.box.keyPair.fromSecretKey(newKey.secretKey.slice(0, 32))
-  return {
+  const user: IUser & { secretKey: string } = {
     type: 'User',
     id: userId,
     owner: userId,
@@ -58,6 +58,8 @@ export function newUser(name?: string): IUser & { secretKey: string } {
     publicBoxKey: encodeUint8ArrayToBaseN(boxKey.publicKey),
     modified: Date.now(),
   }
+  signObjectWithIdAndSecretKey(user, user.id, user.secretKey);
+  return user;
 }
 
 // expose public box key for now to update users if needed

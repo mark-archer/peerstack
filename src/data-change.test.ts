@@ -1,16 +1,30 @@
-import { newUser, init } from "./user"
+import { newUser, init, newData, signObject } from "./user"
 import * as _ from 'lodash';
 import 'should';
 import { initDBWithMemoryMock } from "./db-mock";
-import { applyChanges, getChanges, isEmptyArray } from "./data-change";
+import { applyChanges, getChanges, isEmptyArray, saveChanges } from "./data-change";
+import { IDB, IGroup } from "./db";
 
 describe('data-change', () => {
 
   const me = newUser();
   const peer = newUser();
+  let myGroup: IGroup;
+  let db: IDB;
   beforeAll(async () => {
-    await initDBWithMemoryMock()
+    db = await initDBWithMemoryMock()
     await init(me);
+    await db.save(me);
+    await db.save(peer);
+    myGroup = newData({ 
+      type: 'Group',
+      blockedUserIds: [],
+      members: [],
+      name: 'My Group',
+    });
+    myGroup.group = myGroup.id;
+    signObject(myGroup);
+    await db.save(myGroup)
   })
 
   describe('isEmptyArray', () => {
@@ -422,5 +436,67 @@ describe('data-change', () => {
         2
       )
     })
+  })
+
+  describe('saveChange', () => {
+    test('create and update', async () => {
+      // create
+      const data = newData({ n: 1});
+      expect(await db.changes.getSubjectChanges(data.id)).toEqual([]);
+      await saveChanges(data);
+      let dbData = await db.get(data.id);
+      expect(dbData).toEqual(data);
+      let dbChanges = await db.changes.getSubjectChanges(data.id);
+      expect(dbChanges.length).toEqual(1);
+      expect(dbChanges[0].value).toEqual(data);
+
+      // update
+      data.n = 2;
+      data.s = "hi"
+      data.ary = [1]
+      data.obj = { a: 1 }
+      data.modified++;
+      await saveChanges(data);
+      dbData = await db.get(data.id);
+      expect(dbData).toEqual(data);
+      dbChanges = await db.changes.getSubjectChanges(data.id, data.modified);
+      expect(dbChanges.length).toEqual(4);
+      let expectedChanges: any = [
+        { path: 'ary', value: [1]  },
+        { 
+          group: data.group, 
+          subject: data.id,
+          modified: data.modified,
+          path: 'n',
+          value: 2,
+        },
+        { path: 'obj', value: { a: 1 } },
+        { path: 's', value: 'hi' },
+      ]
+      expect(dbChanges).toMatchObject(expectedChanges);
+
+      // update group
+      data.group = myGroup.id;
+      data.modified++;
+      await saveChanges(data);
+      dbData = await db.get(data.id);
+      expect(dbData).toEqual(data);
+      dbChanges = await db.changes.getSubjectChanges(data.id, data.modified);
+      expect(dbChanges.length).toEqual(2);
+      expectedChanges = [
+        { 
+          group: me.id, 
+          path: '', 
+          subjectDeleted: true,
+        },
+        { 
+          group: myGroup.id, 
+          path: '',
+          value: data,
+        },
+      ]
+      expect(dbChanges).toMatchObject(expectedChanges);
+    })
+
   })
 })
