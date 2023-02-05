@@ -1,4 +1,4 @@
-import { isArray, isObject, isDate, uniq, set, unset, isEqual } from "lodash";
+import { isArray, isObject, isDate, uniq, set, unset, isEqual, sortBy } from "lodash";
 import { newid } from "./common";
 import { me } from "./connections";
 import { checkPermission, getDB, hasPermission, IData, validateData } from "./db";
@@ -6,8 +6,8 @@ import { ISigned, IUser, signObject, verifySignedObject } from './user';
 // import { isObject } from "./common";
 
 export interface IChange {
-  set: [string, any][],
-  rm: string[],
+  path: string
+  value?: any
 }
 
 function isObj(x: any) {
@@ -27,11 +27,8 @@ export function isEmptyArray(x: any): x is [] {
 }
 
 
-export function getChange(objFrom: any, objTo: any): IChange {
-  const changes: IChange = {
-    set: [],
-    rm: [],
-  };
+export function getChanges(objFrom: any, objTo: any): IChange[] {
+  const changes: IChange[] = [];
 
   const allKeys = uniq([
     ...Object.keys(objFrom || []),
@@ -45,30 +42,40 @@ export function getChange(objFrom: any, objTo: any): IChange {
       continue;
     }
     if (toVal === undefined) {
-      changes.rm.push(key);
+      changes.push({ path: key });
     } else if (
       (!isEmptyObj(toVal) && isObj(toVal) && isObj(fromVal)) ||
       (!isEmptyArray(toVal) && isArray(toVal) && isArray(fromVal))
     ) {
-      const subChanges = getChange(fromVal, toVal);
-      changes.rm.push(...subChanges.rm.map(p => `${key}.${p}`));
-      subChanges.set.forEach(s => s[0] = `${key}.${s[0]}`);
-      changes.set.push(...subChanges.set);
+      const subChanges = getChanges(fromVal, toVal);
+      subChanges.forEach(c => {
+        c.path = `${key}.${c.path}`
+      });
+      changes.push(...subChanges);
     } else {
-      changes.set.push([key, toVal])
+      changes.push({
+        path: key,
+        value: toVal,
+      })
     }
   }
 
   return changes;
 }
 
-export function applyChange(toObj: any, change: IChange) {
-  change.set.forEach(([path, value]) => {
-    set(toObj, path, value);
-  });
-  change.rm.forEach(path => {
-    unset(toObj, path);
-  });
+export function applyChanges(toObj: any, changes: IChange | IChange[]) {
+  if (!isArray(changes)) {
+    changes = [changes]
+  }
+  for (const change of changes) {
+    if (change.path === '') {
+      toObj = change.value ?? {}
+    } else if (change.value === undefined) {
+      unset(toObj, change.path);
+    } else {
+      set(toObj, change.path, change.value);
+    }
+  }
   return toObj;
 }
 
@@ -77,8 +84,58 @@ export interface IDataChange extends IChange, ISigned {
   group: string
   subject: string
   modified: number
-  received?: number
   subjectDeleted?: boolean
+}
+
+export function getDataChanges<T extends IData, U extends IData>(dataFrom?: T, dataTo?: U): IDataChange[] {
+  // create
+  if (!dataFrom) {
+    return [
+      {
+        id: newid(),
+        group: dataTo.group,
+        subject: dataTo.id,
+        modified: dataTo.modified,
+        path: '',
+        value: dataTo
+      }
+    ]
+  }
+
+  // delete
+  if (!dataTo) {
+    return [
+      {
+        id: newid(),
+        group: dataFrom.group,
+        subject: dataFrom.id,
+        modified: dataFrom.modified,
+        path: '',
+        subjectDeleted: true
+      }
+    ]
+  }
+
+  // changing groups
+  if (dataFrom.group !== dataTo.group) {
+    // delete out of `from` group and create in `to` group
+    return [
+      ...getDataChanges(dataFrom, undefined),
+      ...getDataChanges(undefined, dataTo),
+    ]
+  }
+  
+  // update 
+  const changes = getChanges(dataFrom, dataTo);
+  return changes.map(change => {
+    return {
+      id: newid(),
+      group: dataTo.group,
+      subject: dataTo.id,
+      modified: dataTo.modified,
+      ...change
+    }
+  });
 }
 
 // this is to save changes made locally - we need a different function to save remote changes
@@ -87,64 +144,91 @@ export async function saveChange<T extends IData>(data: T) {
   const dbData = await db.get(data.id);
   await validateData(db, [data]);
 
-  // TODO delete fields that shouldn't be included in change (e.g. signer, signature, modified?)
+  const changes = getDataChanges(dbData, data);
+  changes.forEach(c => signObject(c));
+  for (const change of changes) {
+    await db.changes.save(change);
+  }
+  return changes;
+}
 
-  let dataChange: IDataChange;
-  if (dbData && dbData.group !== data.group) {
-    const deleteOld: IDataChange = {
-      id: newid(),
-      group: dbData.group,
-      subject: dbData.id,
-      modified: data.modified,
-      subjectDeleted: true,
-      rm: [],
-      set: [],
+export async function receiveChanges(changes: IDataChange[]) {
+  const db = await getDB();
+
+  changes = sortBy(changes, 'modified');
+
+  const signers: { [signer: string]: IUser } = {}
+  const subjects: { [subject: string]: IData } = {};
+  const subjectsDeleted: { [subject: string]: string} = {};
+  const existingChanges: { [subject: string]: IDataChange[] } = {};
+
+  // verify changes
+  for (const change of changes) {
+    const signer = signers[change.signer] || (await db.get(change.signer) as IUser);
+    const publicKey = signer.publicKey;
+    verifySignedObject(change, publicKey);
+    if (!subjects[change.subject]) {
+      subjects[change.subject] = await db.get(change.subject);
     }
-    signObject(deleteOld);
-    deleteOld.received = Date.now(),
-    await db.changes.save(deleteOld);
-    dataChange = {
-      id: newid(),
-      group: data.group,
-      modified: data.modified,
-      subject: data.id,
-      received: Date.now(),
-      ...getChange(undefined, data)
+    const data = subjects[change.subject];
+    if (data.type === "Group") {
+      await hasPermission(signer.id, data.group, 'admin');      
+    } else {
+      await hasPermission(signer.id, change.group, 'write');
     }
-  } else {
-    dataChange = {
-      id: newid(),
-      group: data.group,
-      subject: data.id,
-      modified: data.modified,
-      ...getChange(dbData, data)
+    // TODO since we're no longer relying on db.save to verify permissions it needs to be done here, will be a lot of work
+  }
+
+  // apply changes
+  for (const change of changes) {
+    if (await db.changes.get(change.id)) {
+      continue;
+    }
+    await db.changes.save(change);
+
+    // TODO check if this is a change for an object that was already deleted - not allowed unless the path is empty
+
+    let data = subjects[change.subject] || await db.get(change.subject);
+    
+    if (data.modified > change.modified) {
+      // TODO what if change.group !== data.group?
+      const _existingChanges = 
+        existingChanges[change.subject] || 
+        await db.changes.getSubjectChanges(change.subject, change.modified);
+      existingChanges[change.subject] = _existingChanges;
+      const newerChangeExists = _existingChanges.find(c => change.path.startsWith(c.path) && change.modified <= c.modified);
+      if (newerChangeExists) {
+        continue;
+      }
+    }
+    if (change.subjectDeleted) {
+      subjectsDeleted[change.subject] = change.group;
+    }
+    
+    data = applyChanges(data, change);
+    if (data.modified < change.modified) {
+      // TODO this will be inefficient for lots of changes made at the same time
+      data.modified = change.modified;      
+    }
+    subjects[change.subject] = data;    
+  }
+
+  // write changes
+  const updatedDatas = Object.values(subjects);
+  for (const data of updatedDatas) {
+    const isDeleted = subjectsDeleted[data.subject] === data.group;
+    if (isDeleted) {
+      await db.delete(data.id);
+    } else {
+      // TODO since we're no longer relying on db.save to verify permissions we'll need to do more work before saving or applying the changes
+      await db.save(data, true);
     }
   }
-  signObject(dataChange);
-  dataChange.received = Date.now();
-  await db.changes.save(dataChange);
-  return dataChange;
+  
+  return Object.values(subjects);
 }
 
-export async function receiveChange(dataChange: IDataChange) {
-  const db = await getDB();
-
-  delete dataChange.received;
-  const publicKey = (await db.get(dataChange.signer) as IUser).publicKey;
-  verifySignedObject(dataChange, publicKey);
-  dataChange.received = Date.now();
-  const dbData = await db.get(dataChange.subject);
-  const data = applyChange(dbData, dataChange);
-  // this also does validation and expects `signer` and `signature` are updated correctly
-  // this prevents merging multiple changes from different users which is particularly desireable
-  // the validation should occur on the _change_ and this should remove `signer` and `signature` and save without validation
-  // this same logic should be used in `saveChange` above so users don't accidentally create invalid changes
-  await db.save(data); 
-  await db.changes.save(dataChange);
-  return data;
-}
-
-export async function getChanges(group: string, lastReceived: number) {
-  const db = await getDB();
-  db.changes
-}
+// export async function getChanges(group: string, lastReceived: number) {
+//   const db = await getDB();
+//   db.changes
+// }

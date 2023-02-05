@@ -5,7 +5,7 @@ import { DBQuery, IData, IDB, IFile, Indexes, IPersistenceLayer, init as initDB 
 
 class MemoryCollection<T extends { id: string }> {
 
-  private collection: Record<string, T> = {};
+  readonly collection: Record<string, T> = {};
 
   save = async(data: T | T[], skipValidation?: boolean) => {
     if (!isArray(data)) {
@@ -56,6 +56,10 @@ export async function initMemoryDB() {
       delete: changesCollection.delete,
       openCursor: (group: string, lastReceived: number) => {
         throw new Error("Not implemented")
+      },
+      getSubjectChanges: async (subject, modified?) => {
+        return Object.values(changesCollection.collection)
+          .filter(c => c.subject === subject && (modified === undefined || c.modified >= modified));
       }
     }
   }

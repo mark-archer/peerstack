@@ -2,7 +2,7 @@ import { newUser, init } from "./user"
 import * as _ from 'lodash';
 import 'should';
 import { initDBWithMemoryMock } from "./db-mock";
-import { applyChange, getChange, isEmptyArray } from "./data-change";
+import { applyChanges, getChanges, isEmptyArray } from "./data-change";
 
 describe('data-change', () => {
 
@@ -25,336 +25,289 @@ describe('data-change', () => {
   describe('getChanges', () => {
     test('empty objects', () => {
       expect(
-        getChange({}, {})
+        getChanges({}, {})
       ).toEqual(
-        {
-          set: [],
-          rm: []
-        }
+        []
       )
     })
 
     test('simple', () => {
       expect(
-        getChange({ a: 1 }, { a: 2 })
+        getChanges({ a: 1 }, { a: 2 })
       ).toEqual(
-        {
-          set: [['a', 2]],
-          rm: []
-        }
+        [
+          { path: 'a', value: 2 }
+        ]
       )
     })
 
     test('falsy values', () => {
       expect(
-        getChange({ a: 0 }, { a: null })
+        getChanges({ a: 0 }, { a: null })
       ).toEqual(
-        {
-          set: [['a', null]],
-          rm: []
-        }
+        [
+          { path: 'a', value: null }
+        ]
       )
     })
 
     test('falsy value to object', () => {
       expect(
-        getChange({ a: 0 }, { a: {} })
+        getChanges({ a: 0 }, { a: {} })
       ).toEqual(
-        {
-          set: [['a', {}]],
-          rm: []
-        }
+        [
+          { path: 'a', value: {} }
+        ]
       )
     })
 
     test('object value to falsy value', () => {
       expect(
-        getChange({ a: {} }, { a: 0 })
+        getChanges({ a: {} }, { a: 0 })
       ).toEqual(
-        {
-          set: [['a', 0]],
-          rm: []
-        }
+        [
+          { path: 'a', value: 0 }
+        ]
       )
     })
 
     test('empty to value', () => {
       expect(
-        getChange({}, { a: 1 })
+        getChanges({}, { a: 1 })
       ).toEqual(
-        {
-          set: [['a', 1]],
-          rm: []
-        }
+        [
+          { path: 'a', value: 1 }
+        ]
       )
     })
 
     test('value to empty', () => {
       expect(
-        getChange({ a: 1 }, {})
+        getChanges({ a: 1 }, {})
       ).toEqual(
-        {
-          set: [],
-          rm: ['a']
-        }
+        [ { path: 'a' }]        
       )
     })
 
     test('deep change', () => {
       expect(
-        getChange({ a: { b: [1, 2, 3] } }, { a: { b: [1, 3] } })
+        getChanges({ a: { b: [1, 2, 3] } }, { a: { b: [1, 3] } })
       ).toEqual(
-        {
-          set: [
-            ['a.b.1', 3],
-          ],
-          rm: ['a.b.2']
-        }
+        [
+          { path: 'a.b.1', value: 3 },
+          { path: 'a.b.2' },
+        ]
       )
     })
 
     test('complex change', () => {
       const d = new Date();
       expect(
-        getChange(
+        getChanges(
           { a: { b: [1, 2, 3] }, d: d, dd: d },
           { ddd: d, d: d, a: { b: [1, 3] }, c: { d: null } }
         )
       ).toEqual(
-        {
-          set: [
-            ['a.b.1', 3],
-            ['c', { d: null }],
-            ['ddd', d],
-          ],
-          rm: [
-            'a.b.2',
-            'dd'
-          ]
-        }
+        [
+          { path: 'a.b.1', value: 3 },
+          { path: 'a.b.2' },
+          { path: 'c', value: { d: null } },
+          { path: 'dd' },
+          { path: 'ddd', value: d },
+        ]
       )
     })
 
     test('complex object, no change', () => {
       const d = new Date();
       expect(
-        getChange(
+        getChanges(
           { ddd: d, d: d, a: { b: [1, 3] }, c: { d: null } },
           { ddd: d, d: d, a: { b: [1, 3] }, c: { d: null } }
         )
       ).toEqual(
-        {
-          set: [],
-          rm: []
-        }
+        []
       )
     })
 
     test('sub objects removed', () => {
       const d = new Date();
       expect(
-        getChange(
+        getChanges(
           { ary: [1, 2, 3], obj: { a: 1, b: 2 }, n: 1 },
           { n: 2 }
         )
       ).toEqual(
-        {
-          set: [['n', 2]],
-          rm: ['ary', 'obj']
-        }
+        [
+          { path: 'ary' },
+          { path: 'n', value: 2 },
+          { path: 'obj' },
+        ]
       )
     })
 
     test('sub objects emptied', () => {
       const d = new Date();
       expect(
-        getChange(
+        getChanges(
           { ary: [1, 2, 3], obj: { a: 1, b: 2 }, n: 1 },
           { n: 2, ary: [], obj: {} }
         )
       ).toEqual(
-        {
-          set: [
-            ['ary', []],
-            ['n', 2],
-            ['obj', {}],
-          ],
-          rm: []
-          // rm: [
-          //   'ary.0',
-          //   'ary.1',
-          //   'ary.2',
-          //   'obj.a',
-          //   'obj.b',
-          // ]
-        }
+        [
+          { path: 'ary', value: []},
+          { path: 'n', value: 2},
+          { path: 'obj', value: {}},
+        ]
       )
     })
 
     test('sub objects added', () => {
       const d = new Date();
       expect(
-        getChange(
+        getChanges(
           { n: 2 },
           { ary: [1, 2, 3], obj: { a: 1, b: 2 }, n: 1 },
         )
       ).toEqual(
-        {
-          set: [
-            ['ary', [1, 2, 3]],
-            ['n', 1],
-            ['obj', { a: 1, b: 2 }],
-          ],
-          rm: []
-        }
+        [
+          { path: 'ary', value: [1,2,3]},
+          { path: 'n', value: 1},
+          { path: 'obj', value: { a:1, b: 2}},
+        ]
       )
     })
 
     test('sub sub objects removed', () => {
       expect(
-        getChange(
+        getChanges(
           { ary: [1, [1]], obj: { a: 1, b: { c: 3 }, d: [1, 2] } },
           { ary: [1], obj: { a: 1, d: [2] } }
         )
       ).toEqual(
-        {
-          set: [['obj.d.0', 2]],
-          rm: [
-            'ary.1',
-            'obj.b',
-            'obj.d.1',
-          ]
-        }
+        [
+          { path: "ary.1" },
+          { path: "obj.b" },
+          { path: 'obj.d.0', value: 2 },
+          { path: "obj.d.1" },
+        ]
       )
     })
 
     test('empty array added', () => {
       expect(
-        getChange(
-          { ary: [1, [1]], obj: { a: 1, b: { c: 3 }, d: [1, 2] } },
-          { ary: [1], obj: { a: 1, d: [2] } }
+        getChanges(
+          { n: 1 },
+          { ary: [], n: 1 }
         )
       ).toEqual(
-        {
-          set: [['obj.d.0', 2]],
-          rm: [
-            'ary.1',
-            'obj.b',
-            'obj.d.1',
-          ]
-        }
+        [
+          { path: 'ary', value: [] },
+        ]
       )
     })
 
     test('array to obj', () => {
       expect(
-        getChange(
+        getChanges(
           { a: [1] },
           { a: { n: 1 } }
         )
       ).toEqual(
-        {
-          set: [['a', { n: 1 }]],
-          rm: []
-        }
+        [
+          { path: 'a', value: { n: 1 } }
+        ]
       )
     })
 
     test('obj to ary', () => {
       expect(
-        getChange(
+        getChanges(
           { a: { n: 1 } },
           { a: [1] }
         )
       ).toEqual(
-        {
-          set: [['a', [1]]],
-          rm: []
-        }
+        [
+          { path: 'a', value: [1] }
+        ]
       )
     })
 
     test('array to leaf', () => {
       expect(
-        getChange(
+        getChanges(
           { a: [1] },
           { a: 1 }
         )
       ).toEqual(
-        {
-          set: [['a', 1]],
-          rm: []
-        }
+        [
+          { path: 'a', value: 1 }
+        ]
       )
     })
 
     test('obj to leaf', () => {
       expect(
-        getChange(
+        getChanges(
           { a: { n: 1 } },
           { a: 1 }
         )
       ).toEqual(
-        {
-          set: [['a', 1]],
-          rm: []
-        }
+        [
+          { path: 'a', value: 1 }
+        ]
       )
     })
 
     test('leaf to array', () => {
       expect(
-        getChange(
+        getChanges(
           { a: 1 },
           { a: [1] }
         )
       ).toEqual(
-        {
-          set: [['a', [1]]],
-          rm: []
-        }
+        [
+          { path: 'a', value: [1] }
+        ]
       )
     })
 
     test('leaf to obj', () => {
       expect(
-        getChange(
+        getChanges(
           { a: 1 },
           { a: { n: 1 } }
         )
       ).toEqual(
-        {
-          set: [['a', { n: 1 }]],
-          rm: []
-        }
+        [
+          { path: 'a', value: { n: 1 } }
+        ]
       )
     })
 
     test('array to obj (with same key and value)', () => {
       expect(
-        getChange(
+        getChanges(
           { a: [1] },
           { a: { "0": 1 } }
         )
       ).toEqual(
-        {
-          set: [['a', { "0": 1 }]],
-          rm: []
-        }
+        [
+          { path: 'a', value: { "0": 1 } }
+        ]
       )
     })
 
     test('obj with numeric key', () => {
       expect(
-        getChange(
+        getChanges(
           { a: { "0": 1 } },
           { a: { "0": 2 } }
         )
       ).toEqual(
-        {
-          set: [['a.0', 2]],
-          rm: []
-        }
+        [
+          { path: 'a.0', value: 2 }
+        ]
       )
     })
 
@@ -363,40 +316,35 @@ describe('data-change', () => {
       //@ts-ignore
       ary1.n = 1; ary2.n = 2;
       expect(
-        getChange(
+        getChanges(
           ary1,
           ary2,
         )
       ).toEqual(
-        {
-          set: [['0', 2], ['n', 2]],
-          rm: []
-        }
+        [
+          { path: '0', value: 2 },
+          { path: 'n', value: 2 },
+        ]
       )
     })
 
     test('from or to undefined', () => {
-      expect(getChange(undefined, undefined)).toEqual({
-        set: [],
-        rm: []
-      })
+      expect(getChanges(undefined, undefined)).toEqual([])
 
-      expect(getChange({ a: 1 }, undefined)).toEqual({
-        set: [],
-        rm: ['a']
-      })
+      expect(getChanges({ a: 1 }, undefined)).toEqual([
+        { path: 'a' }
+      ])
 
-      expect(getChange(undefined, { a: 1 })).toEqual({
-        set: [['a', 1]],
-        rm: []
-      })
+      expect(getChanges(undefined, { a: 1 })).toEqual([
+        { path: 'a', value: 1 }
+      ])
     })
   })
 
   describe('applyChange', () => {
     test('simple set', () => {
       expect(
-        applyChange({}, { set: [['a', 1]], rm: [] })
+        applyChanges({}, { path: 'a', value: 1 })
       ).toEqual(
         { a: 1 }
       )
@@ -404,7 +352,7 @@ describe('data-change', () => {
 
     test('new array', () => {
       expect(
-        applyChange({}, { set: [['a.0', 1]], rm: [] })
+        applyChanges({}, { path: 'a.0', value: 1 })
       ).toEqual(
         { a: [1] }
       )
@@ -412,7 +360,7 @@ describe('data-change', () => {
 
     test('new empty array', () => {
       expect(
-        applyChange({}, { set: [['a', []]], rm: [] })
+        applyChanges({}, { path: 'a', value: [] })
       ).toEqual(
         { a: [] }
       )
@@ -420,7 +368,7 @@ describe('data-change', () => {
 
     test('rm array', () => {
       expect(
-        applyChange({ a: [] }, { set: [], rm: ['a'] })
+        applyChanges({ a: [] }, { path: 'a' })
       ).toEqual(
         {}
       )
@@ -428,7 +376,7 @@ describe('data-change', () => {
 
     test('overwrite array with object', () => {
       expect(
-        applyChange({ a: [] }, { set: [['a', { b: 1 }]], rm: [] })
+        applyChanges({ a: [] }, { path: 'a', value: { b: 1 } })
       ).toEqual(
         { a: { b: 1 } }
       )
@@ -436,7 +384,7 @@ describe('data-change', () => {
 
     test('overwrite object with array', () => {
       expect(
-        applyChange({ a: { b: 1 } }, { set: [['a', [1]]], rm: [] })
+        applyChanges({ a: { b: 1 } }, { path: 'a', value: [1] })
       ).toEqual(
         { a: [1] }
       )
@@ -444,12 +392,9 @@ describe('data-change', () => {
 
     test('change value of object field with numeric key', () => {
       expect(
-        applyChange(
+        applyChanges(
           { a: { "0": 1 } },
-          {
-            set: [['a.0', 2]],
-            rm: []
-          })
+          { path: 'a.0', value: 2 })
       ).toEqual(
         { a: { "0": 2 } }
       )
@@ -460,14 +405,21 @@ describe('data-change', () => {
       // @ts-ignore
       ary.a = 2;
       expect(
-        applyChange(
+        applyChanges(
           { a: [1] },
-          {
-            set: [['a.a', 2]],
-            rm: []
-          })
+          { path: 'a.a', value: 2 })
       ).toEqual(
         { a: ary }
+      )
+    })
+
+    test('reset root obj with blank path', () => {
+      expect(
+        applyChanges(
+          { a: { "0": 1 } },
+          { path: '', value: 2 })
+      ).toEqual(
+        2
       )
     })
   })

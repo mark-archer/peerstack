@@ -134,6 +134,7 @@ export interface IDB {
     get: (id: string) => Promise<IDataChange>
     delete: (id: string) => Promise<void>
     openCursor: (group: string, lastReceived: number) => Promise<ICursor<IDataChange>>
+    getSubjectChanges: (subject: string, modified?: number) => Promise<IDataChange[]>
   },
 }
 

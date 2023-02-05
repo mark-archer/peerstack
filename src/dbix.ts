@@ -107,9 +107,9 @@ export async function init(
       if (oldVersion < 8) {
         const kvIndex = db.createObjectStore("changes", { keyPath: 'id' });
         // @ts-ignore
-        createIndex(kvIndex, 'group-received');
-        // @ts-ignore
         createIndex(kvIndex, 'subject');
+        // @ts-ignore
+        createIndex(kvIndex, 'subject-modified');
       }
       if (onUpgrade) await onUpgrade(evt);
     }
@@ -425,12 +425,22 @@ export async function init(
       save: data => dbOp('changes', 'put', data),
       get: id => dbOp('changes', 'get', id),
       delete: id => dbOp('changes', 'delete', id),
-      openCursor: (group: string, lastReceived: number) => {
+      openCursor: (group, lastReceived) => {
         // @ts-ignore
-        const index: Indexes = 'group-received';
+        const index: Indexes = 'group-modified';
         const query: DBQuery = { lower: [group, lastReceived], upper: [group, Infinity] };
         return openCursor<IDataChange>(query, index, 'next', 'changes');
-      }
+      },
+      getSubjectChanges: (subject, modified?): Promise<IDataChange[]> => new Promise(async (resolve, reject) => {
+        const transaction = db.transaction(['changes'], 'readonly');
+        transaction.onerror = evt => reject(evt);
+        const dataStore = transaction.objectStore('changes');
+        let request: IDBRequest;
+        const ixQuery = convertDBQueryToIDBQuery({ lower: [subject, modified || -Infinity], upper: [subject, Infinity] });
+        request = dataStore.index('subject-modified').getAll(ixQuery);
+        request.onerror = evt => reject(evt);
+        request.onsuccess = evt => resolve((evt.target as any).result);
+      })
     }
   }
 
