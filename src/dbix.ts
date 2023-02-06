@@ -60,15 +60,12 @@ export async function init(
         const dataStore = db.createObjectStore("data", { keyPath: 'id' });
         createIndex(dataStore, 'group');
         createIndex(dataStore, 'type');
-        createIndex(dataStore, 'owner');
         createIndex(dataStore, 'modified');
 
         createIndex(dataStore, 'group-modified');
         createIndex(dataStore, 'type-modified');
-        createIndex(dataStore, 'owner-modified');
 
         createIndex(dataStore, 'group-type-modified');
-        createIndex(dataStore, 'group-owner-modified');
       }
       if (oldVersion < 2) {
         const fileStore = db.createObjectStore("files", { keyPath: 'id' });
@@ -76,13 +73,6 @@ export async function init(
       if (oldVersion < 3) {
         const dataStore = upgradeTransaction.objectStore('data');
         createIndex(dataStore, 'group-type');
-        createIndex(dataStore, 'group-owner');
-        createIndex(dataStore, 'type-owner');
-
-        createIndex(dataStore, 'group-type-owner');
-        createIndex(dataStore, 'type-owner-modified');
-
-        createIndex(dataStore, 'group-type-owner-modified');
       }
       if (oldVersion < 4) {
         const dataStore = upgradeTransaction.objectStore('data');
@@ -106,7 +96,6 @@ export async function init(
       }
       if (oldVersion < 8) {
         const kvIndex = db.createObjectStore("changes", { keyPath: 'id' });
-        // @ts-ignore
         createIndex(kvIndex, 'subject');
         // @ts-ignore
         createIndex(kvIndex, 'subject-modified');

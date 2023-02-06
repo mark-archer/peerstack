@@ -8,7 +8,6 @@ export interface IData extends ISigned {
   id: string
   group: string
   type: 'Group' | 'Deleted' | 'User' | 'any' | string
-  owner: string
   modified: number
   subject?: string
   ttl?: number // date in ms after which the data should be deleted
@@ -74,19 +73,11 @@ export function getPersonalGroup(myId: string) {
 export type Indexes
   = 'group'
   | 'type'
-  | 'owner'
   | 'modified'
   | 'group-type'
-  | 'group-owner'
   | 'group-modified'
-  | 'type-owner'
   | 'type-modified'
-  | 'owner-modified'
-  | 'group-type-owner'
   | 'group-type-modified'
-  | 'group-owner-modified'
-  | 'type-owner-modified'
-  | 'group-type-owner-modified'
   | 'subject'
   | 'group-subject'
   | 'type-subject'
