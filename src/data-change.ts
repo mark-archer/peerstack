@@ -1,13 +1,10 @@
-import { isArray, isObject, isDate, uniq, set, unset, isEqual, sortBy } from "lodash";
+import { isArray, isObject, isDate, uniq, set, unset, isEqual, sortBy, max, chain } from "lodash";
 import { newid } from "./common";
 import { getDB, hasPermission, IData } from "./db";
-import { ISigned, IUser, signObject, verifySignedObject } from './user';
+import { ISigned, IUser, signObject, userId, verifySignedObject } from './user';
 // import { isObject } from "./common";
 
-export interface IChange {
-  path: string
-  value?: any
-}
+export type IChange = [string, any?]
 
 function isObj(x: any) {
   return isObject(x) && !isArray(x) && !isDate(x) && x !== null;
@@ -41,126 +38,129 @@ export function getChanges(objFrom: any, objTo: any): IChange[] {
       continue;
     }
     if (toVal === undefined) {
-      changes.push({ path: key });
+      changes.push([key]);
     } else if (
       (!isEmptyObj(toVal) && isObj(toVal) && isObj(fromVal)) ||
       (!isEmptyArray(toVal) && isArray(toVal) && isArray(fromVal))
     ) {
       const subChanges = getChanges(fromVal, toVal);
       subChanges.forEach(c => {
-        c.path = `${key}.${c.path}`
+        c[0] = `${key}.${c[0]}`;
       });
       changes.push(...subChanges);
     } else {
-      changes.push({
-        path: key,
-        value: toVal,
-      })
+      changes.push([key, toVal])
     }
   }
 
   return changes;
 }
 
-export function applyChanges(toObj: any, changes: IChange | IChange[]) {
-  if (!isArray(changes)) {
-    changes = [changes]
-  }
-  for (const change of changes) {
-    if (change.path === '') {
-      toObj = change.value ?? {}
-    } else if (change.value === undefined) {
-      unset(toObj, change.path);
+export function applyChanges(toObj: any, changes: IChange[]) {
+  for (const [path, value] of changes) {
+    if (path === '') {
+      toObj = value ?? {}
+    } else if (value === undefined) {
+      unset(toObj, path);
     } else {
-      set(toObj, change.path, change.value);
+      set(toObj, path, value);
     }
   }
   return toObj;
 }
 
-export interface IDataChange extends IChange, ISigned {
+export interface IDataChange extends ISigned {
   id: string
   group: string
   subject: string
   modified: number
+  changes: IChange[]
   subjectDeleted?: boolean
 }
 
-export function getDataChanges<T extends IData, U extends IData>(dataFrom?: T, dataTo?: U): IDataChange[] {
+export function getDataChange<T extends IData, U extends IData>(dataFrom?: T, dataTo?: U): IDataChange {
   // create
   if (!dataFrom) {
-    return [
-      {
+    return {
         id: newid(),
         group: dataTo.group,
         subject: dataTo.id,
         modified: dataTo.modified,
-        path: '',
-        value: dataTo
+        changes: [
+          ['', dataTo]
+        ],
       }
-    ]
   }
 
   // delete
   if (!dataTo) {
-    return [
-      {
-        id: newid(),
-        group: dataFrom.group,
-        subject: dataFrom.id,
-        modified: dataFrom.modified,
-        path: '',
-        subjectDeleted: true
-      }
-    ]
+    return {
+      id: newid(),
+      group: dataFrom.group,
+      subject: dataFrom.id,
+      modified: dataFrom.modified,
+      subjectDeleted: true,
+      changes: []
+    }
   }
 
   // changing groups
   if (dataFrom.group !== dataTo.group) {
-    // delete out of `from` group and create in `to` group
-    const deleteFrom = getDataChanges(dataFrom, undefined);
-    deleteFrom.forEach(c => c.modified = dataTo.modified);
-    return [
-      ...deleteFrom,
-      ...getDataChanges(undefined, dataTo),
-    ]
+    throw new Error('Changing groups cannot be represented with a single DataChange, it should be done as a delete out of the old group and a create in the new group.')
   }
 
   // update 
   const ignoredFields = ['signer', 'signature', 'modified'];
-  return getChanges(dataFrom, dataTo)
-    .filter(change => !ignoredFields.includes(change.path))
-    .map(change => ({
-      id: newid(),
-      group: dataTo.group,
-      subject: dataTo.id,
-      modified: dataTo.modified,
-      ...change
-    }));
+  const changes = getChanges(dataFrom, dataTo)
+    .filter(([path]) => !ignoredFields.includes(path));
+  return {
+    id: newid(),
+    group: dataTo.group,
+    subject: dataTo.id,
+    modified: dataTo.modified,
+    changes
+  };
 }
 
 // this is to save changes made locally - we need a different function to save remote changes
 export async function saveChanges<T extends IData>(data: T) {
   const db = await getDB();
   const dbData = await db.get(data.id);
+
+  // TODO maybe redo this as just generating changes and processing them through "receiveChanges"
+  //      that way everything is going through the same code
+  
   signObject(data);
   await db.save(data);
+  
+  // if `group` is changing delete out of old group
+  if (data && dbData && data.group !== dbData.group) {
+    // TODO verify that "me" has permissions to write to both groups
+    // delete out of old group
+    const deleteOutOfOldGroup = getDataChange(dbData, undefined);
+    deleteOutOfOldGroup.modified = data.modified;
+    signObject(deleteOutOfOldGroup);
+    await db.changes.save(deleteOutOfOldGroup);
 
-  const changes = getDataChanges(dbData, data);
-  changes.forEach(signObject);
-  await db.changes.save(changes);
-  return changes;
+    // create in new group
+    const createInNewGroup = getDataChange(undefined, data);
+    signObject(createInNewGroup);
+    await db.changes.save(createInNewGroup);
+  } else {
+    const dataChange = getDataChange(dbData, data);
+    signObject(dataChange);
+    await db.changes.save(dataChange);
+    return dataChange;
+  }
 }
 
-export async function receiveChanges(changes: IDataChange[]) {
+export async function receiveChange(dataChange: IDataChange) {
   const db = await getDB();
 
-  changes = sortBy(changes, 'modified');
-
-  const signers: { [signer: string]: IUser } = {}
-  const subjects: { [subject: string]: IData } = {};
-  const subjectsDeleted: { [subject: string]: string } = {};
-  const existingChanges: { [subject: string]: IDataChange[] } = {};
+  // if we already have this change in the db, just return
+  if (await db.changes.get(dataChange.id)) {
+    return;
+  }
 
   // TODO somewhere we need to remove signer and signature from the "data" object since they may not be valid anymore
   // unless this user "me" has permissions to make the change, in which case "me" should sign
@@ -168,72 +168,67 @@ export async function receiveChanges(changes: IDataChange[]) {
   // think more about this...
 
   // verify changes
-  for (const change of changes) {
-    const signer = signers[change.signer] || (await db.get(change.signer) as IUser);
-    const publicKey = signer.publicKey;
-    verifySignedObject(change, publicKey);
-    if (!subjects[change.subject]) {
-      subjects[change.subject] = await db.get(change.subject);
-    }
-    const data = subjects[change.subject];
-    if (data.type === "Group") {
-      await hasPermission(signer.id, data.group, 'admin');
-    } else {
-      await hasPermission(signer.id, change.group, 'write');
-    }
-    // TODO since we're no longer relying on db.save to verify permissions it needs to be done here, will be a lot of work
+  // TODO since we're no longer relying on db.save to verify permissions it needs to be done here, will be a lot of work
+  let dbData = await db.get(dataChange.subject);
+  const signer: IUser = await db.get(dataChange.signer);
+  const publicKey = signer.publicKey;
+  verifySignedObject(dataChange, publicKey);
+  if (dbData.type === "Group") {
+    await hasPermission(signer.id, dbData.group, 'admin');
+  } else {
+    await hasPermission(signer.id, dataChange.group, 'write');
   }
-
-  // apply changes
-  for (const change of changes) {
-    if (await db.changes.get(change.id)) {
-      continue;
+  
+  if (dataChange.changes[0][0] !== '') {
+    if (!dbData) {
+      throw new Error(`This appears to be a partial change to an object that doesn't exist`);
     }
-    await db.changes.save(change);
-
-    // TODO check if this is a change for an object that was already deleted - not allowed unless the path is empty
-
-    let data = subjects[change.subject] || await db.get(change.subject);
-
-    if (data.modified > change.modified) {
-      // TODO what if change.group !== data.group?
-      const _existingChanges =
-        existingChanges[change.subject] ||
-        await db.changes.getSubjectChanges(change.subject, change.modified);
-      existingChanges[change.subject] = _existingChanges;
-      const newerChangeExists = _existingChanges.find(c => change.path.startsWith(c.path) && change.modified <= c.modified);
-      if (newerChangeExists) {
-        continue;
-      }
-    }
-    if (change.subjectDeleted) {
-      subjectsDeleted[change.subject] = change.group;
-    }
-
-    data = applyChanges(data, change);
-    if (data.modified < change.modified) {
-      // TODO this will be inefficient for lots of changes made at the same time
-      data.modified = change.modified;
-    }
-    subjects[change.subject] = data;
-  }
-
-  // write changes
-  const updatedDatas = Object.values(subjects);
-  for (const data of updatedDatas) {
-    const isDeleted = subjectsDeleted[data.subject] === data.group;
-    if (isDeleted) {
-      await db.delete(data.id);
-    } else {
-      // TODO since we're no longer relying on db.save to verify permissions we'll need to do more work before saving or applying the changes
-      await db.save(data, true);
+    if (dbData.group !== dataChange.group) {
+      throw new Error(`This appears to be a change to an object that is in a different group which isn't allowed`);
     }
   }
 
-  return Object.values(subjects);
+  if (dbData?.type === "Deleted" && dbData.group === dataChange.group) {
+    throw new Error(`This object has already been deleted out of this group.  Changes to deleted objects are not allowed.`);
+  }
+
+  await db.changes.save(dataChange);
+
+  if (dataChange.subjectDeleted) {
+    dbData = {
+      type: 'Deleted',
+      group: dataChange.group,
+      id: dataChange.subject,
+      modified: dataChange.modified,
+    }
+  } 
+
+  if (dataChange.modified > (dbData?.modified ?? -Infinity)) {
+    dbData = applyChanges(dbData, dataChange.changes);
+    dbData.modified = dataChange.modified;
+  } else {
+    const existingChanges = await db.changes.getSubjectChanges(dataChange.subject, dataChange.modified);
+    const newerChangesThanInDb = dataChange.changes.filter(pathChange => {
+      const dbChangesWithPath = existingChanges.filter(existingChange => 
+        existingChange.group === dataChange.group && 
+        existingChange.changes.find(([path]) => path.startsWith(pathChange[0]))
+      );
+      const lastDbPathModified = max(dbChangesWithPath.map(c => c.modified)) ?? -Infinity;
+      return lastDbPathModified < dataChange.modified;
+    });
+    applyChanges(dbData, newerChangesThanInDb);
+  }
+
+  // sign object if we can, otherwise delete signer and signature (we won't be able to do "full syncs" for this object because we don't have a signed version)
+  if(
+    (dbData.type === 'Group' && (await hasPermission(userId, dbData.group, 'admin'))) || 
+    (dbData.type !== 'Group' && (await hasPermission(userId, dbData.group, 'write')))
+  ) {
+    signObject(dbData);
+  } else {
+    delete dbData.signer;
+    delete dbData.signature;
+  }
+  await db.save(dbData, true);
 }
 
-// export async function getChanges(group: string, lastReceived: number) {
-//   const db = await getDB();
-//   db.changes
-// }

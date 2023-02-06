@@ -43,9 +43,7 @@ describe('data-change', () => {
       expect(
         getChanges({ a: 1 }, { a: 2 })
       ).toEqual(
-        [
-          { path: 'a', value: 2 }
-        ]
+        [['a', 2]]
       )
     })
 
@@ -53,9 +51,7 @@ describe('data-change', () => {
       expect(
         getChanges({ a: 0 }, { a: null })
       ).toEqual(
-        [
-          { path: 'a', value: null }
-        ]
+        [['a', null]]
       )
     })
 
@@ -63,9 +59,7 @@ describe('data-change', () => {
       expect(
         getChanges({ a: 0 }, { a: {} })
       ).toEqual(
-        [
-          { path: 'a', value: {} }
-        ]
+        [['a', {}]]
       )
     })
 
@@ -73,9 +67,7 @@ describe('data-change', () => {
       expect(
         getChanges({ a: {} }, { a: 0 })
       ).toEqual(
-        [
-          { path: 'a', value: 0 }
-        ]
+        [['a', 0]]
       )
     })
 
@@ -83,9 +75,7 @@ describe('data-change', () => {
       expect(
         getChanges({}, { a: 1 })
       ).toEqual(
-        [
-          { path: 'a', value: 1 }
-        ]
+        [['a', 1]]
       )
     })
 
@@ -93,7 +83,7 @@ describe('data-change', () => {
       expect(
         getChanges({ a: 1 }, {})
       ).toEqual(
-        [ { path: 'a' }]        
+        [['a']]
       )
     })
 
@@ -102,8 +92,8 @@ describe('data-change', () => {
         getChanges({ a: { b: [1, 2, 3] } }, { a: { b: [1, 3] } })
       ).toEqual(
         [
-          { path: 'a.b.1', value: 3 },
-          { path: 'a.b.2' },
+          ['a.b.1', 3],
+          ['a.b.2'],
         ]
       )
     })
@@ -117,11 +107,11 @@ describe('data-change', () => {
         )
       ).toEqual(
         [
-          { path: 'a.b.1', value: 3 },
-          { path: 'a.b.2' },
-          { path: 'c', value: { d: null } },
-          { path: 'dd' },
-          { path: 'ddd', value: d },
+          ['a.b.1', 3],
+          ['a.b.2'],
+          ['c', { d: null }],
+          ['dd'],
+          ['ddd', d],
         ]
       )
     })
@@ -147,9 +137,9 @@ describe('data-change', () => {
         )
       ).toEqual(
         [
-          { path: 'ary' },
-          { path: 'n', value: 2 },
-          { path: 'obj' },
+          ['ary'],
+          ['n', 2],
+          ['obj']
         ]
       )
     })
@@ -163,9 +153,9 @@ describe('data-change', () => {
         )
       ).toEqual(
         [
-          { path: 'ary', value: []},
-          { path: 'n', value: 2},
-          { path: 'obj', value: {}},
+          ['ary', []],
+          ['n', 2],
+          ['obj', {}],
         ]
       )
     })
@@ -179,9 +169,9 @@ describe('data-change', () => {
         )
       ).toEqual(
         [
-          { path: 'ary', value: [1,2,3]},
-          { path: 'n', value: 1},
-          { path: 'obj', value: { a:1, b: 2}},
+          ['ary', [1, 2, 3]],
+          ['n', 1],
+          ['obj', { a: 1, b: 2 }],
         ]
       )
     })
@@ -194,10 +184,10 @@ describe('data-change', () => {
         )
       ).toEqual(
         [
-          { path: "ary.1" },
-          { path: "obj.b" },
-          { path: 'obj.d.0', value: 2 },
-          { path: "obj.d.1" },
+          ['ary.1'],
+          ['obj.b'],
+          ['obj.d.0', 2],
+          ['obj.d.1'],
         ]
       )
     })
@@ -210,7 +200,7 @@ describe('data-change', () => {
         )
       ).toEqual(
         [
-          { path: 'ary', value: [] },
+          ['ary', []],
         ]
       )
     })
@@ -223,7 +213,7 @@ describe('data-change', () => {
         )
       ).toEqual(
         [
-          { path: 'a', value: { n: 1 } }
+          ['a', { n: 1 }]
         ]
       )
     })
@@ -236,7 +226,7 @@ describe('data-change', () => {
         )
       ).toEqual(
         [
-          { path: 'a', value: [1] }
+          ['a', [1]]
         ]
       )
     })
@@ -249,7 +239,7 @@ describe('data-change', () => {
         )
       ).toEqual(
         [
-          { path: 'a', value: 1 }
+          ['a', 1]
         ]
       )
     })
@@ -262,7 +252,7 @@ describe('data-change', () => {
         )
       ).toEqual(
         [
-          { path: 'a', value: 1 }
+          ['a', 1]
         ]
       )
     })
@@ -275,7 +265,7 @@ describe('data-change', () => {
         )
       ).toEqual(
         [
-          { path: 'a', value: [1] }
+          ['a', [1]]
         ]
       )
     })
@@ -288,7 +278,7 @@ describe('data-change', () => {
         )
       ).toEqual(
         [
-          { path: 'a', value: { n: 1 } }
+          ['a', { n: 1 }]
         ]
       )
     })
@@ -301,7 +291,7 @@ describe('data-change', () => {
         )
       ).toEqual(
         [
-          { path: 'a', value: { "0": 1 } }
+          ['a', { '0': 1 }]
         ]
       )
     })
@@ -314,7 +304,7 @@ describe('data-change', () => {
         )
       ).toEqual(
         [
-          { path: 'a.0', value: 2 }
+          ['a.0', 2]
         ]
       )
     })
@@ -330,8 +320,8 @@ describe('data-change', () => {
         )
       ).toEqual(
         [
-          { path: '0', value: 2 },
-          { path: 'n', value: 2 },
+          ['0', 2],
+          ['n', 2],
         ]
       )
     })
@@ -339,20 +329,16 @@ describe('data-change', () => {
     test('from or to undefined', () => {
       expect(getChanges(undefined, undefined)).toEqual([])
 
-      expect(getChanges({ a: 1 }, undefined)).toEqual([
-        { path: 'a' }
-      ])
+      expect(getChanges({ a: 1 }, undefined)).toEqual([['a']])
 
-      expect(getChanges(undefined, { a: 1 })).toEqual([
-        { path: 'a', value: 1 }
-      ])
+      expect(getChanges(undefined, { a: 1 })).toEqual([['a', 1]])
     })
   })
 
   describe('applyChange', () => {
     test('simple set', () => {
       expect(
-        applyChanges({}, { path: 'a', value: 1 })
+        applyChanges({}, [['a', 1]])
       ).toEqual(
         { a: 1 }
       )
@@ -360,7 +346,7 @@ describe('data-change', () => {
 
     test('new array', () => {
       expect(
-        applyChanges({}, { path: 'a.0', value: 1 })
+        applyChanges({}, [['a.0', 1]])
       ).toEqual(
         { a: [1] }
       )
@@ -368,7 +354,7 @@ describe('data-change', () => {
 
     test('new empty array', () => {
       expect(
-        applyChanges({}, { path: 'a', value: [] })
+        applyChanges({}, [['a', []]])
       ).toEqual(
         { a: [] }
       )
@@ -376,7 +362,7 @@ describe('data-change', () => {
 
     test('rm array', () => {
       expect(
-        applyChanges({ a: [] }, { path: 'a' })
+        applyChanges({ a: [] }, [['a']])
       ).toEqual(
         {}
       )
@@ -384,7 +370,7 @@ describe('data-change', () => {
 
     test('overwrite array with object', () => {
       expect(
-        applyChanges({ a: [] }, { path: 'a', value: { b: 1 } })
+        applyChanges({ a: [] }, [['a', { b: 1 }]])
       ).toEqual(
         { a: { b: 1 } }
       )
@@ -392,7 +378,7 @@ describe('data-change', () => {
 
     test('overwrite object with array', () => {
       expect(
-        applyChanges({ a: { b: 1 } }, { path: 'a', value: [1] })
+        applyChanges({ a: { b: 1 } }, [['a', [1]]])
       ).toEqual(
         { a: [1] }
       )
@@ -402,7 +388,7 @@ describe('data-change', () => {
       expect(
         applyChanges(
           { a: { "0": 1 } },
-          { path: 'a.0', value: 2 })
+          [['a.0', 2]])
       ).toEqual(
         { a: { "0": 2 } }
       )
@@ -415,7 +401,7 @@ describe('data-change', () => {
       expect(
         applyChanges(
           { a: [1] },
-          { path: 'a.a', value: 2 })
+          [['a.a', 2]])
       ).toEqual(
         { a: ary }
       )
@@ -425,7 +411,7 @@ describe('data-change', () => {
       expect(
         applyChanges(
           { a: { "0": 1 } },
-          { path: '', value: 2 })
+          [['', 2]])
       ).toEqual(
         2
       )
@@ -435,14 +421,15 @@ describe('data-change', () => {
   describe('saveChange', () => {
     test('create and update', async () => {
       // create
-      const data = newData({ n: 1});
+      const data = newData({ n: 1 });
       expect(await db.changes.getSubjectChanges(data.id)).toEqual([]);
       await saveChanges(data);
       let dbData = await db.get(data.id);
       expect(dbData).toEqual(data);
       let dbChanges = await db.changes.getSubjectChanges(data.id);
       expect(dbChanges.length).toEqual(1);
-      expect(dbChanges[0].value).toEqual(data);
+      expect(dbChanges[0].changes.length).toEqual(1);
+      expect(dbChanges[0].changes[0][1]).toEqual(data);
 
       // update
       data.n = 2;
@@ -454,20 +441,19 @@ describe('data-change', () => {
       dbData = await db.get(data.id);
       expect(dbData).toEqual(data);
       dbChanges = await db.changes.getSubjectChanges(data.id, data.modified);
-      expect(dbChanges.length).toEqual(4);
-      let expectedChanges: any = [
-        { path: 'ary', value: [1]  },
-        { 
-          group: data.group, 
+      expect(dbChanges).toMatchObject([
+        {
+          group: data.group,
           subject: data.id,
           modified: data.modified,
-          path: 'n',
-          value: 2,
-        },
-        { path: 'obj', value: { a: 1 } },
-        { path: 's', value: 'hi' },
-      ]
-      expect(dbChanges).toMatchObject(expectedChanges);
+          changes: [
+            ['ary', [1]],
+            ['n', 2],
+            ['obj', { a: 1 }],
+            ['s', 'hi']
+          ]
+        }
+      ]);
 
       // update group
       data.group = myGroup.id;
@@ -476,20 +462,17 @@ describe('data-change', () => {
       dbData = await db.get(data.id);
       expect(dbData).toEqual(data);
       dbChanges = await db.changes.getSubjectChanges(data.id, data.modified);
-      expect(dbChanges.length).toEqual(2);
-      expectedChanges = [
-        { 
-          group: me.id, 
-          path: '', 
+      expect(dbChanges).toMatchObject([
+        {
+          group: me.id,
           subjectDeleted: true,
+          changes: []
         },
-        { 
-          group: myGroup.id, 
-          path: '',
-          value: data,
-        },
-      ]
-      expect(dbChanges).toMatchObject(expectedChanges);
+        {
+          group: myGroup.id,
+          changes: [['', data]]
+        }
+      ]);
     })
 
     test('create group and update group', async () => {
@@ -500,8 +483,12 @@ describe('data-change', () => {
       let dbData = await db.get(data.id);
       expect(dbData).toEqual(data);
       let dbChanges = await db.changes.getSubjectChanges(data.id);
-      expect(dbChanges.length).toEqual(1);
-      expect(dbChanges[0].value).toEqual(data);
+      expect(dbChanges).toMatchObject([
+        {
+          subject: data.id,
+          changes: [['',data]]
+        },
+      ]);
       
       // update group
       data.name = "Better Group Name";
@@ -510,13 +497,15 @@ describe('data-change', () => {
       dbData = await db.get(data.id);
       expect(dbData).toEqual(data);
       dbChanges = await db.changes.getSubjectChanges(data.id, data.modified);
-      expect(dbChanges.length).toEqual(1);
       expect(dbChanges).toMatchObject([
-        { path: 'name', value: 'Better Group Name' }
+        {
+          subject: data.id,
+          changes: [['name','Better Group Name']]
+        },
       ])
     });
 
-    test('reject changes due to lack of permissions', () => {
+    test('TODO reject changes due to lack of permissions', () => {
 
     })
   })

@@ -64,7 +64,7 @@ export function newUser(name?: string): IUser & { secretKey: string } {
 // expose public box key for now to update users if needed
 export let publicBoxKey: string;
 
-let userId: string;
+export let userId: string;
 let secretKey: string;
 
 export async function init(config?: { id: string, secretKey: string, name?: string, iconUrl?: string, dontWarn?: boolean, dontStore?: boolean }): Promise<string> {
@@ -356,6 +356,7 @@ export function newGroup(fields?: Partial<IGroup>): IGroup {
     blockedUserIds: [],
     members: [],
     name: 'New Group',
+    owner: userId,
     ...fields
   });
   group.group = group.id;
