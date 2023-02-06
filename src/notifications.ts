@@ -21,7 +21,6 @@ export function dataToNotification(data: IData): INotification {
     type: 'Notification',
     id: newid(),
     group: data.group,
-    owner: me.id,
     modified: Date.now(),
     title: '',
     data,

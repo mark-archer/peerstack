@@ -36,7 +36,6 @@ export async function createInvitation(group: string, expires?: number, read = t
     id: newid(),
     type: 'Invitation',
     group,
-    owner: userId,
     modified: Date.now(),
     ttl: expires,
     read,
@@ -64,7 +63,6 @@ export async function acceptInvitation(invite: IInviteDetails) {
     id: newid(),
     type: IInviteAcceptType,
     group: userId,
-    owner: userId,
     modified: Date.now(),
     invitation: {
       id,

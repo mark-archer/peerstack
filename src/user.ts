@@ -50,7 +50,6 @@ export function newUser(name?: string): IUser & { secretKey: string } {
   const user: IUser & { secretKey: string } = {
     type: 'User',
     id: userId,
-    owner: userId,
     group: 'users',
     name: name || userId,
     secretKey: encodeUint8ArrayToBaseN(newKey.secretKey),
@@ -144,7 +143,6 @@ export function hydrateUser(id: string, secretKey: string, displayName?: string)
     name: displayName || id,
     group: 'users',
     modified: 1, // don't want to overwrite data in the database with this most minimal user object
-    owner: id,
     type: 'User',
   }
 }
@@ -340,13 +338,12 @@ export function keysEqual(publicKey1: string, publicKey2: string) {
 
 export function newData<T>(fields?: Partial<IData> & T): IData & T {
   if (!userId) {
-    console.warn('user has not been initialized so owner and group may be uninitialized')
+    console.warn('user has not been initialized so group may be uninitialized')
   }
   const value: IData & T = {
     id: newid(),
     type: 'Data',
     group: userId,
-    owner: userId,
     modified: Date.now(),
     ...fields
   }

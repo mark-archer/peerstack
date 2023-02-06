@@ -25,6 +25,7 @@ export interface IGroupMember {
 export interface IGroup extends IData {
   type: 'Group',
   name: string,
+  owner: string,
   members: IGroupMember[],
   blockedUserIds: string[],
   allowPublicViewers?: boolean,
@@ -274,7 +275,7 @@ export async function hasPermission(userId: string, group: string | IGroup, acce
 
 const users: { [userId: string]: IUser } = {};
 export async function validateData(db: IDB, datas: IData[]) {
-  const requiredFields = ['modified', 'type', 'group', 'id', 'owner', 'signature', 'signer'];
+  const requiredFields = ['modified', 'type', 'group', 'id', 'signature', 'signer'];
   for (const data of datas) {
     if (!isObject(data)) {
       throw new Error('data must be an object')
@@ -297,9 +298,6 @@ export async function validateData(db: IDB, datas: IData[]) {
     else if (data.type === 'User') {
       if (data.group !== 'users') {
         throw new Error(`All users must have their group set to 'users'`);
-      }
-      if (data.owner !== data.id) {
-        throw new Error(`The owner of a user must be that same user`);
       }
       if (data.signer !== data.id) {
         throw new Error(`The signer of a user must be that same user`)
@@ -329,11 +327,6 @@ export async function validateData(db: IDB, datas: IData[]) {
         await hasPermission(user.id, data as IGroup, 'admin');
       } else {
         const dbData = await db.get(data.id);
-        if (data.type === 'Type' || dbData?.type === 'Type') {
-          if (!dbData || dbData.owner === user.id) {
-            return true;
-          }
-        }
         if (dbData && dbData.modified > data.modified) {
           throw new Error('modified must be newer than the existing doc in db')
         }
