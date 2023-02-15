@@ -9,7 +9,7 @@ class MemoryCollection<T extends { id: string }> {
 
   save = async(data: T | T[], skipValidation?: boolean) => {
     if (!isArray(data)) {
-      data = [data]
+      data = [data];
     }
     data.forEach(d => this.collection[d.id] = cloneDeep(d));
   }

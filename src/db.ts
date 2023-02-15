@@ -180,12 +180,22 @@ export async function init(opts?: PeerstackDBOpts): Promise<IDB> {
 
   db = { ..._db, files: { ..._db.files }, local: { ..._db.local } };
 
-  db.save = async (data: IData | IData[], skipValidation: boolean = false) => {
+  db.save = async (data: IData | IData[], skipValidation: boolean = false, skipVerification: boolean = skipValidation) => {
     if (!isArray(data)) {
       data = [data];
     }
     if (!skipValidation) {
       await validateData(db, data);
+    }
+    if (!skipVerification) {
+      for (const dat of data) {
+        const user = await getUser(dat.signer);
+        try {
+          verifySignedObject(dat, user.publicKey);
+        } catch (err) {
+          throw new Error(`Could not verify object signature: ${JSON.stringify({ data, user }, null, 2)}`)
+        }
+      }
     }
     await _db.save(data);
     data.forEach((d: IData) => clearHashCache(d.group));
@@ -236,7 +246,23 @@ export const checkPermission = (function <T extends Function>(hasPermission: T):
   };
 })(hasPermission)
 
-const groups: { [groupId: string]: IGroup } = {}
+export const groups: { [groupId: string]: IGroup } = {};
+export const users: { [userId: string]: IUser } = {};
+
+export async function getGroup(groupId: string, forceRefresh?: boolean) {
+  if (forceRefresh || !groups[groupId]) {
+    groups[groupId] = await (await getDB()).get(groupId) as IGroup;
+  }
+  return groups[groupId];
+}
+
+export async function getUser(userId: string, forceRefresh?: boolean) {
+  if (forceRefresh || !users[userId]) {
+    users[userId] = await (await getDB()).get(userId) as IUser;
+  }
+  return users[userId];
+}
+
 export async function hasPermission(userId: string, group: string | IGroup, accessLevel: 'read' | 'write' | 'admin', db?: IDB): Promise<boolean> {
   if (['users', 'types'].includes(group as any) && accessLevel === 'read') {
     return true;
@@ -245,17 +271,9 @@ export async function hasPermission(userId: string, group: string | IGroup, acce
     return true;
   }
   if (typeof group === 'string') {
-    if (!groups[group]) {
-      if (!db) {
-        db = await getDB()
-      }
-      group = (await db.get(group)) as IGroup;
-    } else {
-      group = groups[group];
-    }
+    group = await getGroup(group);
   }
-  group = group as IGroup;
-
+  
   // enables propagating deleted groups
   if ((group as any)?.type == 'Deleted' && group.id === group.group) {
     return true
@@ -273,7 +291,6 @@ export async function hasPermission(userId: string, group: string | IGroup, acce
   return Boolean(memberWithAccess);
 }
 
-const users: { [userId: string]: IUser } = {};
 export async function validateData(db: IDB, datas: IData[]) {
   const requiredFields = ['modified', 'type', 'group', 'id', 'signature', 'signer'];
   for (const data of datas) {
@@ -302,21 +319,16 @@ export async function validateData(db: IDB, datas: IData[]) {
       if (data.signer !== data.id) {
         throw new Error(`The signer of a user must be that same user`)
       }
-      const dbUser = users[data.id] || await db.get(data.id) as IUser;
+      const dbUser = await getUser(data.id);
       if (dbUser && !keysEqual((data as IUser).publicKey, dbUser.publicKey)) {
         // This intentionally prevents a user from being rekeyed via a normal update.  
         // TODO We need a special function to allow a user to rekey themselves. 
         throw new Error(`An attempt was made to update a user but the public keys do not match`);
       }
     }
-    const user = data.type === 'User' && (data as IUser) || users[data.signer] || await db.get(data.signer) as IUser;
+    const user = data.type === 'User' && (data as IUser) || await getUser(data.signer);
     if (!user?.id) {
       throw new Error(`Could not identify signer: ${JSON.stringify(data, null, 2)}`);
-    }
-    try {
-      verifySignedObject(data, user.publicKey);
-    } catch (err) {
-      throw new Error(`Could not verify object signature: ${JSON.stringify({ data, user }, null, 2)}`)
     }
     users[user.id] = user;
     if (data.type == 'User') {

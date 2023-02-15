@@ -2,8 +2,9 @@ import { newUser, init, newData, signObject, newGroup } from "./user"
 import * as _ from 'lodash';
 import 'should';
 import { initDBWithMemoryMock } from "./db-mock";
-import { applyChanges, getChanges, isEmptyArray, saveChanges } from "./data-change";
-import { IDB, IGroup } from "./db";
+import { applyChanges, getChanges, isEmptyArray, isEmptyObj, isLeaf, isObj, saveChanges } from "./data-change";
+import { IData, IDB, IGroup } from "./db";
+import { cloneDeep } from "lodash";
 
 describe('data-change', () => {
 
@@ -19,6 +20,100 @@ describe('data-change', () => {
     myGroup = newGroup();
     signObject(myGroup);
     await db.save(myGroup)
+  })
+
+  describe('test from chatGPT', () => {
+    describe('isObj', () => {
+      test('should return true if the input is an object', () => {
+        const input = { a: 1 };
+        expect(isObj(input)).toBe(true);
+      });
+    
+      test('should return false if the input is an array', () => {
+        const input = [1, 2, 3];
+        expect(isObj(input)).toBe(false);
+      });
+    
+      test('should return false if the input is a date', () => {
+        const input = new Date();
+        expect(isObj(input)).toBe(false);
+      });
+    
+      test('should return false if the input is null', () => {
+        const input = null;
+        expect(isObj(input)).toBe(false);
+      });
+    });
+    
+    describe('isLeaf', () => {
+      test('should return true if the input is not an object, a date or null', () => {
+        const input1 = 1;
+        const input2 = 'hello';
+        const input3 = true;
+        expect(isLeaf(input1)).toBe(true);
+        expect(isLeaf(input2)).toBe(true);
+        expect(isLeaf(input3)).toBe(true);
+      });
+    
+      test('should return false if the input is an object', () => {
+        const input = { a: 1 };
+        expect(isLeaf(input)).toBe(false);
+      });
+    
+      test('should return true if the input is a date', () => {
+        const input = new Date();
+        expect(isLeaf(input)).toBe(true);
+      });
+    
+      test('should return true if the input is null', () => {
+        const input = null;
+        expect(isLeaf(input)).toBe(true);
+      });
+    });
+    
+    describe('isEmptyObj', () => {
+      test('should return true if the input is an empty object', () => {
+        const input = {};
+        expect(isEmptyObj(input)).toBe(true);
+      });
+    
+      test('should return false if the input is not an empty object', () => {
+        const input = { a: 1 };
+        expect(isEmptyObj(input)).toBe(false);
+      });
+    
+      test('should return false if the input is an array', () => {
+        const input = [1, 2, 3];
+        expect(isEmptyObj(input)).toBe(false);
+      });
+    
+      test('should return false if the input is null', () => {
+        const input = null;
+        expect(isEmptyObj(input)).toBe(false);
+      });
+    });
+    
+    describe('isEmptyArray', () => {
+      test('should return true if the input is an empty array', () => {
+        const input = [];
+        expect(isEmptyArray(input)).toBe(true);
+      });
+    
+      test('should return false if the input is not an empty array', () => {
+        const input = [1, 2, 3];
+        expect(isEmptyArray(input)).toBe(false);
+      });
+    
+      test('should return false if the input is an object', () => {
+        const input = { a: 1 };
+        expect(isEmptyArray(input)).toBe(false);
+      });
+    
+      test('should return false if the input is null', () => {
+        const input = null;
+        expect(isEmptyArray(input)).toBe(false);
+      });
+    });
   })
 
   describe('isEmptyArray', () => {
@@ -419,6 +514,69 @@ describe('data-change', () => {
   })
 
   describe('saveChange', () => {
+    describe('benchmarks', () => {
+      let existingData1: IData;
+      beforeEach(async () => {
+        async function genData(i: number) {
+          const data = newData({ n: 1, i });
+          await saveChanges(data);
+          return await db.get(data.id);  
+        }
+        existingData1 = await genData(1);
+        // existingData2 = await genData(2);
+        // existingData3 = await genData(3);
+        // existingData4 = await genData(4);
+        // existingData5 = await genData(5);
+      })
+      
+      test('benchmark create [40 ms]', async () => {
+        // 70ms is the fastest this could go
+        // 100ms without validateDataChange
+        // 185ms without 2 `hasPermission` calls
+        const data = newData({ n: 1 });
+        await saveChanges(data);
+        // let dbData = await db.get(data.id);
+        // expect(dbData).toEqual(data);
+      })
+
+      test('benchmark update [40 ms]', async () => {
+        const data = cloneDeep(existingData1);
+        data.modified++;
+        data.n = 2;
+        await saveChanges(data);
+        // let dbData = await db.get(data.id);
+        // expect(dbData).toEqual(data);
+      })
+
+      test('benchmark update group [80 ms]', async () => {
+        const data = cloneDeep(existingData1);
+        data.n = 2;
+        data.group = myGroup.id;
+        data.modified += 2;
+        await saveChanges(data);
+        // let dbData = await db.get(data.id);
+        // expect(dbData).toEqual(data);
+      })
+
+      test('benchmark create with db.save [100 ms]', async () => {
+        const data = newData({ n: 1 });
+        signObject(data);
+        await db.save(data);
+        // let dbData = await db.get(data.id);
+        // expect(dbData).toEqual(data);
+      })
+
+      test('benchmark update with db.save [100 ms]', async () => {
+        const data = cloneDeep(existingData1);
+        data.n = 2;
+        data.modified++;
+        signObject(data);
+        await db.save(data);
+        // let dbData = await db.get(data.id);
+        // expect(dbData).toEqual(data);
+      })
+    })
+
     test('create and update', async () => {
       // create
       const data = newData({ n: 1 });
@@ -457,11 +615,11 @@ describe('data-change', () => {
 
       // update group
       data.group = myGroup.id;
-      data.modified++;
+      data.modified += 2;
       await saveChanges(data);
       dbData = await db.get(data.id);
       expect(dbData).toEqual(data);
-      dbChanges = await db.changes.getSubjectChanges(data.id, data.modified);
+      dbChanges = await db.changes.getSubjectChanges(data.id, data.modified - 1);
       expect(dbChanges).toMatchObject([
         {
           group: me.id,
@@ -489,7 +647,7 @@ describe('data-change', () => {
           changes: [['',data]]
         },
       ]);
-      
+
       // update group
       data.name = "Better Group Name";
       data.modified++;
@@ -505,8 +663,12 @@ describe('data-change', () => {
       ])
     });
 
-    test('TODO reject changes due to lack of permissions', () => {
+    // test('TODO non-admin member can not make themselves group owner', () => {
+    // })
 
-    })
+    // test('TODO reject changes due to lack of permissions', () => {
+    // })
+
+    
   })
 })
