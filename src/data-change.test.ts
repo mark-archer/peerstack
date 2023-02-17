@@ -2,7 +2,7 @@ import { newUser, init, newData, signObject, newGroup } from "./user"
 import * as _ from 'lodash';
 import 'should';
 import { initDBWithMemoryMock } from "./db-mock";
-import { applyChanges, getChanges, isEmptyArray, isEmptyObj, isLeaf, isObj, saveChanges } from "./data-change";
+import { applyChanges, getChanges, isEmptyArray, isEmptyObj, isLeaf, isObj, commitChange, validateDataChange, deleteData } from "./data-change";
 import { IData, IDB, IGroup } from "./db";
 import { cloneDeep } from "lodash";
 
@@ -28,23 +28,23 @@ describe('data-change', () => {
         const input = { a: 1 };
         expect(isObj(input)).toBe(true);
       });
-    
+
       test('should return false if the input is an array', () => {
         const input = [1, 2, 3];
         expect(isObj(input)).toBe(false);
       });
-    
+
       test('should return false if the input is a date', () => {
         const input = new Date();
         expect(isObj(input)).toBe(false);
       });
-    
+
       test('should return false if the input is null', () => {
         const input = null;
         expect(isObj(input)).toBe(false);
       });
     });
-    
+
     describe('isLeaf', () => {
       test('should return true if the input is not an object, a date or null', () => {
         const input1 = 1;
@@ -54,61 +54,61 @@ describe('data-change', () => {
         expect(isLeaf(input2)).toBe(true);
         expect(isLeaf(input3)).toBe(true);
       });
-    
+
       test('should return false if the input is an object', () => {
         const input = { a: 1 };
         expect(isLeaf(input)).toBe(false);
       });
-    
+
       test('should return true if the input is a date', () => {
         const input = new Date();
         expect(isLeaf(input)).toBe(true);
       });
-    
+
       test('should return true if the input is null', () => {
         const input = null;
         expect(isLeaf(input)).toBe(true);
       });
     });
-    
+
     describe('isEmptyObj', () => {
       test('should return true if the input is an empty object', () => {
         const input = {};
         expect(isEmptyObj(input)).toBe(true);
       });
-    
+
       test('should return false if the input is not an empty object', () => {
         const input = { a: 1 };
         expect(isEmptyObj(input)).toBe(false);
       });
-    
+
       test('should return false if the input is an array', () => {
         const input = [1, 2, 3];
         expect(isEmptyObj(input)).toBe(false);
       });
-    
+
       test('should return false if the input is null', () => {
         const input = null;
         expect(isEmptyObj(input)).toBe(false);
       });
     });
-    
+
     describe('isEmptyArray', () => {
       test('should return true if the input is an empty array', () => {
         const input = [];
         expect(isEmptyArray(input)).toBe(true);
       });
-    
+
       test('should return false if the input is not an empty array', () => {
         const input = [1, 2, 3];
         expect(isEmptyArray(input)).toBe(false);
       });
-    
+
       test('should return false if the input is an object', () => {
         const input = { a: 1 };
         expect(isEmptyArray(input)).toBe(false);
       });
-    
+
       test('should return false if the input is null', () => {
         const input = null;
         expect(isEmptyArray(input)).toBe(false);
@@ -513,28 +513,28 @@ describe('data-change', () => {
     })
   })
 
-  describe('saveChange', () => {
+  describe('commitChange', () => {
+    let existingData1: IData;
+    beforeEach(async () => {
+      async function genData(i: number) {
+        const data = newData({ n: 1, i });
+        await commitChange(data);
+        return await db.get(data.id);
+      }
+      existingData1 = await genData(1);
+      // existingData2 = await genData(2);
+      // existingData3 = await genData(3);
+      // existingData4 = await genData(4);
+      // existingData5 = await genData(5);
+    })
+    
     describe('benchmarks', () => {
-      let existingData1: IData;
-      beforeEach(async () => {
-        async function genData(i: number) {
-          const data = newData({ n: 1, i });
-          await saveChanges(data);
-          return await db.get(data.id);  
-        }
-        existingData1 = await genData(1);
-        // existingData2 = await genData(2);
-        // existingData3 = await genData(3);
-        // existingData4 = await genData(4);
-        // existingData5 = await genData(5);
-      })
-      
       test('benchmark create [40 ms]', async () => {
         // 70ms is the fastest this could go
         // 100ms without validateDataChange
         // 185ms without 2 `hasPermission` calls
         const data = newData({ n: 1 });
-        await saveChanges(data);
+        await commitChange(data);
         // let dbData = await db.get(data.id);
         // expect(dbData).toEqual(data);
       })
@@ -543,7 +543,7 @@ describe('data-change', () => {
         const data = cloneDeep(existingData1);
         data.modified++;
         data.n = 2;
-        await saveChanges(data);
+        await commitChange(data);
         // let dbData = await db.get(data.id);
         // expect(dbData).toEqual(data);
       })
@@ -553,7 +553,7 @@ describe('data-change', () => {
         data.n = 2;
         data.group = myGroup.id;
         data.modified += 2;
-        await saveChanges(data);
+        await commitChange(data);
         // let dbData = await db.get(data.id);
         // expect(dbData).toEqual(data);
       })
@@ -577,11 +577,11 @@ describe('data-change', () => {
       })
     })
 
-    test('create and update', async () => {
+    test('create and update and update group', async () => {
       // create
       const data = newData({ n: 1 });
       expect(await db.changes.getSubjectChanges(data.id)).toEqual([]);
-      await saveChanges(data);
+      await commitChange(data);
       let dbData = await db.get(data.id);
       expect(dbData).toEqual(data);
       let dbChanges = await db.changes.getSubjectChanges(data.id);
@@ -595,7 +595,7 @@ describe('data-change', () => {
       data.ary = [1]
       data.obj = { a: 1 }
       data.modified++;
-      await saveChanges(data);
+      await commitChange(data);
       dbData = await db.get(data.id);
       expect(dbData).toEqual(data);
       dbChanges = await db.changes.getSubjectChanges(data.id, data.modified);
@@ -616,7 +616,7 @@ describe('data-change', () => {
       // update group
       data.group = myGroup.id;
       data.modified += 2;
-      await saveChanges(data);
+      await commitChange(data);
       dbData = await db.get(data.id);
       expect(dbData).toEqual(data);
       dbChanges = await db.changes.getSubjectChanges(data.id, data.modified - 1);
@@ -637,31 +637,46 @@ describe('data-change', () => {
       // create group
       let data = newGroup();
       expect(await db.changes.getSubjectChanges(data.id)).toEqual([]);
-      await saveChanges(data);
+      await commitChange(data);
       let dbData = await db.get(data.id);
       expect(dbData).toEqual(data);
       let dbChanges = await db.changes.getSubjectChanges(data.id);
       expect(dbChanges).toMatchObject([
         {
           subject: data.id,
-          changes: [['',data]]
+          changes: [['', data]]
         },
       ]);
 
       // update group
       data.name = "Better Group Name";
       data.modified++;
-      await saveChanges(data);
+      await commitChange(data);
       dbData = await db.get(data.id);
       expect(dbData).toEqual(data);
       dbChanges = await db.changes.getSubjectChanges(data.id, data.modified);
       expect(dbChanges).toMatchObject([
         {
           subject: data.id,
-          changes: [['name','Better Group Name']]
+          changes: [['name', 'Better Group Name']]
         },
       ])
     });
+
+    test('delete and try to change deleted', async () => {
+      existingData1.modified++;
+      await deleteData(existingData1.id);
+      let dbData = await db.get(existingData1.id);
+      expect(dbData).toMatchObject({ type: "Deleted" });
+
+      // try to change deleted object
+      existingData1.modified++;
+      await expect(
+        commitChange(existingData1)
+      ).rejects.toThrowError(/deleted/)
+    })
+
+
 
     // test('TODO non-admin member can not make themselves group owner', () => {
     // })
@@ -669,6 +684,11 @@ describe('data-change', () => {
     // test('TODO reject changes due to lack of permissions', () => {
     // })
 
-    
+    // TODO test/deal with the scenario where a user receives a change that fails validation
+    //      if they proceed, they could just never see that change unless there is something like a DLQ
+    //      it seems like the best thing is to halt receiving from that device+group
+    //      the problem is this could get device-pairs stuck in a locked state
+    //      need to figure this out
+    //      deep syncs are the ultimate fallback but we'd like to get to a point where they aren't required
   })
 })

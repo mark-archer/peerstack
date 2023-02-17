@@ -99,6 +99,8 @@ export async function init(
         createIndex(kvIndex, 'subject');
         // @ts-ignore
         createIndex(kvIndex, 'subject-modified');
+        // @ts-ignore
+        createIndex(kvIndex, 'group-received');
       }
       if (onUpgrade) await onUpgrade(evt);
     }
@@ -414,9 +416,9 @@ export async function init(
       save: data => dbOp('changes', 'put', data),
       get: id => dbOp('changes', 'get', id),
       delete: id => dbOp('changes', 'delete', id),
-      openCursor: (group, lastReceived) => {
+      openCursor: (group, lastReceived = -Infinity) => {
         // @ts-ignore
-        const index: Indexes = 'group-modified';
+        const index: Indexes = 'group-received';
         const query: DBQuery = { lower: [group, lastReceived], upper: [group, Infinity] };
         return openCursor<IDataChange>(query, index, 'next', 'changes');
       },

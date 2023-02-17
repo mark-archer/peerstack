@@ -34,6 +34,10 @@ export interface IGroup extends IData {
   inactive?: boolean
 }
 
+export function isGroup(data: IData): data is IGroup {
+  return data.type === "Group";
+}
+
 export interface IFile {
   type: 'File'
   id: string
@@ -125,7 +129,7 @@ export interface IDB {
     save: (data: IDataChange | IDataChange[]) => Promise<void>
     get: (id: string) => Promise<IDataChange>
     delete: (id: string) => Promise<void>
-    openCursor: (group: string, lastReceived: number) => Promise<ICursor<IDataChange>>
+    openCursor: (group: string, lastReceived?: number) => Promise<ICursor<IDataChange>>
     getSubjectChanges: (subject: string, modified?: number) => Promise<IDataChange[]>
   },
 }
