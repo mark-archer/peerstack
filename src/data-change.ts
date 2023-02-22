@@ -1,7 +1,7 @@
 import { isArray, isObject, isDate, uniq, set, unset, isEqual, max, cloneDeep, isNumber } from "lodash";
 import { idTime, newid } from "./common";
 import { getDB, checkPermission, IData, hasPermission, IGroup, getUser, users, isGroup } from "./db";
-import { ISigned, IUser, keysEqual, signObject, userId, verifySignedObject } from './user';
+import { ISigned, IUser, keysEqual, signObject, userId, verifySignature, verifySignedObject } from './user';
 // import { isObject } from "./common";
 
 export type IChange = [string, any?]
@@ -175,6 +175,11 @@ export async function validateDataChange(dataChange: IDataChange, dbData?: IData
   const data = applyChanges(cloneDeep(dbData), dataChange.changes) as IData;
   data.modified = dataChange.modified;
 
+  // if this is changing an existing group, ensure user has permissions to do that
+  if (dbData?.type === 'Group') {
+    await checkPermission(dataChange.signer, dbData.group, 'admin');
+  }
+
   if (!isNumber(data.modified) || data.modified > (Date.now() + 60000)) {
     throw new Error(`modified timestamp must be a number and cannot be in the future`);
   }
@@ -211,7 +216,7 @@ export async function validateDataChange(dataChange: IDataChange, dbData?: IData
   }
   try {
     if (data.type === 'Group') {
-      await hasPermission(user.id, data as IGroup, 'admin');
+      await checkPermission(user.id, (dbData || data) as IGroup, 'admin');
     } else {
       const dbData = await db.get(data.id);
       if (dbData && dbData.modified > data.modified) {
@@ -277,22 +282,14 @@ export async function ingestChange(dataChange: IDataChange, dbData?: IData) {
     dbData = applyChanges(dbData, newerChangesThanInDb);
   }
 
-  // sign object if we can, otherwise delete signer and signature (we won't be able to do "full syncs" for this object because we don't have a signed version)
-  if (
-    // (dbData.type !== 'Group' && (await hasPermission(userId, dbData.group, 'write', db))) ||
-    (dbData.type === 'Group' && (await hasPermission(userId, dbData as IGroup, 'admin', db)))
-  ) {
-    // TODO this adds a lot of overhead but allows "deep syncs" with peers so leaving it for now
-    //      it could become unnecessary (changes work well and deep syncs aren't required), 
-    //      if so this should be removed since it's a lot of computational and storage overhead
-    //      also `signer` is misleading since it's just the last user to receive the change who had write permission
-    //      really, this isn't even needed for deep syncs as long as you're syncing with someone who has write permissions
-    //        _except groups_  so sign groups if you're an admin, groups should always have a signature and be signed when saving
-    //          which means we can't send updates to groups as a change?
-    //            we can just send the entire object (signed) with an empty path :)
-    //        deep syncs can still be through peers with writes
+  // future "full/deep syncs" will only be done with users that have write permissions to group so we don't need signed objects
+  //    just verify user has write permissions and update local db with any objects that have a newer modified
+  //    existing "full sync" algorithm will continue to work fine
+  //  _except_ groups so sign groups if your an admin, groups should always have a signature and be signed when saving 
+  if (dbData.type === 'Group' && (await hasPermission(userId, dbData as IGroup, 'admin', db))) {
     signObject(dbData);
   } else {
+    // otherwise delete signer and signature if they exist since they are probably no longer correct
     delete dbData.signer;
     delete dbData.signature;
   }
@@ -301,10 +298,16 @@ export async function ingestChange(dataChange: IDataChange, dbData?: IData) {
 
 // This is intended as the entry point for writing changes made locally
 // use `ingestChange` when syncing with peers
-export async function commitChange<T extends IData>(data: T) {
+export async function commitChange<T extends IData>(data: T, options: { preserveModified?: boolean } = {}) {
   const db = await getDB();
   const dbData = (await db.get(data.id)) || null;
 
+  if (!options.preserveModified) {
+    data.modified = Date.now();
+    if (dbData && dbData.modified === data.modified) {
+      data.modified++;
+    }  
+  }
   if (dbData && dbData.modified === data.modified) {
     throw new Error('modified is the same as what is in the db - this is almost certainly a mistake');
   }
@@ -316,6 +319,10 @@ export async function commitChange<T extends IData>(data: T) {
     // check that I have permissions to write this data
     if (isGroup(data)) {
       await checkPermission(userId, data, 'admin');
+      // it's very important that groups are signed so putting this here 
+      //  the user might have already signed this so this could be a useless 
+      //  and expensive but updates to groups should be rare so doing this for now
+      signObject(data); 
     } else {
       await checkPermission(userId, data.group, 'write');
     }
@@ -348,7 +355,7 @@ export async function deleteData(id: string) {
   const db = await getDB();
   const dbData = await db.get(id);
   if (!dbData) { 
-    return;
+    throw new Error(`No data exists with id ${id}`);
   }
   await checkPermission(userId, dbData.group, 'write');
   const dataChange = getDataChange(dbData, null);

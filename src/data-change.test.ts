@@ -1,8 +1,8 @@
-import { newUser, init, newData, signObject, newGroup } from "./user"
+import { newUser, init, newData, signObject, newGroup, signObjectWithIdAndSecretKey } from "./user"
 import * as _ from 'lodash';
 import 'should';
 import { initDBWithMemoryMock } from "./db-mock";
-import { applyChanges, getChanges, isEmptyArray, isEmptyObj, isLeaf, isObj, commitChange, validateDataChange, deleteData } from "./data-change";
+import { applyChanges, getChanges, isEmptyArray, isEmptyObj, isLeaf, isObj, commitChange, validateDataChange, deleteData, getDataChange, ingestChange } from "./data-change";
 import { IData, IDB, IGroup } from "./db";
 import { cloneDeep } from "lodash";
 
@@ -428,6 +428,16 @@ describe('data-change', () => {
 
       expect(getChanges(undefined, { a: 1 })).toEqual([['a', 1]])
     })
+
+    test('removing the first entry from an array', () => {
+      // it's kind of expensive to have to cycle everything down
+      expect(getChanges([1,2,3,4], [2,3,4])).toEqual([
+        ['0', 2],
+        ['1', 3],
+        ['2', 4],
+        ['3'],
+      ])
+    })
   })
 
   describe('applyChange', () => {
@@ -513,6 +523,59 @@ describe('data-change', () => {
     })
   })
 
+  describe('ingestChange', () => {
+    let group: IGroup;
+    beforeEach(async () => {
+      group = newGroup();
+      group.members.push({ userId: peer.id, write: true });
+      await commitChange(group);
+    })
+
+    test('non-admin can not make themselves group owner', async () => {
+      const updatedGroup = cloneDeep(group);
+      updatedGroup.owner = peer.id;
+      updatedGroup.members = [{ userId: peer.id, admin: true }]
+      updatedGroup.modified++;
+      const dataChange = getDataChange(group, updatedGroup);
+      // expect(dataChange).toMatchObject({
+      //   changes: [['owner', peer.id]]
+      // });
+      signObjectWithIdAndSecretKey(dataChange, peer.id, peer.secretKey);
+      await expect(ingestChange(dataChange)).rejects.toThrowError(`does not have admin permissions`);
+    });
+
+    test('admin member can change group owner', async () => {
+      const updatedGroup = cloneDeep(group);
+      updatedGroup.owner = peer.id;
+      updatedGroup.modified++;
+      const dataChange = getDataChange(group, updatedGroup);
+      signObject(dataChange);
+      await ingestChange(dataChange);
+    })
+
+    test('non-admin cannot delete group (or otherwise change the type', async () => {
+      const updatedGroup: IData = cloneDeep(group);
+      updatedGroup.type = "Deleted"
+      updatedGroup.owner = peer.id;
+      updatedGroup.members = [{ userId: peer.id, admin: true }];
+      updatedGroup.modified++;
+      const dataChange = getDataChange(group, updatedGroup);
+      signObjectWithIdAndSecretKey(dataChange, peer.id, peer.secretKey);
+      await expect(ingestChange(dataChange)).rejects.toThrowError(`does not have admin permissions`);
+    });
+
+
+    // test('TODO reject changes due to lack of permissions', () => {
+    // })
+
+    // TODO test/deal with the scenario where a user receives a change that fails validation
+    //      if they proceed, they could just never see that change unless there is something like a DLQ
+    //      it seems like the best thing is to halt receiving from that device+group
+    //      the problem is this could get device-pairs stuck in a locked state
+    //      need to figure this out
+    //      deep syncs are the ultimate fallback but we'd like to get to a point where they aren't required
+  })
+
   describe('commitChange', () => {
     let existingData1: IData;
     beforeEach(async () => {
@@ -526,8 +589,8 @@ describe('data-change', () => {
       // existingData3 = await genData(3);
       // existingData4 = await genData(4);
       // existingData5 = await genData(5);
-    })
-    
+    });
+
     describe('benchmarks', () => {
       test('benchmark create [40 ms]', async () => {
         // 70ms is the fastest this could go
@@ -575,7 +638,7 @@ describe('data-change', () => {
         // let dbData = await db.get(data.id);
         // expect(dbData).toEqual(data);
       })
-    })
+    });
 
     test('create and update and update group', async () => {
       // create
@@ -594,7 +657,6 @@ describe('data-change', () => {
       data.s = "hi"
       data.ary = [1]
       data.obj = { a: 1 }
-      data.modified++;
       await commitChange(data);
       dbData = await db.get(data.id);
       expect(dbData).toEqual(data);
@@ -631,7 +693,7 @@ describe('data-change', () => {
           changes: [['', data]]
         }
       ]);
-    })
+    });
 
     test('create group and update group', async () => {
       // create group
@@ -674,21 +736,8 @@ describe('data-change', () => {
       await expect(
         commitChange(existingData1)
       ).rejects.toThrowError(/deleted/)
-    })
-
-
-
-    // test('TODO non-admin member can not make themselves group owner', () => {
-    // })
-
-    // test('TODO reject changes due to lack of permissions', () => {
-    // })
-
-    // TODO test/deal with the scenario where a user receives a change that fails validation
-    //      if they proceed, they could just never see that change unless there is something like a DLQ
-    //      it seems like the best thing is to halt receiving from that device+group
-    //      the problem is this could get device-pairs stuck in a locked state
-    //      need to figure this out
-    //      deep syncs are the ultimate fallback but we'd like to get to a point where they aren't required
+    });
   })
+
+  // TODO describe('deleteData', () => { })
 })
