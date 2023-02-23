@@ -8,15 +8,17 @@ import { cloneDeep } from "lodash";
 
 describe('data-change', () => {
 
-  const me = newUser();
-  const peer = newUser();
+  const me = newUser('me');
+  const peer = newUser('peer');
   let myGroup: IGroup;
   let db: IDB;
   beforeAll(async () => {
     db = await initDBWithMemoryMock()
     await init(me);
     await db.save(me);
-    await db.save(peer);
+    const dbPeer = { ...peer, secretKey: undefined };
+    signObjectWithIdAndSecretKey(dbPeer, peer.id, peer.secretKey);
+    await db.save(dbPeer);
     myGroup = newGroup();
     signObject(myGroup);
     await db.save(myGroup)
@@ -524,51 +526,74 @@ describe('data-change', () => {
   })
 
   describe('ingestChange', () => {
-    let group: IGroup;
+    let myGroupPeerCanWrite: IGroup;
     beforeEach(async () => {
-      group = newGroup();
-      group.members.push({ userId: peer.id, write: true });
-      await commitChange(group);
+      myGroupPeerCanWrite = newGroup();
+      myGroupPeerCanWrite.members.push({ userId: peer.id, write: true });
+      await commitChange(myGroupPeerCanWrite);
     })
 
     test('non-admin can not make themselves group owner', async () => {
-      const updatedGroup = cloneDeep(group);
+      const updatedGroup = cloneDeep(myGroupPeerCanWrite);
       updatedGroup.owner = peer.id;
       updatedGroup.members = [{ userId: peer.id, admin: true }]
       updatedGroup.modified++;
-      const dataChange = getDataChange(group, updatedGroup);
-      // expect(dataChange).toMatchObject({
-      //   changes: [['owner', peer.id]]
-      // });
+      const dataChange = getDataChange(myGroupPeerCanWrite, updatedGroup);
       signObjectWithIdAndSecretKey(dataChange, peer.id, peer.secretKey);
       await expect(ingestChange(dataChange)).rejects.toThrowError(`does not have admin permissions`);
     });
 
     test('admin member can change group owner', async () => {
-      const updatedGroup = cloneDeep(group);
+      const updatedGroup = cloneDeep(myGroupPeerCanWrite);
       updatedGroup.owner = peer.id;
       updatedGroup.modified++;
-      const dataChange = getDataChange(group, updatedGroup);
+      const dataChange = getDataChange(myGroupPeerCanWrite, updatedGroup);
       signObject(dataChange);
       await ingestChange(dataChange);
     })
 
     test('non-admin cannot delete group (or otherwise change the type', async () => {
-      const updatedGroup: IData = cloneDeep(group);
+      const updatedGroup: IData = cloneDeep(myGroupPeerCanWrite);
       updatedGroup.type = "Deleted"
       updatedGroup.owner = peer.id;
       updatedGroup.members = [{ userId: peer.id, admin: true }];
       updatedGroup.modified++;
-      const dataChange = getDataChange(group, updatedGroup);
+      const dataChange = getDataChange(myGroupPeerCanWrite, updatedGroup);
       signObjectWithIdAndSecretKey(dataChange, peer.id, peer.secretKey);
       await expect(ingestChange(dataChange)).rejects.toThrowError(`does not have admin permissions`);
     });
 
+    test('reject my change due to lack of permissions', async () => {
+      let peerGroupIRead: IGroup;
+      peerGroupIRead = newGroup();
+      peerGroupIRead.owner = peer.id;
+      peerGroupIRead.members.push({ userId: me.id, read: true });
+      signObjectWithIdAndSecretKey(peerGroupIRead, peer.id, peer.secretKey);
+      await db.save(peerGroupIRead);
 
-    // test('TODO reject changes due to lack of permissions', () => {
-    // })
+      const peerGroupData = newData({ n: 1 });
+      peerGroupData.group = peerGroupIRead.id;
+      signObjectWithIdAndSecretKey(peerGroupData, peer.id, peer.secretKey);
 
-    // TODO test/deal with the scenario where a user receives a change that fails validation
+      await db.save(peerGroupData);
+
+      const dataChange = getDataChange(peerGroupData, { ...peerGroupData, n: 2 });
+      signObject(dataChange);
+      await expect(
+        ingestChange(dataChange)
+      ).rejects.toThrow(`${me.id} does not have write permissions in group ${peerGroupIRead.id}`);
+    })
+
+    test('reject peer changes due to lack of permissions', async () => {
+      const data = newData({ group: myGroup.id, n: 1 });
+      await commitChange(data);
+
+      const dataChange = getDataChange(data, { ...data, n: 2 });
+      signObjectWithIdAndSecretKey(dataChange, peer.id, peer.secretKey);
+      await expect(
+        ingestChange(dataChange)
+      ).rejects.toThrow(new RegExp(`${peer.id} does not have write permissions in group ${myGroup.id}`));
+    })
     //      if they proceed, they could just never see that change unless there is something like a DLQ
     //      it seems like the best thing is to halt receiving from that device+group
     //      the problem is this could get device-pairs stuck in a locked state
@@ -737,7 +762,27 @@ describe('data-change', () => {
         commitChange(existingData1)
       ).rejects.toThrowError(/deleted/)
     });
+
+    test('reject my changes due to lack of permissions', async () => {
+      let peerGroupIRead: IGroup;
+      peerGroupIRead = newGroup();
+      peerGroupIRead.owner = peer.id;
+      peerGroupIRead.members.push({ userId: me.id, read: true });
+      signObjectWithIdAndSecretKey(peerGroupIRead, peer.id, peer.secretKey);
+      await db.save(peerGroupIRead);
+
+      const peerGroupData = newData({ n: 1 });
+      peerGroupData.group = peerGroupIRead.id;
+      signObjectWithIdAndSecretKey(peerGroupData, peer.id, peer.secretKey);
+
+      await db.save(peerGroupData);
+
+      peerGroupData.n++;
+      await expect(commitChange(peerGroupData)).rejects.toThrow(/does not have write permissions in group/);
+    })
   })
 
   // TODO describe('deleteData', () => { })
 })
+
+// TODO test adding a user via ingest 

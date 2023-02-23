@@ -144,7 +144,7 @@ export async function validateDataChange(dataChange: IDataChange, dbData?: IData
   // TODO somewhere outside this function, verify when receiving if we don't trust the peer 
 
   const db = await getDB();
-  if (!dbData) {
+  if (dbData === undefined) {
     dbData = await db.get(dataChange.subject);
   }
 
@@ -218,7 +218,6 @@ export async function validateDataChange(dataChange: IDataChange, dbData?: IData
     if (data.type === 'Group') {
       await checkPermission(user.id, (dbData || data) as IGroup, 'admin');
     } else {
-      const dbData = await db.get(data.id);
       if (dbData && dbData.modified > data.modified) {
         throw new Error('modified must be newer than the existing doc in db')
       }
