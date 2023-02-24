@@ -2,7 +2,7 @@ import { hashObject } from "./common";
 import { newUser, signMessage, openMessage, signObject, verifySignedObject, init } from "./user"
 import * as _ from 'lodash';
 import 'should';
-import { initDBWithMemoryMock } from "./db-mock";
+import { initDBWithMemoryMock } from "./db-mock.test";
 
 describe('user', () => {
 

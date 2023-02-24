@@ -1,7 +1,7 @@
 import { newUser, init, newData, signObject, newGroup, signObjectWithIdAndSecretKey } from "./user"
 import * as _ from 'lodash';
 import 'should';
-import { initDBWithMemoryMock } from "./db-mock";
+import { initDBWithMemoryMock } from "./db-mock.test";
 import { applyChanges, getChanges, isEmptyArray, isEmptyObj, isLeaf, isObj, commitChange, validateDataChange, deleteData, getDataChange, ingestChange } from "./data-change";
 import { IData, IDB, IGroup } from "./db";
 import { cloneDeep } from "lodash";
@@ -131,6 +131,14 @@ describe('data-change', () => {
     test('empty objects', () => {
       expect(
         getChanges({}, {})
+      ).toEqual(
+        []
+      )
+    })
+
+    test('nulls', () => {
+      expect(
+        getChanges(null, null)
       ).toEqual(
         []
       )
@@ -594,11 +602,64 @@ describe('data-change', () => {
         ingestChange(dataChange)
       ).rejects.toThrow(new RegExp(`${peer.id} does not have write permissions in group ${myGroup.id}`));
     })
-    //      if they proceed, they could just never see that change unless there is something like a DLQ
-    //      it seems like the best thing is to halt receiving from that device+group
-    //      the problem is this could get device-pairs stuck in a locked state
-    //      need to figure this out
-    //      deep syncs are the ultimate fallback but we'd like to get to a point where they aren't required
+
+    test('reject peer changes due to restricted field attempting to be updated', async () => {
+      const data = newData({ group: myGroup.id, n: 1 });
+      await commitChange(data);
+
+      const dataChange = getDataChange(data, { ...data, n: 2 });
+      dataChange.changes.push(['group', peer.id]);
+      signObjectWithIdAndSecretKey(dataChange, peer.id, peer.secretKey);
+      await expect(
+        ingestChange(dataChange)
+      ).rejects.toThrow(/There is an entry in changes to update either id, group, or modified directly/);
+    })
+
+    test('reject peer changes to partial objects that do not exist', async () => {
+      const data = newData({ group: myGroup.id, n: 1 });
+      
+      const dataChange = getDataChange(data, { ...data, n: 2 });
+      signObjectWithIdAndSecretKey(dataChange, peer.id, peer.secretKey);
+      await expect(
+        ingestChange(dataChange)
+      ).rejects.toThrow(/This appears to be a partial change to an object that doesn't exist/);
+    })
+
+    test('reject peer changes in a group other than the object resides in', async () => {
+      const data = newData({ group: myGroup.id, n: 1 });
+      await commitChange(data);
+      
+      const dataChange = getDataChange(data, { ...data, n: 2 });
+      dataChange.group = peer.id;
+      signObjectWithIdAndSecretKey(dataChange, peer.id, peer.secretKey);
+      await expect(
+        ingestChange(dataChange)
+      ).rejects.toThrow(/Changes to objects in a different group than the change is not allowed/);
+    })
+
+    test('reject peer changes with modified data in the future', async () => {
+      const data = newData({ group: myGroup.id, n: 1 });
+      await commitChange(data);
+      
+      const dataChange = getDataChange(data, { ...data, n: 2 });
+      dataChange.modified *= 2;
+      signObjectWithIdAndSecretKey(dataChange, peer.id, peer.secretKey);
+      await expect(
+        ingestChange(dataChange)
+      ).rejects.toThrow(/modified timestamp must be a number and cannot be in the future/);
+    })
+    
+    test('TODO reject peer changes with time part of id in the future', async () => {
+      // const data = newData({ group: myGroup.id, n: 1 });
+      // await commitChange(data);
+      
+      // const dataChange = getDataChange(data, { ...data, n: 2 });
+      // dataChange.modified *= 2;
+      // signObjectWithIdAndSecretKey(dataChange, peer.id, peer.secretKey);
+      // await expect(
+      //   ingestChange(dataChange)
+      // ).rejects.toThrow(/modified timestamp must be a number and cannot be in the future/);
+    })
   })
 
   describe('commitChange', () => {
