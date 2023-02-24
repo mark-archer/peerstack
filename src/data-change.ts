@@ -189,7 +189,7 @@ export async function validateDataChange(dataChange: IDataChange, dbData?: IData
   // TODO verify type is not being changed on existing data (e.g. deleting a user or group)
   if (data.type === 'Group') {
     if (data.id !== data.group) {
-      throw new Error(`All groups must have their group set to themselves`);
+      throw new Error(`All groups must have their group set to their id`);
     }
   }
   else if (data.type === 'User') {

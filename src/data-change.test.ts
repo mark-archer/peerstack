@@ -1,10 +1,11 @@
-import { newUser, init, newData, signObject, newGroup, signObjectWithIdAndSecretKey } from "./user"
+import { newUser, init, newData, signObject, signObjectWithIdAndSecretKey,newGroup } from "./user"
 import * as _ from 'lodash';
 import 'should';
 import { initDBWithMemoryMock } from "./db-mock.test";
-import { applyChanges, getChanges, isEmptyArray, isEmptyObj, isLeaf, isObj, commitChange, validateDataChange, deleteData, getDataChange, ingestChange } from "./data-change";
+import { applyChanges, getChanges, isEmptyArray, isEmptyObj, isLeaf, isObj, commitChange, deleteData, getDataChange, ingestChange } from "./data-change";
 import { IData, IDB, IGroup } from "./db";
 import { cloneDeep } from "lodash";
+import { newid } from "./common";
 
 describe('data-change', () => {
 
@@ -649,16 +650,17 @@ describe('data-change', () => {
       ).rejects.toThrow(/modified timestamp must be a number and cannot be in the future/);
     })
     
-    test('TODO reject peer changes with time part of id in the future', async () => {
-      // const data = newData({ group: myGroup.id, n: 1 });
+    test('reject peer changes with time part of id in the future', async () => {
+      const data = newData({ group: myGroup.id, n: 1 });
+      data.id = 'z' + data.id.substring(1);
       // await commitChange(data);
       
-      // const dataChange = getDataChange(data, { ...data, n: 2 });
-      // dataChange.modified *= 2;
-      // signObjectWithIdAndSecretKey(dataChange, peer.id, peer.secretKey);
-      // await expect(
-      //   ingestChange(dataChange)
-      // ).rejects.toThrow(/modified timestamp must be a number and cannot be in the future/);
+      const dataChange = getDataChange(null, { ...data, n: 2 });
+      
+      signObjectWithIdAndSecretKey(dataChange, peer.id, peer.secretKey);
+      await expect(
+        ingestChange(dataChange)
+      ).rejects.toThrow(/time part of id cannot be in the future/);
     })
   })
 
@@ -841,6 +843,12 @@ describe('data-change', () => {
       peerGroupData.n++;
       await expect(commitChange(peerGroupData)).rejects.toThrow(/does not have write permissions in group/);
     })
+
+    test("don't allow creating groups with id and group different", async () => {
+      const aGroup = newGroup();
+      aGroup.id = newid();
+      await expect(commitChange(aGroup)).rejects.toThrow(/All groups must have their group set to their id/);
+    });
   })
 
   // TODO describe('deleteData', () => { })
