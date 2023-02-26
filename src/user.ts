@@ -57,7 +57,6 @@ export function newUser(name?: string): IUser & { secretKey: string } {
     publicBoxKey: encodeUint8ArrayToBaseN(boxKey.publicKey),
     modified: Date.now(),
   }
-  signObjectWithIdAndSecretKey(user, user.id, user.secretKey);
   return user;
 }
 

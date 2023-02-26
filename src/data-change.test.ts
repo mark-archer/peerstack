@@ -2,7 +2,7 @@ import { newUser, init, newData, signObject, signObjectWithIdAndSecretKey,newGro
 import * as _ from 'lodash';
 import 'should';
 import { initDBWithMemoryMock } from "./db-mock.test";
-import { applyChanges, getChanges, isEmptyArray, isEmptyObj, isLeaf, isObj, commitChange, deleteData, getDataChange, ingestChange } from "./data-change";
+import { applyChanges, getChanges, isEmptyArray, isEmptyObj, isLeaf, isObj, commitChange, deleteData, getDataChange, ingestChange, signDataChange } from "./data-change";
 import { IData, IDB, IGroup } from "./db";
 import { cloneDeep } from "lodash";
 import { newid } from "./common";
@@ -16,6 +16,7 @@ describe('data-change', () => {
   beforeAll(async () => {
     db = await initDBWithMemoryMock()
     await init(me);
+    signObject(me);
     await db.save(me);
     const dbPeer = { ...peer, secretKey: undefined };
     signObjectWithIdAndSecretKey(dbPeer, peer.id, peer.secretKey);
@@ -532,6 +533,25 @@ describe('data-change', () => {
         2
       )
     })
+
+    test('reset root obj with blank path to default empty object', () => {
+      expect(
+        applyChanges(
+          { a: { "0": 1 } },
+          [['']])
+      ).toEqual(
+        {}
+      )
+    })
+  })
+
+  describe("getDataChange", () => {
+    test("don't allow a single change to represent changing groups", async () => {
+      const data = newData();
+      expect(() =>
+        getDataChange(data, { ...data, group: newid() })
+      ).toThrow(/Changing groups cannot be represented with a single DataChange, it should be done as a delete out of the old group and a create in the new group./)
+    })
   })
 
   describe('ingestChange', () => {
@@ -662,6 +682,115 @@ describe('data-change', () => {
         ingestChange(dataChange)
       ).rejects.toThrow(/time part of id cannot be in the future/);
     })
+
+    test('reject peer changes when we cannot identify the signer of the change', async () => {
+      const data = newData({ group: myGroup.id, n: 1 });
+      await commitChange(data);
+      
+      const dataChange = getDataChange(null, { ...data, n: 2 });
+      await expect(
+        ingestChange(dataChange)
+      ).rejects.toThrow(/Could not identify signer/);
+    })
+
+    test('reject modified is older than what is in db', async () => {
+      const data = newData({ group: myGroup.id, n: 1 });
+      await commitChange(data);
+      data.modified--;
+      const dataChange = getDataChange(null, { ...data, n: 2 });
+      signObjectWithIdAndSecretKey(dataChange, peer.id, peer.secretKey);
+      await expect(
+        ingestChange(dataChange)
+      ).rejects.toThrow(/modified cannot be less than the existing doc in db/);
+    })
+
+    test('ignore changes that have already been ingested', async () => {
+      const data = newData({ group: myGroup.id, n: 1 });
+      await commitChange(data);
+      const dataChange = getDataChange(null, { ...data, n: 2 });
+      signObject(dataChange);
+      await ingestChange(dataChange);
+      // change the dataChange, invalidating the signature but it doesn't matter since it's already been ingested
+      dataChange.modified++;
+      await ingestChange(dataChange);
+      signObject(dataChange);
+      await expect(
+        ingestChange(dataChange)
+      ).rejects.toThrow(/A dataChange that has already been ingested was encountered again but with a different signature/);
+    })
+
+    test('change that is older than data.modified but is newer for some fields', async () => {
+      const data = newData({ a: 1, b: 1 });
+      await commitChange(data);
+
+      data.modified += 2;
+      const change1 = getDataChange(data, { ...data, a: 2 });
+      expect(change1.changes).toEqual([['a', 2]]);
+      expect(change1.subject).toEqual(data.id);
+      signDataChange(change1);
+      await ingestChange(change1);
+
+      let dbData = await db.get(data.id);
+      expect(dbData).toMatchObject({ a: 2 });
+
+      data.modified--;
+      const change2 = getDataChange(data, { ...data, b: 2, a: 3 });
+      expect(change2.changes).toEqual([['a', 3],['b', 2]]);
+      signDataChange(change2);
+      await ingestChange(change2);
+      dbData = await db.get(data.id);
+      // note that `b` should be updated but `a` shouldn't since there is a newer change for it
+      expect(dbData).toMatchObject({ a: 2, b: 2, modified: data.modified+1 });
+    })
+
+    describe('create or modify a user', () => {
+      test('create a new user', async () => {
+        const aUser = newUser();
+        const aUserSafe = { ...aUser };
+        delete aUserSafe.secretKey;
+        signObjectWithIdAndSecretKey(aUserSafe, aUser.id, aUser.secretKey);
+        const dataChange = getDataChange(null, aUserSafe);
+        signObjectWithIdAndSecretKey(dataChange, aUser.id, aUser.secretKey);
+        await ingestChange(dataChange);
+        const dbUser = await db.get(aUser.id);
+        expect(dbUser).toEqual(aUserSafe);
+      })
+
+      test('reject invalid user group', async () => {
+        const aUser = newUser();
+        // @ts-ignore
+        aUser.group = aUser.id;
+        const aUserSafe = { ...aUser };
+        delete aUserSafe.secretKey;
+        signObjectWithIdAndSecretKey(aUserSafe, aUser.id, aUser.secretKey);
+        const dataChange = getDataChange(null, aUserSafe);
+        signObjectWithIdAndSecretKey(dataChange, aUser.id, aUser.secretKey);
+        await expect(ingestChange(dataChange)).rejects.toThrow(/All users must have their group set to 'users'/);
+      })
+
+      test('reject signer is not user', async () => {
+        const aUser = newUser();
+        const aUserSafe = { ...aUser };
+        delete aUserSafe.secretKey;
+        signObject(aUser);
+        const dataChange = getDataChange(null, aUserSafe);
+        signObjectWithIdAndSecretKey(dataChange, aUser.id, aUser.secretKey);
+        await expect(ingestChange(dataChange)).rejects.toThrow(/The signer of a user must be that same user/);
+      })
+
+      test('reject public key is being changed', async () => {
+        const aUser = newUser();
+        const aUserSafe = { ...aUser };
+        delete aUserSafe.secretKey;
+        signObjectWithIdAndSecretKey(aUserSafe, aUser.id, aUser.secretKey);
+        await db.save(aUserSafe);
+
+        const { publicKey, secretKey } = newUser();
+        const dataChange = getDataChange(null, {...aUserSafe, publicKey });
+        signObjectWithIdAndSecretKey(dataChange, aUser.id, secretKey);
+        await expect(ingestChange(dataChange)).rejects.toThrow(/An attempt was made to update a user but the public keys do not match/);
+      })
+    })
   })
 
   describe('commitChange', () => {
@@ -673,10 +802,6 @@ describe('data-change', () => {
         return await db.get(data.id);
       }
       existingData1 = await genData(1);
-      // existingData2 = await genData(2);
-      // existingData3 = await genData(3);
-      // existingData4 = await genData(4);
-      // existingData5 = await genData(5);
     });
 
     describe('benchmarks', () => {
@@ -849,9 +974,33 @@ describe('data-change', () => {
       aGroup.id = newid();
       await expect(commitChange(aGroup)).rejects.toThrow(/All groups must have their group set to their id/);
     });
+
+    test("don't allow modified to be the same as what is in db", async () => {
+      const p = commitChange(existingData1, { preserveModified: true })
+      expect(p).rejects.toThrow(/modified is the same as what is in the db - this is almost certainly a mistake/);
+    })
   })
 
-  // TODO describe('deleteData', () => { })
+  describe('deleteData', () => {
+    let existingData1: IData;
+    beforeEach(async () => {
+      async function genData(i: number) {
+        const data = newData({ n: 1, i });
+        await commitChange(data);
+        return await db.get(data.id);
+      }
+      existingData1 = await genData(1);
+    });
+
+    test('normal delete', async () => {
+      await deleteData(existingData1.id);
+    })
+
+    test("don't allow deleting data that doesn't exist", async () => {
+      const p = deleteData(newid());
+      await expect(p).rejects.toThrow(/No data exists with id/)
+    })
+  })
 })
 
 // TODO test adding a user via ingest 

@@ -1,7 +1,7 @@
 import { isArray, isObject, isDate, uniq, set, unset, isEqual, max, cloneDeep, isNumber } from "lodash";
 import { idTime, newid } from "./common";
 import { getDB, checkPermission, IData, hasPermission, IGroup, getUser, users, isGroup } from "./db";
-import { ISigned, IUser, keysEqual, signObject, userId, verifySignature, verifySignedObject } from './user';
+import { ISigned, IUser, keysEqual, signObject, userId, verifySignedObject } from './user';
 // import { isObject } from "./common";
 
 export type IChange = [string, any?]
@@ -173,7 +173,7 @@ export async function validateDataChange(dataChange: IDataChange, dbData?: IData
   }
 
   const data = applyChanges(cloneDeep(dbData), dataChange.changes) as IData;
-  data.modified = dataChange.modified;
+  data.modified = max([dataChange.modified, data.modified]);
 
   // if this is changing an existing group, ensure user has permissions to do that
   if (dbData?.type === 'Group') {
@@ -219,7 +219,7 @@ export async function validateDataChange(dataChange: IDataChange, dbData?: IData
       await checkPermission(user.id, (dbData || data) as IGroup, 'admin');
     } else {
       if (dbData && dbData.modified > data.modified) {
-        throw new Error('modified must be newer than the existing doc in db')
+        throw new Error('modified cannot be less than the existing doc in db')
       }
       if (dbData && dbData.group != data.group) {
         await checkPermission(user.id, dbData.group, 'write');
@@ -227,8 +227,11 @@ export async function validateDataChange(dataChange: IDataChange, dbData?: IData
       } else {
         await checkPermission(user.id, data.group, 'write')
       }
+      /* istanbul ignore next */ 
       if (dbData && dbData.type === 'Index' && data.type !== 'Index') {
         // call delete to remove index entries because this is no longer going to be an Index
+        // this is bad because it's modifying the database as part of a validation check...
+        /* istanbul ignore next */ 
         await db.delete(data.id);
       }
     }
@@ -241,7 +244,11 @@ export async function ingestChange(dataChange: IDataChange, dbData?: IData) {
   const db = await getDB();
 
   // if we already have this change in the db, just return
-  if (await db.changes.get(dataChange.id)) {
+  const dbDataChange = await db.changes.get(dataChange.id);
+  if (dbDataChange) {
+    if (dbDataChange.signature !== dataChange.signature) {
+      throw new Error('A dataChange that has already been ingested was encountered again but with a different signature')
+    }
     return;
   }
 
@@ -252,9 +259,8 @@ export async function ingestChange(dataChange: IDataChange, dbData?: IData) {
   // verify changes  
   await validateDataChange(dataChange, dbData);
 
-  // TODO verifySignature (probably should be done somewhere outside of this function)
-
-  await db.changes.save(dataChange);
+  // TODO might want to move verify outside of this function so local commits are faster
+  await verifyDataChange(dataChange);
 
   if (dataChange.subjectDeleted) {
     dbData = {
@@ -292,7 +298,13 @@ export async function ingestChange(dataChange: IDataChange, dbData?: IData) {
     delete dbData.signer;
     delete dbData.signature;
   }
+
+  // save the modified data to the database
   await db.save(dbData, true);
+
+  // record when this change was received on this device and save it to the database 
+  dataChange.received = Date.now();
+  await db.changes.save(dataChange);
 }
 
 // This is intended as the entry point for writing changes made locally
@@ -303,7 +315,9 @@ export async function commitChange<T extends IData>(data: T, options: { preserve
 
   if (!options.preserveModified) {
     data.modified = Date.now();
+    /* istanbul ignore next */ 
     if (dbData && dbData.modified === data.modified) {
+      /* istanbul ignore next */ 
       data.modified++;
     }  
   }
@@ -319,14 +333,14 @@ export async function commitChange<T extends IData>(data: T, options: { preserve
     if (isGroup(data)) {
       await checkPermission(userId, data, 'admin');
       // it's very important that groups are signed so putting this here 
-      //  the user might have already signed this so this could be a useless 
+      //  the user might have already signed this so this could be useless 
       //  and expensive but updates to groups should be rare so doing this for now
       signObject(data); 
     } else {
       await checkPermission(userId, data.group, 'write');
     }
     const dataChange = getDataChange(dbData, data);
-    signObject(dataChange);
+    signDataChange(dataChange);
     await ingestChange(dataChange, dbData);
     // TODO push to peers
   }
@@ -338,12 +352,12 @@ export async function commitChange<T extends IData>(data: T, options: { preserve
     // delete out of old group
     const deleteOutOfOldGroup = getDataChange(dbData, undefined);
     deleteOutOfOldGroup.modified = data.modified - 1;
-    signObject(deleteOutOfOldGroup);
+    signDataChange(deleteOutOfOldGroup);
     await ingestChange(deleteOutOfOldGroup, dbData);
 
     // create in new group
     const createInNewGroup = getDataChange(undefined, data);
-    signObject(createInNewGroup);
+    signDataChange(createInNewGroup);
     await ingestChange(createInNewGroup);
 
     // TODO push to peers
@@ -358,7 +372,7 @@ export async function deleteData(id: string) {
   }
   await checkPermission(userId, dbData.group, 'write');
   const dataChange = getDataChange(dbData, null);
-  signObject(dataChange);
+  signDataChange(dataChange);
   await ingestChange(dataChange, dbData);
 }
 
