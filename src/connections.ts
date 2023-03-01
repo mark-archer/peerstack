@@ -290,7 +290,13 @@ export async function connectToDevice(toDeviceId): Promise<IConnection> {
     const existingConnection = connections.find(c => c.remoteDeviceId === toDeviceId);
     if (existingConnection) {
       try {
-        await RPC(existingConnection, ping)(1, 's');
+        const result = await Promise.race([
+          RPC(existingConnection, ping)(1, 's'),
+          new Promise(resolve => setTimeout(() => resolve('timeout'), 1000))
+        ]);
+        if (result === 'timeout') {
+          throw new Error('timeout');
+        }
         console.log('already have a connection to this device so just returning that')
         return existingConnection;
       } catch {
@@ -385,6 +391,7 @@ export async function connectToDevice(toDeviceId): Promise<IConnection> {
       console.log("dc.onclose: ", { deviceId: connection.remoteDeviceId, userId: connection.remoteUser?.id })
       connection.close();
       eventHandlers.onDeviceDisconnected(connection);
+      connection.closed = true;
     }
 
     // setTimeout(() => syncData(connection), 1000);
@@ -519,6 +526,7 @@ async function handelOffer(offer: ISDIExchange) {
           console.log("dc2.onclose", { deviceId: connection.remoteDeviceId, userId: connection.remoteUser?.id })
           connection.close();
           eventHandlers.onDeviceDisconnected(connection);
+          connection.closed = true;
         };
       } else {
         dc.onopen = e => {
