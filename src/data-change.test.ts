@@ -1002,5 +1002,3 @@ describe('data-change', () => {
     })
   })
 })
-
-// TODO test adding a user via ingest 

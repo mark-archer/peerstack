@@ -322,6 +322,8 @@ export function verifySignedObject(obj: ISigned, publicKey: string) {
   }
 }
 
+// TODO create a new async function `verifySigner(obj: ISigned)` which will look the signer up and also cache the results
+
 // This tries to convert keys in old format to new format before comparing
 export function keysEqual(publicKey1: string, publicKey2: string) {
   if (publicKey1.length == 64) {

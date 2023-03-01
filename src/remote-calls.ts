@@ -156,7 +156,7 @@ export async function fastSyncRemote(groupId: string, dataChannelLabel: string, 
       while (await cursor.next()) {
         const doc = cursor.value;
         const json = stringify(doc);
-        // if bigger than chunkSize need to send slow way because it'll overflow the buffer
+        // if bigger than chunkSize need to send slow way because it'll overflow the buffer (nice!!!)
         if (json.length > chunkSize) {
           await RPC(connection, pushData)(doc, true);
           continue;
@@ -229,7 +229,7 @@ async function fastSync(_connection: IConnection, groupId: string) {
           }
           const docs: IData[] = remoteJsonData.map(json => parseJSON(json));
           remoteJsonData.length = 0;
-          await db.save(docs, skipValidation);
+          await db.save(docs, skipValidation); // skipping validation might be a big part of why this is so fast.... it probably shouldn't have been left like this
           docs.map(doc => eventHandlers.onRemoteDataSaved(doc));
           console.log(`fastSynced ${docs.length} docs`);
         } catch (err) {
