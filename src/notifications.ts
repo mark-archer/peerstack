@@ -1,5 +1,5 @@
 import { errorAfterTimeout, isObject, user } from ".";
-import { connections, deviceId, emit, me, onMessage } from "./connections";
+import { connections, deviceConnections, deviceId, emit, me, onMessage } from "./connections";
 import { getDB, IData } from "./db";
 import * as remoteCalls from "./remote-calls";
 import { boxDataForPublicKey, IDevice, IDataBox, openBox, verifySignedObject, IUser, signObject } from "./user";
@@ -155,7 +155,7 @@ export async function notifyDevice(device: IDevice, notification: INotification,
     }
   
     // check if we have a connection to the device, if so just send through that
-    const conn = connections.find(c => c.remoteDeviceId === device.id);
+    const conn = deviceConnections[device.id];
     if (conn) {
       try {
         await errorAfterTimeout(

@@ -45,7 +45,7 @@ export async function pushDataToPeers(data: IData) {
   //  this is good because it starts propagating data as quickly as possible without any servers
   //  this will also pushes to users that aren't returned by `getGroupUsers` (e.g. users that have subscribed to public groups)
   const db = await getDB();
-  for (const connection of connections) {
+  for (const connection of connections()) {
     if (
       connection.remoteUserVerified &&
       connection.groups?.includes(data.group) &&
@@ -66,7 +66,7 @@ export async function pushDataToPeers(data: IData) {
     for (const device of Object.values(user.devices || {})) {
       if (
         device.id !== deviceId &&
-        !connections.some(c => c.remoteDeviceId === device.id)
+        !connections().some(c => c.remoteDeviceId === device.id)
       ) {
         // _DO_ await pushes through server so we're not slamming it all at once
         await notifyDevice(device, notification, user.publicBoxKey)

@@ -31,10 +31,14 @@ export interface IDeviceConnection extends IConnection {
   waitForDataChannel: (label: string) => Promise<RTCDataChannel>
 }
 
+const MAX_WAIT_PING_MS = 10_000;
+
 export let deviceId: string = null;
 export let me: IUser = null;
 let socket;
-export const connections: IDeviceConnection[] = [];
+// export const connections: IDeviceConnection[] = [];
+export const deviceConnections: { [deviceId: string]: IDeviceConnection} = {};
+export const connections = () => Object.values(deviceConnections);
 
 let initialized = false;
 export async function init(_deviceId: string, _me: IUser, serverUrl?: string) {
@@ -74,7 +78,7 @@ export async function init(_deviceId: string, _me: IUser, serverUrl?: string) {
 
   socket.on('iceCandidate', async (iceCandidate: ISDIExchange) => {
     console.log('received ice candidate', { deviceId: iceCandidate.fromDevice });
-    const conn = connections.find(c => c.id == iceCandidate.connectionId)
+    const conn = connections().find(c => c.id == iceCandidate.connectionId)
     if (!conn) {
       console.warn('no connection found for iceCandidate, storing in anticipation of upcoming connection', iceCandidate);
       if (!earlyIceCandidates[iceCandidate.connectionId]) {
@@ -249,60 +253,55 @@ function dcSendAndCloseOnError(connection: IDeviceConnection, strData: string) {
 }
 
 function garbageCollectConnections() {
-  for (let i = connections.length - 1; i >= 0; i--) {
-    const c = connections[i];
+  for (const c of Object.values(deviceConnections)) {
     if (
       ['closed', 'closing'].includes(c.dc?.readyState)
       || ['closed', 'closing'].includes(c.pc?.connectionState)
     ) {
-      connections.splice(i, 1)
+      delete deviceConnections[c.remoteDeviceId];
     }
   }
+}
+
+export async function checkConnection(connection: IDeviceConnection) {
+  try {
+    const result = await Promise.race([
+      RPC(connection, ping)(),
+      new Promise<string>(resolve => setTimeout(() => resolve('timeout'), MAX_WAIT_PING_MS))
+    ]);
+    if (result === 'timeout') {
+      throw new Error('timeout');
+    }
+  } catch (err) {
+    console.log('INFO: connection heartbeat failed so closing connection: ' + connection.id);
+    closeConnection(connection);
+    return false;
+  }
+  return true;
 }
 
 
 // regularly check if connections are active and close them if not
 setInterval(async () => {
-  const connection = shuffle(connections)[0];
+  const connection = shuffle(connections())[0];
   if (connection) {
-    try {
-      await RPC(connection, ping)(1, 's');
-    } catch (err) {
-      console.log('INFO: connection heartbeat failed so closing connection: ' + connection.id);
-      closeConnection(connection);
-    }
+    await checkConnection(connection);
   }
-}, 10000);
+}, 10_000);
 
 function closeConnection(connection: IDeviceConnection) {
   connection.dc?.close();
   connection.pc?.close();
-  const iConn = connections.indexOf(connection);
-  if (iConn >= 0) {
-    connections.splice(iConn, 1);
-  }
+  delete deviceConnections[connection.remoteDeviceId]
   garbageCollectConnections();
 }
 
 export async function connectToDevice(toDeviceId): Promise<IConnection> {
   try {
     garbageCollectConnections();
-    const existingConnection = connections.find(c => c.remoteDeviceId === toDeviceId);
-    if (existingConnection) {
-      try {
-        const result = await Promise.race([
-          RPC(existingConnection, ping)(1, 's'),
-          new Promise(resolve => setTimeout(() => resolve('timeout'), 1000))
-        ]);
-        if (result === 'timeout') {
-          throw new Error('timeout');
-        }
-        console.log('already have a connection to this device so just returning that')
-        return existingConnection;
-      } catch {
-        closeConnection(existingConnection);
-        console.log('existing connection failed - building new one')
-      }
+    const existingConnection = deviceConnections[toDeviceId];
+    if (existingConnection && await checkConnection(existingConnection)) {
+      return existingConnection;
     }
     const connectionId = newid();
 
@@ -378,7 +377,8 @@ export async function connectToDevice(toDeviceId): Promise<IConnection> {
         }
       }
     }
-    connections.push(connection);
+    deviceConnections[toDeviceId] = connection;
+    // TODO maybe add a promise that gets resolved once it's open
 
     let resolveConnectionOpen;
     const connectionOpenPromise = new Promise(resolve => resolveConnectionOpen = resolve);
@@ -393,8 +393,6 @@ export async function connectToDevice(toDeviceId): Promise<IConnection> {
       eventHandlers.onDeviceDisconnected(connection);
       connection.closed = true;
     }
-
-    // setTimeout(() => syncData(connection), 1000);
 
     // send offer
     sendOffer({
@@ -466,7 +464,10 @@ async function handelOffer(offer: ISDIExchange) {
         }
       }),
     }
-    connections.push(connection);
+    deviceConnections[connection.remoteDeviceId] = connection;
+    // TODO again, maybe add a promise to say when the connection is actually open
+
+    // a lot of this feels like a duplicate of `connectToDevice` and can probably be merged into a shared function
 
     // gather ice candidates
     const iceCandidates: RTCIceCandidate[] = [];
@@ -484,7 +485,6 @@ async function handelOffer(offer: ISDIExchange) {
       })
     }
 
-    if (!offer.sdi) return alert('sdi falsy on received offer')
     await pc2.setRemoteDescription(offer.sdi);
 
     // build answer
@@ -551,7 +551,7 @@ async function handelOffer(offer: ISDIExchange) {
 }
 
 async function handelAnswer(answer: ISDIExchange) {
-  const connection = connections.find(c => c.id == answer.connectionId)
+  const connection = connections().find(c => c.id == answer.connectionId)
   if (connection) connection.onAnswer(answer);
   else console.log('could not find connection for answer', answer);
 }
@@ -586,4 +586,4 @@ export function onMessage(messageType: string, handler: (...args) => any) {
 }
 
 // @ts-ignore
-if (typeof window !== 'undefined') window.connections = connections;
+if (typeof window !== 'undefined') window.deviceConnections = deviceConnections;
