@@ -1,8 +1,9 @@
 import * as _ from "lodash";
+import { compact, uniq } from "lodash";
 import { fromJSON, isid, newid, parseJSON, sleep, stringify } from "./common";
 import { connections, chunkSize, me } from "./connections";
-import { checkPermission, getBlockIds, getDetailHashes, getBlockIdHashes, getDB, getPersonalGroup, hasPermission, IData, IDB, IGroup, usersGroup } from "./db";
-import { keysEqual, IUser, openMessage, signMessage, verifySignedObject } from "./user";
+import { checkPermission, getBlockIds, getDetailHashes, getBlockIdHashes, getDB, getPersonalGroup, hasPermission, IData, IDB, IGroup, usersGroup, getGroupUsers, getUser } from "./db";
+import { keysEqual, IUser, openMessage, signMessage, verifySignedObject, verifySigner } from "./user";
 
 export type txfn = <T>(data: (string | IRemoteData)) => Promise<T | void> | void
 
@@ -13,10 +14,12 @@ export interface IConnection {
   handlers: { [key: string]: ((err: any, result: any) => void) }
   send: txfn
   close: () => void
+  closed?: true
   me?: IUser
   remoteUser?: IUser
   remoteUserVerified?: boolean
   groups?: string[]
+  pingMS?: number
 }
 
 export interface IRemoteData {
@@ -43,8 +46,8 @@ export interface IRemoteChunk extends IRemoteData {
   chunk: string,
 }
 
-export async function ping(n: number, s: string) {
-  return ['pong', ...arguments];
+export async function ping(...args) {
+  return ['pong', ...args];
 }
 
 export async function testError(msg: string) {
@@ -145,7 +148,7 @@ export async function fastSyncRemote(groupId: string, dataChannelLabel: string, 
     try {
       const _connection: IConnection = currentConnection;
       await checkPermission(_connection.remoteUser?.id, groupId, 'read');
-      const connection = connections.find(c => c.id === _connection.id);
+      const connection = connections().find(c => c.id === _connection.id);
 
       const dc = await connection.pc.createDataChannel(dataChannelLabel);
       let dcClosed = false;
@@ -186,7 +189,7 @@ async function fastSync(_connection: IConnection, groupId: string) {
   return new Promise<void>(async (resolve, reject) => {
     try {
       await verifyRemoteUser(_connection)
-      const connection = connections.find(c => c.id === _connection.id);
+      const connection = connections().find(c => c.id === _connection.id);
       const skipValidation = connection.remoteUser.id === me.id;
 
       const db = await getDB();
@@ -305,7 +308,7 @@ async function syncBlockId(connection: IConnection, db: IDB, groupId: string, bl
   await thisBlockSync;
 }
 
-export async function syncGroup(connection: IConnection, remoteGroup: IGroup, db: IDB) {
+export async function syncGroup_old(connection: IConnection, remoteGroup: IGroup, db: IDB) {
   try {
     const groupId = remoteGroup.id;
     let localGroup = await db.get(groupId);
@@ -339,10 +342,10 @@ export async function syncGroup(connection: IConnection, remoteGroup: IGroup, db
   }
 }
 
-export async function syncDBs(connection: IConnection, apps?: string[]) {
+export async function syncDBs_old(connection: IConnection, apps?: string[]) {
   const startTime = Date.now();
   const db = await getDB();
-  const _syncGroup = (group: IGroup) => syncGroup(connection, group, db);
+  const _syncGroup = (group: IGroup) => syncGroup_old(connection, group, db);
 
   // get groups from remote device that it thinks I have permissions too
   let remoteGroups = await RPC(connection, getRemoteGroups)();
@@ -389,6 +392,160 @@ export async function syncDBs(connection: IConnection, apps?: string[]) {
   // console.log(`finished syncing DB with ${connection.remoteDeviceId} in ${Date.now() - startTime} ms`);
 }
 
+interface SyncInfo {
+  connection: IConnection;
+  group: IGroup;
+  resolve: (() => void);
+  reject: (() => void);
+  priority: 1 | 2 | 3;
+}
+let syncInfos: SyncInfo[] = [];
+
+async function getNextGroupInfoToSync(infos: SyncInfo[] = syncInfos): Promise<SyncInfo> {
+  if (!infos.length) return null;
+
+  const filters: ((si: SyncInfo) => boolean)[] = [
+    // priorities 
+    si => si.priority === 1,
+    si => si.priority === 2,
+
+    // personal groups
+    si => si.group.id === me.id,
+
+    // active groups
+    si => !si.group.inactive,
+  ]
+
+  // if any filter reduces the list of possibilities, recurse with that smaller list
+  for (const filter of filters) {
+    const filtered = infos.filter(filter);
+    if (filtered.length > 0 && filter.length < infos.length) {
+      return getNextGroupInfoToSync(filtered)
+    }
+  }
+
+  // if we only have 1 at this point just return that.
+  if (infos.length === 1) {
+    return infos[0];
+  }
+
+  // TODO prefer group admins
+  // TODO prefer group hosts
+  // TODO prefer devices that I've synced with most recently
+  // TODO prefer users that I trust (me being most trustworthy)
+
+  // prefer faster connections
+  const uniqConns = uniq(infos.map(si => si.connection));
+  const fastest = await Promise.race(uniqConns.map(async conn => {
+    await RPC(conn, ping)();
+    return conn;
+  }));
+  const nextSync = syncInfos.find(si => si.connection === fastest);
+  return nextSync;
+}
+
+async function syncGroupObject(connection: IConnection, localGroup: IGroup, remoteGroup): Promise<IGroup> {
+  // don't add groups from anyone but myself (for now, maybe add trusted users in the future)
+  if (!localGroup && connection.remoteUser.id !== me.id) {
+    throw new Error(`will not sync group from someone else's device if I have no record of it locally`);
+  }
+
+  let group = localGroup;
+  const db = await getDB();
+  if (localGroup.modified < remoteGroup.modified) {
+    group = remoteGroup;
+
+    // make sure you have signer in db
+    let signer = await getUser(group.signer);
+    if (!signer) {
+      signer = await RPC(connection, getRemoteData)(group.signer) as IUser;
+      await db.save(signer);
+    }
+
+    // as part of this save, the signature and permissions will be verified
+    await db.save(remoteGroup);
+
+    // TODO users should be looked up from registries first
+
+    // TODO changes to users (and types, I think) aren't group specific so they need to be synced in the old way (or some other way)
+    //      or the `getDataChanges` function could be made smart enough to send changes for any group when those changes are not group specific
+
+    // update users from remote if remote's group is newer
+    let userIds: string[] = (group.members || []).map(m => m.userId);
+    userIds.push(group.owner);
+    userIds = uniq(compact(userIds));
+    for (const userId of userIds) {
+      if (!(await getUser(userId))) {
+        const remoteUser = await RPC(connection, getRemoteData)(group.signer) as IUser;
+        await db.save(remoteUser);
+      }
+    }
+  }
+  return group;
+}
+
+let pid = 0;
+function syncGroupBackground() {
+  if (pid) return;
+  pid = setTimeout(async () => {
+    try {
+      const db = await getDB();
+      let si = await getNextGroupInfoToSync();
+      if (!si) pid = 0;
+
+      // update group object if mine is older (check signature)
+      let group: IGroup = await db.get(si.group.id);
+      group = await syncGroupObject(si.connection, group, si.group);
+
+      // TODO sync changes
+
+      // remove done and not-doing (simultaneously resolving their promises)
+      syncInfos = syncInfos.filter(si => {
+        const doneOrNotDoing =
+          // same device and group (including this one)
+          (si.group.id === si.group.id && si.connection.remoteDeviceId === si.connection.remoteDeviceId) ||
+          // or connection closed
+          si.connection.closed;
+        if (doneOrNotDoing) {
+          si.resolve();
+        }
+        return !doneOrNotDoing;
+      });
+
+    } catch (err) {
+      console.error(`error during syncGroupBackground`, err);
+    }
+
+    // trigger next sync
+    pid = 0;
+    syncGroupBackground(); // trampolined recursive call
+  })
+}
+
+export async function syncGroup(connection: IConnection, remoteGroup: IGroup, priority: 1 | 2 | 3 = 2) {
+  let resolve, reject;
+  const promise = new Promise((_resolve, _reject) => {
+    resolve = _resolve;
+    reject = _reject;
+  });
+  const syncInfo = {
+    priority,
+    connection,
+    group: remoteGroup,
+    resolve,
+    reject
+  };
+  syncInfos.push(syncInfo);
+  syncGroupBackground();
+  return promise;
+}
+
+export async function syncDBs(connection: IConnection) {
+  // get groups from remote device that it thinks I have permissions too
+  let remoteGroups = await RPC(connection, getRemoteGroups)();
+  return Promise.all(remoteGroups.map((group: IGroup) => syncGroup(connection, group)));
+}
+
 const pushDataAlreadySeen: {
   [idPlusModified: string]: true
 } = {}
@@ -408,9 +565,9 @@ export async function pushData(data: IData, dontBroadcast?: boolean) {
     eventHandlers.onRemoteDataSaved(data);
   }
   if (!dontBroadcast) {
-    connections.forEach(_connection => {
+    connections().forEach(_connection => {
       // this data was probably pushed from the current connection so resist forwarding it to that one but if it's the only connection available push it to try to get it propagating
-      if (connection == _connection && connections.length > 1) {
+      if (connection == _connection && connections().length > 1) {
         return;
       }
       // TODO make sure we have verified user has read permission to this group otherwise this is a security hole
@@ -442,6 +599,14 @@ export function setRemotelyCallableFunction(fn: Function, name?: string) {
 export function RPC<T extends Function>(connection: IConnection, fn: T): T {
   return <any>function (...args) {
     const fnName = Object.keys(remotelyCallableFunctions).find(fnName => remotelyCallableFunctions[fnName] == fn);
+    if (fnName === "ping") {
+      const sTime = Date.now();
+      return makeRemoteCall(connection, fnName as any, args).then(result => {
+        const eTime = Date.now();
+        connection.pingMS = eTime - sTime;
+        return result;
+      })
+    }
     return makeRemoteCall(connection, fnName as any, args);
   };
 }

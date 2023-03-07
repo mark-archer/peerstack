@@ -322,7 +322,16 @@ export function verifySignedObject(obj: ISigned, publicKey: string) {
   }
 }
 
-// TODO create a new async function `verifySigner(obj: ISigned)` which will look the signer up and also cache the results
+// TODO maybe cache the results to speed up duplicate calls
+export async function verifySigner(obj: ISigned) {
+  const db = await getDB();
+  const signer: IUser = await db.get(obj.signer);
+  try {
+    verifySignedObject(obj, signer.publicKey);
+  } catch (err) {
+    throw new Error(`Could not verify object signature: ${JSON.stringify({ obj, signer }, null, 2)}`)
+  }
+}
 
 // This tries to convert keys in old format to new format before comparing
 export function keysEqual(publicKey1: string, publicKey2: string) {
@@ -352,7 +361,7 @@ export function newData<T>(fields?: Partial<IData> & T): IData & T {
 }
 
 export function newGroup(fields?: Partial<IGroup>): IGroup {
-  const group: IGroup = newData({ 
+  const group: IGroup = newData({
     type: 'Group',
     blockedUserIds: [],
     members: [],

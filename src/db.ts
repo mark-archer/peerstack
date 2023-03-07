@@ -1,6 +1,6 @@
 import { compact, groupBy, isArray, isObject, set, sortBy, uniq } from 'lodash';
 import { hashObject, idTime } from './common';
-import { ISigned, IUser, keysEqual, verifySignedObject } from './user';
+import { ISigned, IUser, keysEqual, verifySigner } from './user';
 import * as dbix from './dbix'
 import { IDataChange } from './data-change';
 
@@ -193,12 +193,7 @@ export async function init(opts?: PeerstackDBOpts): Promise<IDB> {
     }
     if (!skipVerification) {
       for (const dat of data) {
-        const user = await getUser(dat.signer);
-        try {
-          verifySignedObject(dat, user.publicKey);
-        } catch (err) {
-          throw new Error(`Could not verify object signature: ${JSON.stringify({ data, user }, null, 2)}`)
-        }
+        await verifySigner(dat);
       }
     }
     await _db.save(data);
