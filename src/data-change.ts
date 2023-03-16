@@ -127,7 +127,7 @@ export function signDataChange(dataChange: IDataChange) {
   const received = dataChange.received;
   delete dataChange.received;
   signObject(dataChange);
-  dataChange.received = received;  
+  dataChange.received = received;
 }
 
 export async function verifyDataChange(dataChange: IDataChange) {
@@ -135,8 +135,8 @@ export async function verifyDataChange(dataChange: IDataChange) {
   delete dataChange.received;
   const signer: IUser = await getUser(dataChange.signer);
   const publicKey = signer.publicKey;
-  verifySignedObject(dataChange, publicKey);  
-  dataChange.received = received;  
+  verifySignedObject(dataChange, publicKey);
+  dataChange.received = received;
 }
 
 export async function validateDataChange(dataChange: IDataChange, dbData?: IData) {
@@ -227,11 +227,11 @@ export async function validateDataChange(dataChange: IDataChange, dbData?: IData
       } else {
         await checkPermission(user.id, data.group, 'write')
       }
-      /* istanbul ignore next */ 
+      /* istanbul ignore next */
       if (dbData && dbData.type === 'Index' && data.type !== 'Index') {
         // call delete to remove index entries because this is no longer going to be an Index
         // this is bad because it's modifying the database as part of a validation check...
-        /* istanbul ignore next */ 
+        /* istanbul ignore next */
         await db.delete(data.id);
       }
     }
@@ -240,7 +240,7 @@ export async function validateDataChange(dataChange: IDataChange, dbData?: IData
   }
 }
 
-export async function ingestChange(dataChange: IDataChange, dbData?: IData) {
+export async function ingestChange(dataChange: IDataChange, dbData?: IData, skipValidation = false) {
   const db = await getDB();
 
   // if we already have this change in the db, just return
@@ -256,11 +256,12 @@ export async function ingestChange(dataChange: IDataChange, dbData?: IData) {
     dbData = await db.get(dataChange.subject);
   }
 
-  // verify changes  
-  await validateDataChange(dataChange, dbData);
-
-  // TODO might want to move verify outside of this function so local commits are faster
-  await verifyDataChange(dataChange);
+  if (!skipValidation) {
+    // verify changes  
+    await validateDataChange(dataChange, dbData);
+    // TODO might want to move verify outside of this function so local commits are faster
+    await verifyDataChange(dataChange);
+  }
 
   if (dataChange.subjectDeleted) {
     dbData = {
@@ -305,6 +306,8 @@ export async function ingestChange(dataChange: IDataChange, dbData?: IData) {
   // record when this change was received on this device and save it to the database 
   dataChange.received = Date.now();
   await db.changes.save(dataChange);
+
+  return dbData;
 }
 
 // This is intended as the entry point for writing changes made locally
@@ -315,11 +318,11 @@ export async function commitChange<T extends IData>(data: T, options: { preserve
 
   if (!options.preserveModified) {
     data.modified = Date.now();
-    /* istanbul ignore next */ 
+    /* istanbul ignore next */
     if (dbData && dbData.modified === data.modified) {
-      /* istanbul ignore next */ 
+      /* istanbul ignore next */
       data.modified++;
-    }  
+    }
   }
   if (dbData && dbData.modified === data.modified) {
     throw new Error('modified is the same as what is in the db - this is almost certainly a mistake');
@@ -335,7 +338,7 @@ export async function commitChange<T extends IData>(data: T, options: { preserve
       // it's very important that groups are signed so putting this here 
       //  the user might have already signed this so this could be useless 
       //  and expensive but updates to groups should be rare so doing this for now
-      signObject(data); 
+      signObject(data);
     } else {
       await checkPermission(userId, data.group, 'write');
     }
@@ -367,7 +370,7 @@ export async function commitChange<T extends IData>(data: T, options: { preserve
 export async function deleteData(id: string) {
   const db = await getDB();
   const dbData = await db.get(id);
-  if (!dbData) { 
+  if (!dbData) {
     throw new Error(`No data exists with id ${id}`);
   }
   await checkPermission(userId, dbData.group, 'write');
