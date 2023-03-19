@@ -2,7 +2,7 @@ import { newUser, init, newData, signObject, signObjectWithIdAndSecretKey,newGro
 import * as _ from 'lodash';
 import 'should';
 import { initDBWithMemoryMock } from "./db-mock.test";
-import { applyChanges, getChanges, isEmptyArray, isEmptyObj, isLeaf, isObj, commitChange, deleteData, getDataChange, ingestChange, signDataChange } from "./data-change";
+import { applyChanges, getChanges, isEmptyArray, isEmptyObj, isLeaf, isObj, commitChange, deleteData, getDataChange, ingestChange } from "./data-change";
 import { IData, IDB, IGroup } from "./db";
 import { cloneDeep } from "lodash";
 import { newid } from "./common";
@@ -727,7 +727,7 @@ describe('data-change', () => {
       const change1 = getDataChange(data, { ...data, a: 2 });
       expect(change1.changes).toEqual([['a', 2]]);
       expect(change1.subject).toEqual(data.id);
-      signDataChange(change1);
+      signObject(change1);
       await ingestChange(change1);
 
       let dbData = await db.get(data.id);
@@ -736,7 +736,7 @@ describe('data-change', () => {
       data.modified--;
       const change2 = getDataChange(data, { ...data, b: 2, a: 3 });
       expect(change2.changes).toEqual([['a', 3],['b', 2]]);
-      signDataChange(change2);
+      signObject(change2);
       await ingestChange(change2);
       dbData = await db.get(data.id);
       // note that `b` should be updated but `a` shouldn't since there is a newer change for it

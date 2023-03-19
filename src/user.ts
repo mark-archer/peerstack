@@ -323,9 +323,14 @@ export function verifySignedObject(obj: ISigned, publicKey: string) {
 }
 
 // TODO maybe cache the results to speed up duplicate calls
-export async function verifySigner(obj: ISigned) {
+export async function verifySigner(obj: ISigned & { id?: string }) {
   const db = await getDB();
-  const signer: IUser = await db.get(obj.signer);
+  let signer: IUser = await db.get(obj.signer);
+  // if we dont' have the signer in the db and _this_ is to create that user, use it
+  // NOTE security warning
+  if (!signer && obj.signer === obj.id) {
+    signer = obj as IUser;
+  }
   try {
     verifySignedObject(obj, signer.publicKey);
   } catch (err) {

@@ -54,7 +54,7 @@ export async function initMemoryDB() {
       save: changesCollection.save,
       get: changesCollection.get,
       delete: changesCollection.delete,
-      openCursor: (group: string, lastReceived: number) => {
+      openCursor: (group: string, modified?: number) => {
         throw new Error("Not implemented")
       },
       getSubjectChanges: async (subject, modified?) => {

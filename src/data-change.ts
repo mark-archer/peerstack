@@ -1,7 +1,7 @@
 import { isArray, isObject, isDate, uniq, set, unset, isEqual, max, cloneDeep, isNumber } from "lodash";
 import { idTime, newid } from "./common";
 import { getDB, checkPermission, IData, hasPermission, IGroup, getUser, users, isGroup } from "./db";
-import { ISigned, IUser, keysEqual, signObject, userId, verifySignedObject } from './user';
+import { ISigned, IUser, keysEqual, signObject, userId, verifySigner } from './user';
 // import { isObject } from "./common";
 
 export type IChange = [string, any?]
@@ -21,7 +21,6 @@ export function isEmptyObj(x: any): x is {} {
 export function isEmptyArray(x: any): x is [] {
   return isArray(x) && Object.keys(x).length === 0;
 }
-
 
 export function getChanges(objFrom: any, objTo: any): IChange[] {
   const changes: IChange[] = [];
@@ -76,7 +75,6 @@ export interface IDataChange extends ISigned {
   modified: number
   changes: IChange[]
   subjectDeleted?: boolean
-  received?: number
 }
 
 export function getDataChange<T extends IData, U extends IData>(dataFrom?: T, dataTo?: U): IDataChange {
@@ -121,22 +119,6 @@ export function getDataChange<T extends IData, U extends IData>(dataFrom?: T, da
     modified: dataTo.modified,
     changes
   };
-}
-
-export function signDataChange(dataChange: IDataChange) {
-  const received = dataChange.received;
-  delete dataChange.received;
-  signObject(dataChange);
-  dataChange.received = received;
-}
-
-export async function verifyDataChange(dataChange: IDataChange) {
-  const received = dataChange.received;
-  delete dataChange.received;
-  const signer: IUser = await getUser(dataChange.signer);
-  const publicKey = signer.publicKey;
-  verifySignedObject(dataChange, publicKey);
-  dataChange.received = received;
 }
 
 export async function validateDataChange(dataChange: IDataChange, dbData?: IData) {
@@ -259,8 +241,12 @@ export async function ingestChange(dataChange: IDataChange, dbData?: IData, skip
   if (!skipValidation) {
     // verify changes  
     await validateDataChange(dataChange, dbData);
-    // TODO might want to move verify outside of this function so local commits are faster
-    await verifyDataChange(dataChange);
+    if (dataChange.subject === dataChange.signer && !dbData) {
+      // this is creating (or modifying) a user we dont' have in the db
+      // TODO look up the user's public key from a registry
+    } else {
+      await verifySigner(dataChange);
+    }
   }
 
   if (dataChange.subjectDeleted) {
@@ -303,8 +289,7 @@ export async function ingestChange(dataChange: IDataChange, dbData?: IData, skip
   // save the modified data to the database
   await db.save(dbData, true);
 
-  // record when this change was received on this device and save it to the database 
-  dataChange.received = Date.now();
+  // save it to the database 
   await db.changes.save(dataChange);
 
   return dbData;
@@ -343,7 +328,7 @@ export async function commitChange<T extends IData>(data: T, options: { preserve
       await checkPermission(userId, data.group, 'write');
     }
     const dataChange = getDataChange(dbData, data);
-    signDataChange(dataChange);
+    signObject(dataChange);
     await ingestChange(dataChange, dbData);
     // TODO push to peers
   }
@@ -355,12 +340,12 @@ export async function commitChange<T extends IData>(data: T, options: { preserve
     // delete out of old group
     const deleteOutOfOldGroup = getDataChange(dbData, undefined);
     deleteOutOfOldGroup.modified = data.modified - 1;
-    signDataChange(deleteOutOfOldGroup);
+    signObject(deleteOutOfOldGroup);
     await ingestChange(deleteOutOfOldGroup, dbData);
 
     // create in new group
     const createInNewGroup = getDataChange(undefined, data);
-    signDataChange(createInNewGroup);
+    signObject(createInNewGroup);
     await ingestChange(createInNewGroup);
 
     // TODO push to peers
@@ -375,7 +360,7 @@ export async function deleteData(id: string) {
   }
   await checkPermission(userId, dbData.group, 'write');
   const dataChange = getDataChange(dbData, null);
-  signDataChange(dataChange);
+  signObject(dataChange);
   await ingestChange(dataChange, dbData);
 }
 
