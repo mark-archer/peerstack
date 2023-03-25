@@ -204,7 +204,7 @@ export async function init(opts?: PeerstackDBOpts): Promise<IDB> {
   //       Currently the only way to remove data from the network is to change it's type to "Deleted" and remove all non-required fields
   db.delete = async (id) => {
     const dbData = await _db.get(id);
-    // NOTE: no real validation is here because this is only affects local, you can only affect network with updates (`save`) which is heavily validated
+    // NOTE: no real validation is here because this only affects local, you can only affect network with updates (`save`) which is heavily validated
     if (!dbData) return;
     await _db.delete(id);
     clearHashCache(dbData.group);

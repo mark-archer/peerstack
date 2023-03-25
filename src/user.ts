@@ -1,6 +1,7 @@
 import * as nacl from 'tweetnacl';
 import * as naclUtil from 'tweetnacl-util';
 import {
+  // TODO consider using, from `naclUtil`, `encodeBase64`, `decodeBase64`, `encodeUTF8`, `decodeUTF8`
   decodeUint8ArrayFromBaseN,
   encodeUint8ArrayToBaseN,
   decodeUint8ArrayFromUTF,
