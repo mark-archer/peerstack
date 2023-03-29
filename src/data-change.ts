@@ -1,5 +1,6 @@
 import { isArray, isObject, isDate, uniq, set, unset, isEqual, max, cloneDeep, isNumber } from "lodash";
 import { idTime, newid } from "./common";
+import { invalidateCache } from "./data-change-sync";
 import { getDB, checkPermission, IData, hasPermission, IGroup, getUser, users, isGroup } from "./db";
 import { ISigned, IUser, keysEqual, signObject, userId, verifySigner } from './user';
 // import { isObject } from "./common";
@@ -289,8 +290,10 @@ export async function ingestChange(dataChange: IDataChange, dbData?: IData, skip
   // save the modified data to the database
   await db.save(dbData, true);
 
-  // save it to the database 
+  // save the change to the database 
   await db.changes.save(dataChange);
+
+  invalidateCache(dataChange.group, dataChange.modified);
 
   return dbData;
 }

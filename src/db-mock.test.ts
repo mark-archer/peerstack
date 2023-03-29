@@ -1,4 +1,4 @@
-import { cloneDeep, isArray, isDate, orderBy } from "lodash";
+import { cloneDeep, gt, isArray, isDate, lt, orderBy } from "lodash";
 import { isObject } from "./common";
 import { IDataChange } from "./data-change";
 import { DBQuery, IData, IDB, IFile, Indexes, IPersistenceLayer, init as initDB, DBCursorDirection, ICursor } from "./db"
@@ -65,11 +65,18 @@ class MemoryCollection<T extends { id: string }> {
 
   openCursor = async (query?: DBQuery, index?: Indexes, direction: DBCursorDirection = 'next') => {
     const _index: string = typeof index === 'string' && index || 'id';
-    const indexAry = _index.split('-');
+    const indexKeys = _index.split('-');
+    let behindCompare = lt;
+    let aheadCompare = gt;
+    if (direction.includes('prev')) {
+      behindCompare = gt;
+      aheadCompare = lt;
+    }
+    const requireUnique = direction.includes('unique');
     const cursor: ICursor<T> = {
       next: async () => {
         let docs = await this.find(query, index);
-        docs = orderBy(docs, [...indexAry, 'id']);
+        docs = orderBy(docs, [...indexKeys, 'id']);
         if (direction?.startsWith('prev')) {
           docs = docs.reverse();
         }
@@ -77,26 +84,34 @@ class MemoryCollection<T extends { id: string }> {
           cursor.value = docs[0];
           return cursor.value;
         }
-        let newValue: T = null;
+
+        let newValue = null;
         for (const doc of docs) {
-          let found = false;
-          if (direction.includes('next')) {
-            if (direction.includes('unique')) {
-              found = indexAry.every((key) => doc[key] >= cursor.value[key])
-                && indexAry.some((key) => doc[key] > cursor.value[key]);                
+          // never return the "current" value
+          if (doc.id === cursor.value.id) {
+            continue;
+          }
+          // different doc but equal keys
+          let equalKeys = indexKeys.every(key => doc[key] === cursor.value[key]);
+          if (equalKeys) {
+            if (doc.id > cursor.value.id && !requireUnique) {
+              newValue = doc;
+              break;
             } else {
-              found = indexAry.every((key) => doc[key] >= cursor.value[key])
-                && doc.id > cursor.value.id;              
-            }
-          } else {
-            if (direction.includes('unique')) {
-              found = !indexAry.some((key) => doc[key] >= cursor.value[key]);
-            } else {
-              found = !indexAry.some((key) => doc[key] > cursor.value[key] && doc.id >= cursor.value.id);
+              continue;
             }
           }
-          if (found) {
-            newValue = doc;
+          // compare each key in order until one is found that is greater
+          for (const key of indexKeys) {
+            if (behindCompare(doc[key], cursor.value[key])) {
+              break;
+            }
+            if (aheadCompare(doc[key], cursor.value[key])) {
+              newValue = doc;
+              break;
+            }
+          }
+          if (newValue) {
             break;
           }
         }
@@ -139,14 +154,8 @@ export async function initMemoryDB() {
       get: changesCollection.get,
       delete: changesCollection.delete,
       // @ts-ignore    
-      openCursor: async (group: string, modified?: number) => {
-        const cursor = {
-          next: async () => {
-
-          },
-          value: null
-        }
-        return cursor;
+      openCursor: async (group: string, modified: number = -Infinity) => {
+        return changesCollection.openCursor({ lower: [group, modified], upper: [group, Infinity] }, 'group-modified')
       },
       getSubjectChanges: async (subject, modified?) => {
         return Object.values(changesCollection.collection)
