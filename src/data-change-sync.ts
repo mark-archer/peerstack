@@ -1,18 +1,23 @@
-import { groupBy, set } from "lodash";
+import { groupBy, set, sortBy } from "lodash";
 import { hashObject } from "./common";
 import { getDB, getGroupUsers } from "./db";
 
 
 export const BLOCK_SIZE = 60e3 * 60 * 24; // 1 day
 
+// d = new Date('+050705-08-09T23:40:06.178Z')
+// d.getTime() === 1537947128406178
+// Math.floor(1537947128406178 / BLOCK_SIZE) === 17800313
+// max block number: 17800313 => 
+// fixed block id length is 8 digits preceded by a 'B' => 9 chars
+const BLOCK_ID_LENGTH = 8;
+
 export function getBlockId(modified: number) {
-  // d = new Date('+050705-08-09T23:40:06.178Z')
-  // d.getTime() === 1537947128406178
-  // Math.floor(1537947128406178 / BLOCK_SIZE) === 17800313
-  // max block number: 17800313 => 
-  // fixed block id length is 8 digits preceded by a 'B'
-  return 'B' + String(Math.floor(modified / BLOCK_SIZE)).padStart(8, "0");
+  return 'B' + String(Math.floor(modified / BLOCK_SIZE)).padStart(BLOCK_ID_LENGTH, "0");
 }
+
+const MIN_BLOCK_ID = getBlockId(0);
+const MAX_BLOCK_ID = getBlockId(1537947128406178);
 
 export function getBlockRange(blockId: string) {
   if (blockId === 'users') {
@@ -29,118 +34,118 @@ export function getBlockRange(blockId: string) {
   }
 }
 
-// export async function getBlockHashData(group: string, level0BlockId: string): Promise<{ id: string, modified: number }[]> {
-//   if (level0BlockId === 'users') {
-//     return getGroupUsers(group);
-//   }
-//   const db = await getDB();
-//   const blockNum = Number(level0BlockId.substring(1));
-//   const lowerTime = blockNum * BLOCK_SIZE;
-//   const upperTime = lowerTime + BLOCK_SIZE;
-//   // const blockData = await db.find({ lower: [group, lowerTime], upper: [group, upperTime] }, 'group-modified');
-//   const cursor = await db.changes.openCursor(group, lowerTime);
-//   const blockData: { id: string, modified: number }[] = [];
-//   while (await cursor.next() && cursor.value.modified < upperTime) {
-//     blockData.push({ id: cursor.value.id, modified: cursor.value.modified });
-//   }
-//   return blockData;
-// }
-
-export const L5BlockHashes: {
-  [groupId: string]: { [blockId: string]: string }
-} = {};
-
-export const blockHashes: {
+export const prefixHashes: {
   [groupId: string]: {
-    [detailLevel: string]: { [blockId: string]: string } | false
+    [prefixLength: string]: {
+      [blockPrefix: string]: string | false
+    }
   }
 } = {};
 
-export function invalidateCache(groupId: string, modified: number) {
+function invalidateCacheForModified(groupId: string, modified: number) {
+  let blockPrefix = getBlockId(modified);
+  const groupPrefixes = prefixHashes[groupId];
+  if (groupPrefixes) {
+    while (blockPrefix.length > 1) {
+      blockPrefix = blockPrefix.substring(0, blockPrefix.length - 2);    
+      groupPrefixes[blockPrefix.length.toString()][blockPrefix] = false;
+    }
+  }
+}
+
+export function invalidateCache(groupId: string, modified: number, oldModified?: number) {
   if (groupId === 'users') {
     throw new Error('not implemented');
   }
-  delete L5BlockHashes[groupId];
-  // let blockId = getBlockId(modified);
-  // delete L5BlockHashes[groupId]?.[blockId];
-  // while (blockId.length > 1) {
-  //   blockId = blockId.substring(0, blockId.length - 2);
-  //   blockHashes[groupId][blockId] = false;
-  // }
-}
-
-// export function clearHashCache(groupId: string) {
-//   // TODO this could be done much cleaner by sending in the old and new L5 block id (old and new modified date)
-//   //      Then all you have to do is recalculate the old and new block which should be much faster
-//   if (groupId === 'users') {
-//     // if a user is changed just clear the entire cache for now
-//     Object.keys(L5BlockHashes).forEach(_groupId => {
-//       delete L5BlockHashes[_groupId]['users']
-//       delete blockHashes[groupId]
-//     })
-//   } else {
-//     delete L5BlockHashes[groupId];
-//     delete blockHashes[groupId]
-//   }
-// }
-
-// l0BlockId example: B18664 | users
-export async function getBlockHashes(groupId: string, detailLevel: number = 0) {
-  if (detailLevel > 5) {
-    // level 0 is the top level hash, level 5 is the most detailed hash
-    detailLevel = 5;
-  }
-  if (blockHashes[groupId]?.[detailLevel]) {
-    return blockHashes[groupId][detailLevel];
-  }
-  if (detailLevel === 5) {
-    const _blockHashes = await getDetailHashes(groupId) as any as { [blockId: string]: string }
-    set(blockHashes, `${groupId}.${detailLevel}`, _blockHashes);
-    return _blockHashes;
-  } else {
-    const nextLevel = await getBlockHashes(groupId, detailLevel + 1);
-    const keyed = Object.entries(nextLevel).map(([blockId, hashes]) => ({
-      blockId,
-      hashes
-    }))
-    const grouped = groupBy(keyed, data => data.blockId.substr(0, data.blockId.length - 1) || 'u');
-    const _blockHashes = {};
-    Object.keys(grouped).forEach(key => {
-      set(_blockHashes, key, hashObject(grouped[key]));
-    });
-    set(blockHashes, `${groupId}.${detailLevel}`, _blockHashes);
-    return _blockHashes;
+  invalidateCacheForModified(groupId, modified);
+  if (oldModified) {
+    invalidateCacheForModified(groupId, oldModified);
   }
 }
 
-// export async function getBlockIdHashes(groupId: string, blockId: string) {
-//   const detailLevel = blockId.length || 1;
-//   const blockHashes = await getBlockHashes(groupId, detailLevel)
-//   const blockIdHashes: { [blockId: string]: string } = {}
-//   Object.keys(blockHashes).forEach(key => {
-//     if (key.startsWith(blockId)) {
-//       blockIdHashes[key] = blockHashes[key];
-//     }
-//   })
-//   return blockIdHashes;
-// }
-
-let getDetailHashPromises: { [groupId: string]: Promise<{ [blockId: string]: string; }>} = {};
-
-export function getDetailHashes(groupId: string) {
-  if (L5BlockHashes[groupId]) {
-    return L5BlockHashes[groupId];
+export async function getPrefixHashes(groupId: string, blockPrefix = 'B'): Promise<{ [subPrefix: string]: string }> {
+  if (!prefixHashes[groupId]) {
+    prefixHashes[groupId] = await getDetailHashes(groupId);
+    const hashes = prefixHashes[groupId];
+    for (let key of Object.keys(hashes)) {
+      while(key.length > 1) {
+        key = key.substring(0, key.length - 1);
+        hashes[key] = false;
+      }
+    }
   }
-  if (!getDetailHashPromises[groupId]) {
-    getDetailHashPromises[groupId] = new Promise(async resolve => {
+
+  if (blockPrefix.length === 9) {
+    return { [blockPrefix]: await getPrefixHash(groupId, blockPrefix) }
+  }
+
+  const groupHashes = prefixHashes[groupId];
+  const hashes: { [subPrefix: string]: string } = {};
+  for (let i = 0; i < 10; i++) {
+    const childKey = blockPrefix + i;
+    let hash = groupHashes[childKey];
+    if (typeof hash === 'string') {
+      hashes[childKey] = hash;
+    } else if (hash === false) {
+      hashes[childKey] = await getPrefixHash(groupId, childKey);
+    }
+  }
+  const keys = Object.keys(hashes);
+  if (keys.length === 1 && keys[0].length < 9) {
+    return getPrefixHashes(groupId, Object.keys(hashes)[0]);
+  }
+  return hashes;
+}
+
+async function getPrefixHash(groupId: string, blockPrefix = 'B'): Promise<string> {
+  // Note this function assumes initial hash values have been computed so all prefixes are known
+  const groupHashes = prefixHashes[groupId];
+  let prefixHash = groupHashes[blockPrefix];
+  if (prefixHash) {
+    return prefixHash;
+  }
+
+  if (blockPrefix.length === 9) {
+    const detailHashes = await getDetailHashes(groupId, blockPrefix)
+    const hash = hashObject(Object.values(detailHashes));
+    groupHashes[blockPrefix] = hash;
+    return hash;
+  }
+
+  const hashes: { [subPrefix: string]: string } = {};
+  for (let i = 0; i < 10; i++) {
+    const childKey = blockPrefix + i;
+    let hash = groupHashes[childKey];
+    if (typeof hash === 'string') {
+      hashes[childKey] = hash;
+    } else if (hash === false) {
+      hashes[childKey] = await getPrefixHash(groupId, childKey);
+    }
+  }
+  const hash = hashObject(hashes);
+  groupHashes[blockPrefix] = hash;
+  return hash;
+}
+
+let getDetailHashPromises: { [promiseId: string]: Promise<{ [blockId: string]: string; }> } = {};
+
+export function getDetailHashes(groupId: string, blockPrefix?: string) {
+  const promiseId = `${groupId}-${blockPrefix || "all"}`;
+  if (!getDetailHashPromises[promiseId]) {
+    getDetailHashPromises[promiseId] = new Promise(async resolve => {
+      const minModified = getBlockRange(blockPrefix || MIN_BLOCK_ID).min;
+      const maxModified = getBlockRange(blockPrefix || MAX_BLOCK_ID).max;
       const db = await getDB();
-      const cursor = await db.changes.openCursor(groupId);
+      const cursor = await db.changes.openCursor(groupId, minModified);
       const data: { id: string, modified: number }[] = [];
       let blockId: string = "";
       let blockUpperModified = -Infinity;
       const hashes: { [blockId: string]: string } = {};
-      while(await cursor.next()) {
+      while (await cursor.next()) {
         const change = cursor.value;
+        if (change.modified > maxModified) {
+          break;
+        }
         if (blockUpperModified < change.modified) {
           if (data.length) {
             hashes[blockId] = hashObject(data);
@@ -154,10 +159,9 @@ export function getDetailHashes(groupId: string) {
       if (data.length) {
         hashes[blockId] = hashObject(data);
       }
-      L5BlockHashes[groupId] = hashes;
       resolve(hashes);
-      delete getDetailHashPromises[groupId];
+      delete getDetailHashPromises[promiseId];
     });
   }
-  return getDetailHashPromises[groupId];
+  return getDetailHashPromises[promiseId];
 }
