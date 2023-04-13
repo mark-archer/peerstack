@@ -238,6 +238,7 @@ export async function ingestChange(dataChange: IDataChange, dbData?: IData, skip
   if (dbData === undefined) {
     dbData = await db.get(dataChange.subject);
   }
+  const oldModified = dbData?.modified;
 
   if (!skipValidation) {
     // verify changes  
@@ -293,7 +294,7 @@ export async function ingestChange(dataChange: IDataChange, dbData?: IData, skip
   // save the change to the database 
   await db.changes.save(dataChange);
 
-  invalidateCache(dataChange.group, dataChange.modified);
+  invalidateCache(dataChange.group, dataChange.modified, oldModified);
 
   return dbData;
 }
