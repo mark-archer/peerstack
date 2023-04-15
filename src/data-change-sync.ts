@@ -1,6 +1,6 @@
-import { flatMap, groupBy, set, sortBy, uniq } from "lodash";
+import { set, uniq } from "lodash";
 import { hashObject } from "./common";
-import { getDB, getGroupUsers } from "./db";
+import { getDB } from "./db";
 
 
 export const BLOCK_SIZE = 60e3 * 60 * 24; // 1 day
