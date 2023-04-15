@@ -190,7 +190,7 @@ async function fastSyncDataChanges(_connection: IConnection, groupId: string) {
         } catch (err) {
           console.error('error processing remote data during fast sync', err);
         }
-      }      
+      }
     } catch (err) {
       reject(err);
     }
@@ -214,7 +214,7 @@ async function deepSyncDataChanges(connection: IConnection, db: IDB, groupId: st
     const remoteHashes = await RPC(connection, getRemotePrefixHashes)(groupId, blockPrefix);
     // sort and don't reverse, we do oldest first so we don't prevent fastSync if things are interrupted and then restarted
     //  Note that this is including local hash prefixes which remote might not have any data for but we want to be safe and check
-    const blockPrefixes = uniq([...Object.keys(localHashes), ...Object.keys(remoteHashes)]).sort();    
+    const blockPrefixes = uniq([...Object.keys(localHashes), ...Object.keys(remoteHashes)]).sort();
 
     for (let blockPrefix of blockPrefixes) {
       const localHash = localHashes[blockPrefix];
@@ -249,7 +249,7 @@ async function deepSyncDataChanges(connection: IConnection, db: IDB, groupId: st
 
 let pendingDeepSyncData = Promise.resolve();
 async function deepSyncData(connection: IConnection, db: IDB, groupId: string, blockId: string = '') {
-  const trustedUser = connection.remoteUser.id === me.id ||  await hasPermission(connection.remoteUser.id, groupId, 'admin');
+  const trustedUser = connection.remoteUser.id === me.id || await hasPermission(connection.remoteUser.id, groupId, 'admin');
   if (!trustedUser) {
     return;
   }
@@ -264,7 +264,7 @@ async function deepSyncData(connection: IConnection, db: IDB, groupId: string, b
     let localHashes = await getBlockIdHashes(groupId, blockId);
     const remoteHashes = await RPC(connection, getRemoteIdBlockHashes)(groupId, blockId);
     // sort and don't reverse so we do oldest first so we avoid interfering with fastSync if things are interrupted and then restarted
-    const blockIds = Object.keys(remoteHashes).sort(); 
+    const blockIds = Object.keys(remoteHashes).sort();
 
     for (let blockId of blockIds) {
       const localHash = localHashes[blockId];
@@ -305,7 +305,7 @@ async function deepSyncData(connection: IConnection, db: IDB, groupId: string, b
 async function syncAllGroupData(connection: IConnection, groupId: string) {
   await verifyRemoteUser(connection);
   const db = await getDB();
-  
+
   // sync users
   const { hash: localHash, users } = await getGroupUsersHash(groupId);
   const remoteUsers = await getRemoteGroupUsers(groupId, localHash);
@@ -386,14 +386,11 @@ function syncGroupBackground() {
   if (pid) return;
   pid = setTimeout(async () => {
     try {
-      const db = await getDB();
       let si = await getNextGroupInfoToSync();
       if (!si) pid = 0;
 
-      let group: IGroup = await db.get(si.group.id);
-      
       // sync changes
-      await syncAllGroupData(si.connection, group.id);
+      await syncAllGroupData(si.connection, si.group.id);
 
       // remove done and not-doing (simultaneously resolving their promises)
       syncInfos = syncInfos.filter(si => {
@@ -442,6 +439,41 @@ export async function syncDBs(connection: IConnection) {
   return Promise.all(remoteGroups.map((group: IGroup) => syncGroup(connection, group)));
 }
 
+
+const changesAlreadySeen: {
+  [id: string]: true
+} = {}
+export async function pushDataChange(change: IDataChange, dontBroadcast?: boolean) {
+  const id = change.id
+  if (changesAlreadySeen[id]) {
+    return;
+  }
+  changesAlreadySeen[id] = true;
+  const connection: IConnection = getCurrentConnection();
+  await verifyRemoteUser(connection);
+  const db = await getDB();
+  const dbChange = await db.changes.get(id);
+  if (!dbChange) {
+    const data = await ingestChange(change)
+    eventHandlers.onRemoteDataSaved(data);
+  }
+  if (!dontBroadcast) {
+    connections().forEach(async _connection => {
+      // this data was probably pushed from the current connection so resist forwarding it to that one but if it's the only connection available push it to try to get it propagating
+      if (connection == _connection && connections().length > 1) {
+        return;
+      }
+      // only push data if the user has indicated it is interested in this group
+      if (_connection.groups?.some(groupId => groupId == change.group)) {
+        // verified user has read permission to this group otherwise this is a security hole
+        if (await hasPermission(connection.remoteUser.id, change.group, 'read')) {
+          RPC(_connection, pushDataChange)(change);
+        }
+      }
+    });
+  }
+}
+
 Object.entries({
   getRemoteGroups,
   getRemoteBlockHashes,
@@ -450,6 +482,7 @@ Object.entries({
   getRemoteData,
   getRemotePrefixHashes,
   getRemoteBlockChangeInfo,
-  getRemoteDataChange,  
+  getRemoteDataChange,
   fastSyncDataChangesRemote,
+  pushDataChange,
 }).forEach(([name, fn]) => setRemotelyCallableFunction(fn, name));

@@ -1,9 +1,10 @@
 import { errorAfterTimeout, isObject, user } from ".";
-import { connections, deviceConnections, deviceId, emit, me, onMessage } from "./connections";
+import { deviceConnections, deviceId, emit, onMessage } from "./connections";
 import { getDB, IData } from "./db";
 import * as remoteCalls from "./remote-calls";
 import { boxDataForPublicKey, IDevice, IDataBox, openBox, verifySignedObject, IUser, signObject } from "./user";
 import { newid } from "./common";
+import { IDataChange, ingestChange } from "./data-change";
 
 export type INotificationStatus = 'read' | 'dismissed'
 
@@ -11,19 +12,19 @@ export interface INotification extends NotificationOptions, IData {
   type: 'Notification'
   title: string
   received?: number
-  data?: IData
+  change?: IDataChange
   status?: INotificationStatus
   dontShow?: boolean
 }
 
-export function dataToNotification(data: IData): INotification {
+export function dataChangeToNotification(change: IDataChange): INotification {
   const notification: INotification = {
     type: 'Notification',
     id: newid(),
-    group: data.group,
+    group: change.group,
     modified: Date.now(),
     title: '',
-    data,
+    change,
     dontShow: true
   };
   return notification;
@@ -48,16 +49,13 @@ async function processNotification(notification: INotification): Promise<boolean
   }
   const sender: IUser = await db.get(notification.signer);
   verifySignedObject(notification, sender.publicKey);
-  if (isObject(notification.data)) {
-    // // TODO test this
-    // const dbData = await db.get(notification.data.id);
-    // if (dbData && dbData.modified >= notification.data.modified) {
-    //   return false;
-    // }
-    await db.save(notification.data);
-    remoteCalls.eventHandlers.onRemoteDataSaved(notification.data);
-    notification.subject = notification.data.id;
-    delete notification.data;
+  if (isObject(notification.change)) {
+    const data = await ingestChange(notification.change);
+    if (data) {
+      remoteCalls.eventHandlers.onRemoteDataSaved(data);
+    }
+    notification.subject = notification.change.id;
+    delete notification.change;
   }
   notification.ttl = Date.now() + (1000 * 60 * 60 * 24 * 14); // 14 days
   notification.group = await user.init(); // put all notifications in my personal group
@@ -67,25 +65,25 @@ async function processNotification(notification: INotification): Promise<boolean
   try {
     await eventHandlers.onNotificationReceived(notification);
   } catch (err) {
-    console.error('error calling `onNotificationReceived`', err);  
+    console.error('error calling `onNotificationReceived`', err);
   }
   if (notification.dontShow || notification.status) {
     return false;
   }
   // TODO this should maybe be reduced to notification id and subject
-  notification.data = JSON.parse(JSON.stringify(notification));  
+  // notification.data = JSON.parse(JSON.stringify(notification));  
+  notification.data = { id: notification.id, subject: notification.subject };
   return true;
 }
 
 onMessage('notify', (message: string) => {
   const box: IDataBox = JSON.parse(message);
   openBox(box).then((notification: INotification) => {
-    notify(notification);
+    receiveNotification(notification);
   })
 });
 
-// NOTE this is named badly - this is for _receiving_ notifications, not sending notifications
-export async function notify(notification: INotification) {
+export async function receiveNotification(notification: INotification) {
   try {
     const shouldShow = await processNotification(notification);
     if (shouldShow) {
@@ -97,44 +95,15 @@ export async function notify(notification: INotification) {
         const n = new Notification(notification.title, notification);
         n.onclick = (evt) => {
           eventHandlers.onNotificationClicked(notification);
-        }      
+        }
       }
-    }    
+    }
   } catch (err) {
     console.error('Error processing notification', notification, err);
   }
 }
 
-// remoteCalls.remotelyCallableFunctions.notify = notify;
-remoteCalls.setRemotelyCallableFunction(notify);
-
-// export async function pushDataAsNotification(data: IData) {
-//   const notification = dataToNotification(data);
-//   signObject(notification);
-//   const groupUsers = await getGroupUsers(data.group);
-//   for (const user of groupUsers) {
-//     for (const device of Object.values(user.devices || {})) {
-//       await notifyDevice(device, notification, user.publicBoxKey);
-//     }
-//   }
-// }
-
-// export async function pushDataAsNotificationToUser(data: IData, user: IUser) {
-//   const notification = dataToNotification(data);
-//   signObject(notification);
-//   for (const device of Object.values(user.devices || {})) {
-//     await notifyDevice(device, notification, user.publicBoxKey);
-//   }
-// }
-
-// export async function pushDataAsNotificationToDevice(device: IDevice, data: IData, toPublicBoxKey?: string) {
-//   if (!toPublicBoxKey) {
-//     const user: IUser = await (await getDB()).get(device.userId);
-//     toPublicBoxKey = user.publicBoxKey;
-//   }
-//   const notification = dataToNotification(data);
-//   return notifyDevice(device, notification, toPublicBoxKey);
-// }
+remoteCalls.setRemotelyCallableFunction(receiveNotification);
 
 export async function notifyUsers(users: IUser[], notification: INotification) {
   for (const user of users) {
@@ -147,33 +116,27 @@ export async function notifyUsers(users: IUser[], notification: INotification) {
 export async function notifyDevice(device: IDevice, notification: INotification, toPublicBoxKey: string) {
   if (deviceId === device.id) {
     console.warn('not notifying device because remote device is the same as local device');
-    return; 
+    return;
   }
   try {
     if (!notification.signature) {
       signObject(notification);
     }
-  
+
     // check if we have a connection to the device, if so just send through that
     const conn = deviceConnections[device.id];
     if (conn) {
       try {
         await errorAfterTimeout(
-          remoteCalls.RPC(conn, notify)(notification),
+          remoteCalls.RPC(conn, receiveNotification)(notification),
           2000
         )
+        return;
       } catch (err) {
         console.log('failed to send notification through peer connection', err);
       }
     }
 
-    // if (
-    //   !device.pushSubscription ||
-    //   (device.subscriptionExpires && device.subscriptionExpires < Date.now()) 
-    // ) {
-    //   return console.warn('not notifying device because there is no active subscription')
-    // }
-  
     // check if we have a web-push subscription, if so use that
     const messageId = notification.id;
     const box = boxDataForPublicKey(notification, toPublicBoxKey);
@@ -182,10 +145,10 @@ export async function notifyDevice(device: IDevice, notification: INotification,
       console.warn(`not sending notification because it's greater than 30k characters which will require 10 or more individual web-push notifications`);
       return false;
     }
-    // Note that the server may push the notification through socket.io if available
+    // Note that the server may push the notification through socket.io if connection available
     const result = await emit('notify', { device, messageId, message })
     console.log('notifyDevice result', result)
-    return result === 'success';  
+    return result === 'success';
   } catch (err) {
     console.log('Error notifying device: ', err)
     return false;
@@ -222,13 +185,13 @@ export async function processWebPushNotification(serviceWorkerSelf: any, notific
     const [_partNum, _totalParts, id] = metaData.replace("part:", '').split(',');
     const [partNum, totalParts] = [_partNum, _totalParts].map(s => Number(s));
     const partId = buildPartId(id, partNum);
-    const data = notification.substring(iColon+1);
+    const data = notification.substring(iColon + 1);
     const part: INotificationPart = {
-      id: partId, 
+      id: partId,
       type: 'NotificationPart',
       partNum,
       totalParts,
-      data, 
+      data,
       ttl: Date.now() + (1000 * 60 * 60 * 24 * 14) // 14 days
     };
     notificationPartsCache[partId] = part;
@@ -263,8 +226,8 @@ export async function processWebPushNotification(serviceWorkerSelf: any, notific
 
 if (typeof navigator !== 'undefined') {
   navigator?.serviceWorker?.addEventListener('message', async event => {
-    const data: { type: string, [key:string]: any } = event.data;
-    if (data?.type === 'Notification'){
+    const data: { type: string, [key: string]: any } = event.data;
+    if (data?.type === 'Notification') {
       const notification = data as INotification;
       eventHandlers.onNotificationReceived(notification);
       if (notification.subject) {
@@ -277,6 +240,6 @@ if (typeof navigator !== 'undefined') {
     } else if (data?.type === "NotificationClicked") {
       // TODO notifications can have different actions so we'll probably need a different or more specific event handler for that
       eventHandlers.onNotificationClicked(data.notification as INotification)
-    }    
-  });  
+    }
+  });
 }

@@ -301,7 +301,7 @@ export async function ingestChange(dataChange: IDataChange, dbData?: IData, skip
 
 // This is intended as the entry point for writing changes made locally
 // use `ingestChange` when syncing with peers
-export async function commitChange<T extends IData>(data: T, options: { preserveModified?: boolean } = {}) {
+export async function commitChange<T extends IData>(data: T, options: { preserveModified?: boolean } = {}): Promise<IDataChange[]> {
   const db = await getDB();
   const dbData = (await db.get(data.id)) || null;
 
@@ -316,6 +316,8 @@ export async function commitChange<T extends IData>(data: T, options: { preserve
   if (dbData && dbData.modified === data.modified) {
     throw new Error('modified is the same as what is in the db - this is almost certainly a mistake');
   }
+
+  const changes: IDataChange[] = [];
 
   const groupChanging = dbData && dbData.group !== data.group;
 
@@ -334,7 +336,7 @@ export async function commitChange<T extends IData>(data: T, options: { preserve
     const dataChange = getDataChange(dbData, data);
     signObject(dataChange);
     await ingestChange(dataChange, dbData);
-    // TODO push to peers
+    changes.push(dataChange);
   }
   else { // group is changing
     // make sure I can write to both groups
@@ -346,14 +348,15 @@ export async function commitChange<T extends IData>(data: T, options: { preserve
     deleteOutOfOldGroup.modified = data.modified - 1;
     signObject(deleteOutOfOldGroup);
     await ingestChange(deleteOutOfOldGroup, dbData);
+    changes.push(deleteOutOfOldGroup);
 
     // create in new group
     const createInNewGroup = getDataChange(undefined, data);
     signObject(createInNewGroup);
     await ingestChange(createInNewGroup);
-
-    // TODO push to peers
+    changes.push(createInNewGroup);
   }
+  return changes;
 }
 
 export async function deleteData(id: string) {

@@ -104,46 +104,10 @@ export async function verifyRemoteUser(connection: IConnection) {
 }
 
 
-const pushDataAlreadySeen: {
-  [idPlusModified: string]: true
-} = {}
-export async function pushData(data: IData, dontBroadcast?: boolean) {
-  const idPlusModified = data.id + data.modified;
-  if (pushDataAlreadySeen[idPlusModified]) {
-    // console.log('already seen so not saving or forwarding data', data);
-    return;
-  }
-  // console.log('starting data save', data);
-  pushDataAlreadySeen[idPlusModified] = true;
-  const connection: IConnection = currentConnection;
-  const db = await getDB();
-  const dbData = await db.get(data.id);
-  if (!dbData || dbData.modified < data.modified) {
-    await db.save(data);
-    eventHandlers.onRemoteDataSaved(data);
-  }
-  if (!dontBroadcast) {
-    connections().forEach(_connection => {
-      // this data was probably pushed from the current connection so resist forwarding it to that one but if it's the only connection available push it to try to get it propagating
-      if (connection == _connection && connections().length > 1) {
-        return;
-      }
-      // TODO make sure we have verified user has read permission to this group otherwise this is a security hole
-      if (_connection.groups?.some(groupId => groupId == data.group)) {
-        // console.log('forwarding data to connection', { data, conn: _connection });
-        RPC(_connection, pushData)(data);
-      }
-    });
-  }
-}
-
 const remotelyCallableFunctions: { [key: string]: Function } = {
   ping,
   testError,
-  
-  pushData,
   signId,
-    
 }
 
 export function setRemotelyCallableFunction(fn: Function, name?: string) {
@@ -259,7 +223,7 @@ export function onRemoteMessage(connection: IConnection, message: string | IRemo
   if (msgObj.type === 'chunk') {
     // validate size to prevent remote attacker filling up memory
     if (msgObj.totalChunks * msgObj.chunk.length > 1e9) {
-      throw new Error(`Message larger than maximum allowed size of ${1e8} (~100Mb)`)
+      throw new Error(`Message larger than maximum allowed size of ${1e8} (~100Mb), use files for very large objects or write a custom function to stream the data`)
     }
     if (!messageChunks[msgObj.id]) {
       messageChunks[msgObj.id] = [];

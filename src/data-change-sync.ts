@@ -44,7 +44,8 @@ function invalidateCacheForModified(groupId: string, modified: number) {
 
 export function invalidateCache(groupId: string, modified: number, oldModified?: number) {
   if (groupId === 'users') {
-    throw new Error('not implemented');
+    // users are synced in a different way so we don't need to worry about maintaining the cache for them
+    return;
   }
   invalidateCacheForModified(groupId, modified);
   if (oldModified) {
