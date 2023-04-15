@@ -1,7 +1,7 @@
 import * as _ from "lodash";
 import { uniq } from "lodash";
 import { newid, parseJSON, sleep, stringify } from "./common";
-import { connections, chunkSize, me } from "./connections";
+import { connections, chunkSize, me, IDeviceConnection, deviceConnections } from "./connections";
 import { checkPermission, getBlockIds, getDetailHashes, getBlockIdHashes, getDB, hasPermission, IData, IDB, IGroup, getGroupUsersHash } from "./db";
 import { ingestChange, IDataChange } from "./data-change";
 import { getBlockChangeInfo, getPrefixHashes } from "./data-change-sync";
@@ -302,13 +302,13 @@ async function deepSyncData(connection: IConnection, db: IDB, groupId: string, b
   await thisBlockSync;
 }
 
-async function syncAllGroupData(connection: IConnection, groupId: string) {
+async function syncAllGroupData(connection: IDeviceConnection, groupId: string) {
   await verifyRemoteUser(connection);
   const db = await getDB();
 
   // sync users
   const { hash: localHash, users } = await getGroupUsersHash(groupId);
-  const remoteUsers = await getRemoteGroupUsers(groupId, localHash);
+  const remoteUsers = await RPC(connection, getRemoteGroupUsers)(groupId, localHash);
   for (const remoteUser of remoteUsers) {
     const localUser = users.find(u => u.id === remoteUser.id);
     if (localUser && localUser.modified >= remoteUser.modified) continue;
@@ -330,7 +330,7 @@ async function syncAllGroupData(connection: IConnection, groupId: string) {
 }
 
 interface SyncInfo {
-  connection: IConnection;
+  connection: IDeviceConnection;
   group: IGroup;
   resolve: (() => void);
   reject: (() => void);
@@ -356,7 +356,7 @@ async function getNextGroupInfoToSync(infos: SyncInfo[] = syncInfos): Promise<Sy
   // if any filter reduces the list of possibilities, recurse with that smaller list
   for (const filter of filters) {
     const filtered = infos.filter(filter);
-    if (filtered.length > 0 && filter.length < infos.length) {
+    if (filtered.length > 0 && filtered.length < infos.length) {
       return getNextGroupInfoToSync(filtered)
     }
   }
@@ -377,6 +377,7 @@ async function getNextGroupInfoToSync(infos: SyncInfo[] = syncInfos): Promise<Sy
     await RPC(conn, ping)();
     return conn;
   }));
+  // TODO this can stall out, there should be a `errorAfterTimeout` call
   const nextSync = syncInfos.find(si => si.connection === fastest);
   return nextSync;
 }
@@ -415,7 +416,7 @@ function syncGroupBackground() {
   })
 }
 
-export async function syncGroup(connection: IConnection, remoteGroup: IGroup, priority: 1 | 2 | 3 = 2) {
+export async function syncGroup(connection: IDeviceConnection, remoteGroup: IGroup, priority: 1 | 2 | 3 = 2) {
   let resolve, reject;
   const promise = new Promise((_resolve, _reject) => {
     resolve = _resolve;
@@ -436,7 +437,11 @@ export async function syncGroup(connection: IConnection, remoteGroup: IGroup, pr
 export async function syncDBs(connection: IConnection) {
   // get groups from remote device that it thinks I have permissions too
   let remoteGroups = await RPC(connection, getRemoteGroups)();
-  return Promise.all(remoteGroups.map((group: IGroup) => syncGroup(connection, group)));
+  const deviceConnection = Object.values(deviceConnections).find(c => c.id === connection.id);
+  if (!deviceConnection) {
+    throw new Error('device connection not found');
+  }
+  return Promise.all(remoteGroups.map((group: IGroup) => syncGroup(deviceConnection, group)));
 }
 
 
@@ -476,6 +481,7 @@ export async function pushDataChange(change: IDataChange, dontBroadcast?: boolea
 
 Object.entries({
   getRemoteGroups,
+  getRemoteGroupUsers,
   getRemoteBlockHashes,
   getRemoteIdBlockHashes,
   getRemoteBlockIds,

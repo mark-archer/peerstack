@@ -1,5 +1,5 @@
 import { compact, groupBy, isArray, isObject, set, sortBy, uniq } from 'lodash';
-import { hashObject, idTime } from './common';
+import { hashObject, idTime, isid_v1 } from './common';
 import { ISigned, IUser, keysEqual, verifySigner } from './user';
 import * as dbix from './dbix'
 import { IDataChange } from './data-change';
@@ -302,7 +302,7 @@ export async function validateData(db: IDB, datas: IData[]) {
     if (data.modified > (Date.now() + 60000)) {
       throw new Error(`modified timestamp cannot be in the future`);
     }
-    if (idTime(data.id) > (Date.now() + 60000)) {
+    if (!isid_v1(data.id) && idTime(data.id) > (Date.now() + 60000)) {
       throw new Error(`time part of id cannot be in the future`);
     }
     // TODO verify type is not being changed on existing data (e.g. deleting a user or group)

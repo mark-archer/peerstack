@@ -3,6 +3,7 @@
 
 import { set, random, get } from "lodash";
 import { hashObject, cloneClean, PushNotifications_urlBase64ToUint8Array } from "./common";
+import { commitChange } from "./data-change";
 import { getDB } from "./db";
 import { INotification, notifyUsers } from "./notifications";
 import { IDevice, IUser, newData, signObject } from "./user";
@@ -90,18 +91,19 @@ async function registerPushSubscription(registration: ServiceWorkerRegistration,
   if (hashBefore != hashAfter) {
     me.modified += random(100, 1000, false);
     signObject(me);
-    await db.save(me);
-    // me(me);
+    // NOTE note sure this has been completely worked out
+    //  it's very desireable to do partial updates to the user object but
+    //  dataChange's don't allow signatures...
+    const change = await commitChange(me, { preserveModified: true })[0];
+    await db.save(me, true);
 
-    // send updated user object to all users (all of their devices)
     // TODO only send to trusted users (I'm assuming we'll differentiate at some point)
-    // TODO test that this is working
     const users = await db.find('User', 'type') as IUser[];
     const notification: INotification = {
       ...newData(),
       type: 'Notification',
       dontShow: true,
-      data: me,
+      change,
       title: 'User Updated',
     }
     signObject(notification);
@@ -110,12 +112,3 @@ async function registerPushSubscription(registration: ServiceWorkerRegistration,
   console.log('my devices', me.devices);
   return me;
 }
-
-// export function unregister() {
-//   if ('serviceWorker' in navigator) {
-//     navigator.serviceWorker.ready.then(registration => {
-//       registration.unregister();
-//     });
-//   }
-// }
-

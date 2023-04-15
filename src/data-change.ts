@@ -1,5 +1,6 @@
 import { isArray, isObject, isDate, uniq, set, unset, isEqual, max, cloneDeep, isNumber } from "lodash";
 import { idTime, newid } from "./common";
+import { me } from "./connections";
 import { invalidateCache } from "./data-change-sync";
 import { getDB, checkPermission, IData, hasPermission, IGroup, getUser, users, isGroup } from "./db";
 import { ISigned, IUser, keysEqual, signObject, userId, verifySigner } from './user';
@@ -246,7 +247,13 @@ export async function ingestChange(dataChange: IDataChange, dbData?: IData, skip
     if (dataChange.subject === dataChange.signer && !dbData) {
       // this is creating (or modifying) a user we dont' have in the db
       // TODO look up the user's public key from a registry
-    } else {
+    } 
+    else if (dbData?.type === 'User') {
+      if (dataChange.signer !== dbData.id) {
+        throw new Error('Changes to a user must be signed by themselves');
+      }
+    }
+    else {
       await verifySigner(dataChange);
     }
   }
@@ -282,7 +289,12 @@ export async function ingestChange(dataChange: IDataChange, dbData?: IData, skip
   //  _except_ groups so sign groups if your an admin, groups should always have a signature and be signed when saving 
   if (dbData.type === 'Group' && (await hasPermission(userId, dbData as IGroup, 'admin', db))) {
     signObject(dbData);
-  } else {
+  }
+  // if I'm changing myself, sign it to let everyone know it's valid
+  else if (dbData?.type === 'User' && dbData?.id === me?.id) {
+    signObject(dbData);
+  } 
+  else {
     // otherwise delete signer and signature if they exist since they are probably no longer correct
     delete dbData.signer;
     delete dbData.signature;

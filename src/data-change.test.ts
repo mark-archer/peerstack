@@ -1,4 +1,4 @@
-import { newUser, init, newData, signObject, signObjectWithIdAndSecretKey,newGroup } from "./user"
+import { newUser, init, newData, signObject, signObjectWithIdAndSecretKey,newGroup, IUser } from "./user"
 import * as _ from 'lodash';
 import 'should';
 import { initDBWithMemoryMock } from "./db-mock.test";
@@ -756,6 +756,40 @@ describe('data-change', () => {
         expect(dbUser).toEqual(aUserSafe);
       })
 
+      test('change an existing user', async () => {
+        const aUser = newUser();
+        const aUserSafe = { ...aUser };
+        delete aUserSafe.secretKey;
+        signObjectWithIdAndSecretKey(aUserSafe, aUser.id, aUser.secretKey);
+        await db.save(aUserSafe);
+        const updatedUser = { ...aUserSafe };
+        updatedUser.name = "new name";
+        const dataChange = getDataChange(aUserSafe, updatedUser);
+        expect(dataChange.changes).toEqual([['name', "new name"]]);
+        signObjectWithIdAndSecretKey(dataChange, aUser.id, aUser.secretKey);
+        await ingestChange(dataChange);
+        const dbUser: IUser = await db.get(aUser.id);
+        expect(dbUser.name).toEqual(updatedUser.name);
+      })
+
+      test('reject change if not signed by user being changed', async () => {
+        const aUser = newUser();
+        const aUserSafe = { ...aUser };
+        delete aUserSafe.secretKey;
+        signObjectWithIdAndSecretKey(aUserSafe, aUser.id, aUser.secretKey);
+        await db.save(aUserSafe);
+        const updatedUser = { ...aUserSafe };
+        updatedUser.name = "new name";
+        const dataChange = getDataChange(aUserSafe, updatedUser);
+        expect(dataChange.changes).toEqual([['name', "new name"]]);
+        await expect(ingestChange(dataChange)).rejects.toThrow(/Changes to a user must be signed by themselves/);
+        signObject(dataChange);
+        await expect(ingestChange(dataChange)).rejects.toThrow(/Changes to a user must be signed by themselves/);
+        // signObjectWithIdAndSecretKey(dataChange, aUser.id, aUser.secretKey);
+        const dbUser: IUser = await db.get(aUser.id);
+        expect(dbUser.name).toEqual(aUserSafe.name);
+      })
+
       test('reject invalid user group', async () => {
         const aUser = newUser();
         // @ts-ignore
@@ -790,6 +824,7 @@ describe('data-change', () => {
         signObjectWithIdAndSecretKey(dataChange, aUser.id, secretKey);
         await expect(ingestChange(dataChange)).rejects.toThrow(/An attempt was made to update a user but the public keys do not match/);
       })
+
     })
   })
 
