@@ -124,7 +124,7 @@ class MemoryCollection<T extends { id: string }> {
   }
 }
 
-export async function initMemoryDB() {
+async function initMemoryDB() {
   const dataCollection = new MemoryCollection<IData>();
   const filesCollection = new MemoryCollection<IFile>();
   const localCollection = new MemoryCollection<any>();
@@ -167,7 +167,7 @@ export async function initMemoryDB() {
   return db;
 }
 
-export async function mockPersistencyLayerOpts(): Promise<IPersistenceLayer> {
+async function mockPersistencyLayerOpts(): Promise<IPersistenceLayer> {
   let db: IDB;
   async function init() {
     if (!db) {
@@ -181,6 +181,7 @@ export async function mockPersistencyLayerOpts(): Promise<IPersistenceLayer> {
 }
 
 export async function initDBWithMemoryMock(): Promise<IDB> {
+  console.warn(`Using DBWithMemoryMock`);
   return await initDB({
     persistenceLayer: await mockPersistencyLayerOpts()
   });

@@ -111,7 +111,7 @@ export async function populateGroupHashes(groupId: string) {
 
 export async function getPrefixHashes(groupId: string, blockPrefix = 'B'): Promise<{ [subPrefix: string]: string }> {
   await populateGroupHashes(groupId);
-  let hashes = prefixHashDetails[groupId][blockPrefix];
+  let hashes = prefixHashDetails[groupId]?.[blockPrefix] ?? {};
   // if (!hashes) ...
   let prefixes: string[] = Object.keys(hashes);
   while (prefixes.length === 1 && prefixes[0].length < 9) {

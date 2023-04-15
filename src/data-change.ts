@@ -1,5 +1,5 @@
 import { isArray, isObject, isDate, uniq, set, unset, isEqual, max, cloneDeep, isNumber } from "lodash";
-import { idTime, newid } from "./common";
+import { idTime, isid_v1, newid } from "./common";
 import { me } from "./connections";
 import { invalidateCache } from "./data-change-sync";
 import { getDB, checkPermission, IData, hasPermission, IGroup, getUser, users, isGroup } from "./db";
@@ -167,7 +167,8 @@ export async function validateDataChange(dataChange: IDataChange, dbData?: IData
   if (!isNumber(data.modified) || data.modified > (Date.now() + 60000)) {
     throw new Error(`modified timestamp must be a number and cannot be in the future`);
   }
-  if (idTime(data.id) > (Date.now() + 60000)) {
+  // TODO convert v1 ids to v2
+  if (!isid_v1(data.id) && idTime(data.id) > (Date.now() + 60000)) {
     throw new Error(`time part of id cannot be in the future`);
   }
   // TODO verify type is not being changed on existing data (e.g. deleting a user or group)
