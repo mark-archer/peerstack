@@ -159,3 +159,19 @@ export function getDetailHashes(groupId: string, blockId_?: string) {
   }
   return getDetailHashPromises[promiseId];
 }
+
+export async function getBlockChangeInfo(groupId: string, blockId: string) {
+  const minModified = getBlockRange(blockId).min;
+  const maxModified = getBlockRange(blockId).max;
+  const db = await getDB();
+  const cursor = await db.changes.openCursor(groupId, minModified);
+  const data: { id: string, modified: number}[] = [];
+  while (await cursor.next()) {
+    const change = cursor.value;
+    if (change.modified > maxModified) {
+      break;
+    }
+    data.push({ id: cursor.value.id, modified: cursor.value.modified });
+  }
+  return data;
+}

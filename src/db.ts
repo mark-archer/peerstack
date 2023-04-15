@@ -129,7 +129,7 @@ export interface IDB {
     save: (data: IDataChange | IDataChange[]) => Promise<void>
     get: (id: string) => Promise<IDataChange>
     delete: (id: string) => Promise<void>
-    openCursor: (group: string, modified?: number) => Promise<ICursor<IDataChange>>
+    openCursor: (group: string, modified?: number, direction?: IDBCursorDirection) => Promise<ICursor<IDataChange>>
     getSubjectChanges: (subject: string, modified?: number) => Promise<IDataChange[]>
   },
 }
@@ -492,6 +492,12 @@ export async function getDetailHashes(groupId: string) {
   }
   L5BlockHashes[groupId] = blockHashes;
   return blockHashes
+}
+
+export async function getGroupUsersHash(groupId: string) {
+  const users = await getGroupUsers(groupId);
+  const hashValues = sortBy(users, ["modified", "id"]).map(u => ({ id: u.id, modified: u.modified }));  
+  return { users, hash: hashObject(hashValues) };
 }
 
 // @ts-ignore

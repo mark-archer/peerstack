@@ -1,10 +1,11 @@
 import * as _ from "lodash";
-import { compact, flatten, uniq } from "lodash";
-import { fromJSON, isid, newid, parseJSON, sleep, stringify } from "./common";
+import { compact, flatten, pick, sortBy, uniq } from "lodash";
+import { fromJSON, hashObject, isid, newid, parseJSON, sleep, stringify } from "./common";
 import { connections, chunkSize, me } from "./connections";
-import { checkPermission, getBlockIds, getDetailHashes, getBlockIdHashes, getDB, getPersonalGroup, hasPermission, IData, IDB, IGroup, usersGroup, getGroupUsers, getUser } from "./db";
+import { checkPermission, getBlockIds, getDetailHashes, getBlockIdHashes, getDB, getPersonalGroup, hasPermission, IData, IDB, IGroup, usersGroup, getGroupUsers, getUser, getGroupUsersHash } from "./db";
 import { keysEqual, IUser, openMessage, signMessage, verifySignedObject, verifySigner } from "./user";
 import { ingestChange, IDataChange } from "./data-change";
+import { getBlockChangeInfo, getPrefixHashes } from "./data-change-sync";
 
 export type txfn = <T>(data: (string | IRemoteData)) => Promise<T | void> | void
 
@@ -126,6 +127,23 @@ export async function getRemoteData(id: string) {
   return data;
 }
 
+const groupUserHashes: { [groupId: string]: string } = {};
+
+export async function getRemoteGroupUsers(groupId: string, remoteHash: string) {
+  const connection: IConnection = currentConnection;
+  if (groupUserHashes[groupId] === remoteHash) {
+    return [];
+  }
+  await checkPermission(connection.remoteUser?.id, groupId, 'read');
+  const { hash: localHash, users } = await getGroupUsersHash(groupId);
+  groupUserHashes[groupId] = localHash;
+  if (localHash === remoteHash) {
+    return [];
+  } else {
+    return users;
+  }
+}
+
 export async function getRemoteBlockHashes(groupId: string) {
   const connection: IConnection = currentConnection;
   await checkPermission(connection.remoteUser?.id, groupId, 'read');
@@ -137,6 +155,27 @@ export async function getRemoteIdBlockHashes(groupId: string, blockId: string) {
   await checkPermission(connection.remoteUser?.id, groupId, 'read');
   return getBlockIdHashes(groupId, blockId);
 }
+
+async function getRemotePrefixHashes(groupId: string, blockPrefix = 'B') {
+  const connection: IConnection = currentConnection;
+  await checkPermission(connection.remoteUser?.id, groupId, 'read');
+  return getPrefixHashes(groupId, blockPrefix);
+}
+
+async function getRemoteBlockChangeInfo(groupId: string, blockId: string) {
+  const connection: IConnection = currentConnection;
+  await checkPermission(connection.remoteUser?.id, groupId, 'read');
+  return getBlockChangeInfo(groupId, blockId);
+}
+
+async function getRemoteDataChange(id: string) {
+  const connection: IConnection = currentConnection;
+  const db = await getDB();
+  const change = await db.changes.get(id);
+  await checkPermission(connection.remoteUser?.id, change.group, 'read');
+  return change;
+}
+
 
 export const eventHandlers = {
   onRemoteDataSaved: (data: IData) => {
@@ -309,144 +348,288 @@ async function syncBlockId(connection: IConnection, db: IDB, groupId: string, bl
   await thisBlockSync;
 }
 
-export async function syncGroup_old(connection: IConnection, remoteGroup: IGroup, db: IDB) {
-  try {
-    const groupId = remoteGroup.id;
-    let localGroup = await db.get(groupId);
+// export async function syncGroup_old(connection: IConnection, remoteGroup: IGroup, db: IDB) {
+//   try {
+//     const groupId = remoteGroup.id;
+//     let localGroup = await db.get(groupId);
 
-    // don't add groups unless adding them from my own device
-    if (!localGroup) {
-      if (connection.remoteUser?.id === connection.me?.id) {
-        await syncBlockId(connection, db, groupId, 'users');
-        await db.save(remoteGroup, true);
-        localGroup = remoteGroup;
-      } else {
-        return;
-      }
-    }
+//     // don't add groups unless adding them from my own device
+//     if (!localGroup) {
+//       if (connection.remoteUser?.id === connection.me?.id) {
+//         await syncBlockId(connection, db, groupId, 'users');
+//         await db.save(remoteGroup, true);
+//         localGroup = remoteGroup;
+//       } else {
+//         return;
+//       }
+//     }
 
-    if (groupId !== connection.me.id && groupId !== usersGroup.id) {
-      if (remoteGroup.modified > localGroup.modified) {
-        // const skipValidation = !localGroup; // if we don't have the local group there's a good chance we can't verify it since the signer could be a peer we don't already know
-        await db.save(remoteGroup);
-        await syncBlockId(connection, db, groupId, 'users');
-        await db.save(remoteGroup);
-        eventHandlers.onRemoteDataSaved(remoteGroup);
-      } else if (localGroup.type === 'Deleted' && remoteGroup.modified < localGroup.modified) {
-        RPC(connection, pushData)(localGroup);
-        return;
-      }
-    }
-    await syncBlockId(connection, db, groupId);
-  } catch (err) {
-    console.log('error syncing group')
-  }
-}
+//     if (groupId !== connection.me.id && groupId !== usersGroup.id) {
+//       if (remoteGroup.modified > localGroup.modified) {
+//         // const skipValidation = !localGroup; // if we don't have the local group there's a good chance we can't verify it since the signer could be a peer we don't already know
+//         await db.save(remoteGroup);
+//         await syncBlockId(connection, db, groupId, 'users');
+//         await db.save(remoteGroup);
+//         eventHandlers.onRemoteDataSaved(remoteGroup);
+//       } else if (localGroup.type === 'Deleted' && remoteGroup.modified < localGroup.modified) {
+//         RPC(connection, pushData)(localGroup);
+//         return;
+//       }
+//     }
+//     await syncBlockId(connection, db, groupId);
+//   } catch (err) {
+//     console.log('error syncing group')
+//   }
+// }
 
-export async function syncDBs_old(connection: IConnection, apps?: string[]) {
-  const startTime = Date.now();
-  const db = await getDB();
-  const _syncGroup = (group: IGroup) => syncGroup_old(connection, group, db);
+// export async function syncDBs_old(connection: IConnection, apps?: string[]) {
+//   const startTime = Date.now();
+//   const db = await getDB();
+//   const _syncGroup = (group: IGroup) => syncGroup_old(connection, group, db);
 
-  // get groups from remote device that it thinks I have permissions too
-  let remoteGroups = await RPC(connection, getRemoteGroups)();
+//   // get groups from remote device that it thinks I have permissions too
+//   let remoteGroups = await RPC(connection, getRemoteGroups)();
 
-  // // First sync all group meta data (group object and users in group)
-  // for (const remoteGroup of remoteGroups) {
-  //   // TODO don't process remote group unless I've indicated I want to join it (and haven't left it)
-  //   const localGroup = await db.get(remoteGroup.id);
-  //   if (!localGroup || localGroup.modified < remoteGroup.modified) {
-  //     // sync group users before saving the group object to make sure we have the group signer locally
-  //     await syncBlockId(connection, db, remoteGroup.id, 'users')
-  //     await db.save(remoteGroup).catch(err => console.log('error saving group', err));
-  //   }
-  // }
+//   // // First sync all group meta data (group object and users in group)
+//   // for (const remoteGroup of remoteGroups) {
+//   //   // TODO don't process remote group unless I've indicated I want to join it (and haven't left it)
+//   //   const localGroup = await db.get(remoteGroup.id);
+//   //   if (!localGroup || localGroup.modified < remoteGroup.modified) {
+//   //     // sync group users before saving the group object to make sure we have the group signer locally
+//   //     await syncBlockId(connection, db, remoteGroup.id, 'users')
+//   //     await db.save(remoteGroup).catch(err => console.log('error saving group', err));
+//   //   }
+//   // }
 
-  // if apps are specified only sync data for groups that are for those apps
-  if (apps?.length) {
-    remoteGroups = remoteGroups.filter(g => g.apps?.length && g.apps.find(a => apps.includes(a)));
-  }
+//   // if apps are specified only sync data for groups that are for those apps
+//   if (apps?.length) {
+//     remoteGroups = remoteGroups.filter(g => g.apps?.length && g.apps.find(a => apps.includes(a)));
+//   }
 
-  // randomize order to try to spread traffic around
-  remoteGroups = _.shuffle(remoteGroups);
+//   // randomize order to try to spread traffic around
+//   remoteGroups = _.shuffle(remoteGroups);
 
-  // add personal group if I'm also the user on the other device
-  if (connection.me.id === connection.remoteUser.id) {
-    // TODO: since the connection is me I should sync all users and pull all data, saving without validating
-    remoteGroups.unshift(getPersonalGroup(connection.me.id));
-  }
+//   // add personal group if I'm also the user on the other device
+//   if (connection.me.id === connection.remoteUser.id) {
+//     // TODO: since the connection is me I should sync all users and pull all data, saving without validating
+//     remoteGroups.unshift(getPersonalGroup(connection.me.id));
+//   }
 
-  // add group ids to connection for later reference
-  connection.groups = remoteGroups.map(g => g.id);
+//   // add group ids to connection for later reference
+//   connection.groups = remoteGroups.map(g => g.id);
 
-  // sync active groups completely before syncing inactive groups
-  const activeGroups = remoteGroups.filter(g => !g.inactive);
-  const inactiveGroups = remoteGroups.filter(g => g.inactive);
-  await Promise.all(activeGroups.map(_syncGroup));
-  console.log(`finished syncing active groups with ${connection.remoteDeviceId} in ${Date.now() - startTime} ms`);
-  await Promise.all(inactiveGroups.map(_syncGroup));
-  console.log(`finished syncing inactive groups with ${connection.remoteDeviceId} in ${Date.now() - startTime} ms`);
+//   // sync active groups completely before syncing inactive groups
+//   const activeGroups = remoteGroups.filter(g => !g.inactive);
+//   const inactiveGroups = remoteGroups.filter(g => g.inactive);
+//   await Promise.all(activeGroups.map(_syncGroup));
+//   console.log(`finished syncing active groups with ${connection.remoteDeviceId} in ${Date.now() - startTime} ms`);
+//   await Promise.all(inactiveGroups.map(_syncGroup));
+//   console.log(`finished syncing inactive groups with ${connection.remoteDeviceId} in ${Date.now() - startTime} ms`);
 
-  // await Promise.all(remoteGroups.map(_syncGroup));
-  // // for (const remoteGroup of remoteGroups) await _syncGroup(remoteGroup);
+//   // await Promise.all(remoteGroups.map(_syncGroup));
+//   // // for (const remoteGroup of remoteGroups) await _syncGroup(remoteGroup);
 
-  // console.log(`finished syncing DB with ${connection.remoteDeviceId} in ${Date.now() - startTime} ms`);
-}
+//   // console.log(`finished syncing DB with ${connection.remoteDeviceId} in ${Date.now() - startTime} ms`);
+// }
 
-async function sendUserChangesRemote(dataChannelLabel: string, lastReceived: number) {
+// async function sendUserChangesRemote(dataChannelLabel: string, lastReceived: number) {
+//   new Promise<void>(async (resolve) => {
+//     try {
+//       const _connection: IConnection = currentConnection;
+//       const connection = connections().find(c => c.id === _connection.id);
+//       const readGroups = await getRemoteGroups();
+//       const readGroupUserIds = flatten(readGroups.map(group => [group.owner, ...group.members.map(m => m.userId)]));
+
+//       const dc = await connection.pc.createDataChannel(dataChannelLabel);
+//       let dcClosed = false;
+//       dc.onclose = () => dcClosed = true;
+
+//       const db = await getDB();
+//       const userCursor = await db.changes.openCursor('users', lastReceived);
+//       while (await userCursor.next()) {
+//         const doc = userCursor.value;
+//         // don't send this user change if it's not for a user in the group
+//         if (!readGroupUserIds.find(id => doc.subject === id)) {
+//           continue;
+//         }
+//         const json = stringify(doc);
+//         if (json.length > chunkSize) {
+//           // TODO if bigger than chunkSize need to send slow way because it'll overflow the buffer
+//           // await RPC(connection, pushData)(doc, true);
+//           continue;
+//         }
+//         while (!dcClosed && (dc.bufferedAmount + json.length) > chunkSize) {
+//           console.log('buffer full so waiting');
+//           await sleep(1);
+//         }
+//         if (dcClosed) {
+//           console.log('dc closed so breaking loop');
+//           break;
+//         }
+//         dc.send(json);
+//       }
+
+//       if (!dcClosed) {
+//         dc.send('END');
+//       }
+//     } catch (err) {
+//       console.error('error while remote streaming users', { dataChannelLabel }, err);
+//     }
+//     resolve();
+//   })
+// }
+
+// async function sendDataChangesRemote(groupId: string, dataChannelLabel: string, lastReceived: number, lastReceivedUsers: number) {
+//   new Promise<void>(async (resolve) => {
+//     try {
+//       const _connection: IConnection = currentConnection;
+//       const connection = connections().find(c => c.id === _connection.id);
+//       const readGroups = await getRemoteGroups();
+//       const readGroupUserIds = flatten(readGroups.map(group => [group.owner, ...group.members.map(m => m.userId)]));
+//       await checkPermission(_connection.remoteUser?.id, groupId, 'read');
+
+//       const dc = await connection.pc.createDataChannel(dataChannelLabel);
+//       let dcClosed = false;
+//       dc.onclose = () => dcClosed = true;
+
+//       const db = await getDB();
+
+//       const userCursor = await db.changes.openCursor('users', lastReceivedUsers);
+//       while (await userCursor.next()) {
+//         const doc = userCursor.value;
+//         // don't send this user change if it's not for a user in one of the groups that the peer can read
+//         if (!readGroupUserIds.find(id => doc.subject === id)) {
+//           continue;
+//         }
+//         const json = stringify(doc);
+//         // TODO // if bigger than chunkSize need to send slow way because it'll overflow the buffer
+//         // if (json.length > chunkSize) {
+//         //   await RPC(connection, pushData)(doc, true);
+//         //   continue;
+//         // }
+//         while (!dcClosed && (dc.bufferedAmount + json.length) > chunkSize) {
+//           console.log('buffer full so waiting');
+//           await sleep(1);
+//         }
+//         if (dcClosed) {
+//           console.log('dc closed so breaking loop');
+//           break;
+//         }
+//         dc.send(json);
+//       }
+
+//       // TODO send changes for types in this group
+//       // const cursor = await db.changes.openCursor('types', lastReceived);
+
+//       const cursor = await db.changes.openCursor(groupId, lastReceived);
+//       while (await cursor.next()) {
+//         const doc = cursor.value;
+//         const json = stringify(doc);
+//         // TODO // if bigger than chunkSize need to send slow way because it'll overflow the buffer (nice!!!)
+//         // if (json.length > chunkSize) {
+//         //   await RPC(connection, pushData)(doc, true);
+//         //   continue;
+//         // }
+//         while (!dcClosed && (dc.bufferedAmount + json.length) > chunkSize) {
+//           console.log('buffer full so waiting');
+//           await sleep(1);
+//         }
+//         if (dcClosed) {
+//           console.log('dc closed so breaking loop');
+//           break;
+//         }
+//         dc.send(json);
+//       }
+
+//       if (!dcClosed) {
+//         dc.send('END');
+//       }
+//     } catch (err) {
+//       console.error('error while remote streaming fastSync', { groupId, dataChannelLabel }, err);
+//     }
+//     resolve();
+//   })
+// }
+
+
+let lastReceivedDates: {
+  [deviceId: string]: { [groupId: string]: number }
+};
+
+// async function ingestDataChanges(_connection: IConnection, groupId: string) {
+//   return new Promise<void>(async (resolve, reject) => {
+//     try {
+//       await verifyRemoteUser(_connection);
+//       const connection = connections().find(c => c.id === _connection.id);
+//       const skipValidation = connection.remoteUser.id === me.id;
+//       const db = await getDB();
+
+//       if (!lastReceivedDates) {
+//         const id = 'lastReceivedDates';
+//         lastReceivedDates = await db.local.get(id) || { id };
+//       }
+//       const lastReceived = lastReceivedDates[connection.remoteDeviceId][groupId];
+//       const lastReceivedUsers = lastReceivedDates[connection.remoteDeviceId]['users'];
+
+//       const dcLabel = `stream-sync-changes-${groupId}-${newid()}`;
+//       await RPC(connection, sendDataChangesRemote)(groupId, dcLabel, lastReceived, lastReceivedUsers);
+
+//       const dc = await connection.waitForDataChannel(dcLabel);
+
+//       const remoteJsonData = [];
+//       let streamEOF = false;
+
+//       dc.onmessage = (evt) => {
+//         const json = evt.data;
+//         if (json === 'END') {
+//           dc.close();
+//         } else {
+//           remoteJsonData.push(json);
+//         }
+//       }
+//       let dcClosed = false;
+//       dc.onclose = () => {
+//         dcClosed = true;
+//       }
+//       // sequentially process remote data to try to keep things responsive. 
+//       while ((!streamEOF && !dcClosed) || remoteJsonData.length) {
+//         try {
+//           if (!remoteJsonData.length) {
+//             console.log(`no remote data to process, going to sleep and will check again`);
+//             await sleep(1); // TODO this value should be tuned
+//             continue;
+//           }
+//           const changes: IDataChange[] = remoteJsonData.map(json => parseJSON(json));
+//           remoteJsonData.length = 0;
+
+//           const changedDocs: { [id: string]: IData } = {};
+//           for (const change of changes) {
+//             // this is very expensive - it does validation, merges the change in with the existing data, _and_ writes the data to disk
+//             const doc = await ingestChange(change, undefined, skipValidation);
+//             // TODO what happens when there is an error?
+//             changedDocs[doc.id] = doc;
+//           }
+//           Object.values(changedDocs).map(doc => eventHandlers.onRemoteDataSaved(doc));
+//           console.log(`ingestDataChanges ${changes.length} docs`);
+//         } catch (err) {
+//           console.error('error processing remote data during fast sync', err);
+//         }
+//       }
+//       lastReceivedDates[connection.remoteDeviceId]['users'] = Date.now();
+//       lastReceivedDates[connection.remoteDeviceId][groupId] = Date.now();
+//       await db.local.save(lastReceivedDates);
+//     } catch (err) {
+//       reject(err);
+//     }
+//     resolve();
+//   });
+// }
+
+async function fastSyncDataChangesRemote(groupId: string, dataChannelLabel: string, lastReceived: number) {
   new Promise<void>(async (resolve) => {
     try {
       const _connection: IConnection = currentConnection;
       const connection = connections().find(c => c.id === _connection.id);
-      const readGroups = await getRemoteGroups();
-      const readGroupUserIds = flatten(readGroups.map(group => [group.owner, ...group.members.map(m => m.userId)]));
-
-      const dc = await connection.pc.createDataChannel(dataChannelLabel);
-      let dcClosed = false;
-      dc.onclose = () => dcClosed = true;
-
-      const db = await getDB();
-      const userCursor = await db.changes.openCursor('users', lastReceived);
-      while (await userCursor.next()) {
-        const doc = userCursor.value;
-        // don't send this user change if it's not for a user in the group
-        if (!readGroupUserIds.find(id => doc.subject === id)) {
-          continue;
-        }
-        const json = stringify(doc);
-        if (json.length > chunkSize) {
-          // TODO if bigger than chunkSize need to send slow way because it'll overflow the buffer
-          // await RPC(connection, pushData)(doc, true);
-          continue;
-        }
-        while (!dcClosed && (dc.bufferedAmount + json.length) > chunkSize) {
-          console.log('buffer full so waiting');
-          await sleep(1);
-        }
-        if (dcClosed) {
-          console.log('dc closed so breaking loop');
-          break;
-        }
-        dc.send(json);
-      }
-
-      if (!dcClosed) {
-        dc.send('END');
-      }
-    } catch (err) {
-      console.error('error while remote streaming users', { dataChannelLabel }, err);
-    }
-    resolve();
-  })
-}
-
-async function sendDataChangesRemote(groupId: string, dataChannelLabel: string, lastReceived: number, lastReceivedUsers: number) {
-  new Promise<void>(async (resolve) => {
-    try {
-      const _connection: IConnection = currentConnection;
-      const connection = connections().find(c => c.id === _connection.id);
-      const readGroups = await getRemoteGroups();
-      const readGroupUserIds = flatten(readGroups.map(group => [group.owner, ...group.members.map(m => m.userId)]));
       await checkPermission(_connection.remoteUser?.id, groupId, 'read');
 
       const dc = await connection.pc.createDataChannel(dataChannelLabel);
@@ -455,40 +638,17 @@ async function sendDataChangesRemote(groupId: string, dataChannelLabel: string, 
 
       const db = await getDB();
 
-      const userCursor = await db.changes.openCursor('users', lastReceivedUsers);
-      while (await userCursor.next()) {
-        const doc = userCursor.value;
-        // don't send this user change if it's not for a user in one of the groups that the peer can read
-        if (!readGroupUserIds.find(id => doc.subject === id)) {
-          continue;
-        }
-        const json = stringify(doc);
-        // TODO // if bigger than chunkSize need to send slow way because it'll overflow the buffer
-        // if (json.length > chunkSize) {
-        //   await RPC(connection, pushData)(doc, true);
-        //   continue;
-        // }
-        while (!dcClosed && (dc.bufferedAmount + json.length) > chunkSize) {
-          console.log('buffer full so waiting');
-          await sleep(1);
-        }
-        if (dcClosed) {
-          console.log('dc closed so breaking loop');
-          break;
-        }
-        dc.send(json);
-      }
-
-      // TODO send changes for types in this group
-      // const cursor = await db.changes.openCursor('types', lastReceived);
+      // TODO try opening 3 dataChange cursors: one for normal data, one for users, one for types
+      //    if user or type is oldest modified and relevant for group, send that, otherwise send data
+      //    increment whichever one is sent, keep going until they area all done
 
       const cursor = await db.changes.openCursor(groupId, lastReceived);
       while (await cursor.next()) {
         const doc = cursor.value;
         const json = stringify(doc);
-        // TODO // if bigger than chunkSize need to send slow way because it'll overflow the buffer (nice!!!)
+        // TODO // if bigger than chunkSize need to send slow way because it'll overflow the buffer
         // if (json.length > chunkSize) {
-        //   await RPC(connection, pushData)(doc, true);
+        //   await RPC(connection, pushDataChange)(doc, true);
         //   continue;
         // }
         while (!dcClosed && (dc.bufferedAmount + json.length) > chunkSize) {
@@ -501,7 +661,6 @@ async function sendDataChangesRemote(groupId: string, dataChannelLabel: string, 
         }
         dc.send(json);
       }
-
       if (!dcClosed) {
         dc.send('END');
       }
@@ -512,28 +671,25 @@ async function sendDataChangesRemote(groupId: string, dataChannelLabel: string, 
   })
 }
 
-
-let lastReceivedDates: {
-  [deviceId: string]: { [groupId: string]: number }
-};
-
-async function ingestDataChanges(_connection: IConnection, groupId: string) {
+async function fastSyncDataChanges(_connection: IConnection, groupId: string) {
   return new Promise<void>(async (resolve, reject) => {
     try {
-      await verifyRemoteUser(_connection);
       const connection = connections().find(c => c.id === _connection.id);
       const skipValidation = connection.remoteUser.id === me.id;
       const db = await getDB();
+
+      // const newestChange = await db.changes.openCursor(groupId, Infinity, 'prev')
+      //   .then(cursor => cursor.next());
+      // const newestChangeModified = newestChange.modified;
 
       if (!lastReceivedDates) {
         const id = 'lastReceivedDates';
         lastReceivedDates = await db.local.get(id) || { id };
       }
       const lastReceived = lastReceivedDates[connection.remoteDeviceId][groupId];
-      const lastReceivedUsers = lastReceivedDates[connection.remoteDeviceId]['users'];
 
       const dcLabel = `stream-sync-changes-${groupId}-${newid()}`;
-      await RPC(connection, sendDataChangesRemote)(groupId, dcLabel, lastReceived, lastReceivedUsers);
+      await RPC(connection, fastSyncDataChangesRemote)(groupId, dcLabel, lastReceived);
 
       const dc = await connection.waitForDataChannel(dcLabel);
 
@@ -565,10 +721,13 @@ async function ingestDataChanges(_connection: IConnection, groupId: string) {
 
           const changedDocs: { [id: string]: IData } = {};
           for (const change of changes) {
-            // this is very expensive - it does validation, merges the change in with the existing data, _and_ writes the data to disk
-            const doc = await ingestChange(change, undefined, skipValidation);
-            // TODO what happens when there is an error?
-            changedDocs[doc.id] = doc;
+            try {
+              // NOTE this is very expensive - it does validation, merges the change in with the existing data, _and_ writes the data to disk
+              const doc = await ingestChange(change, undefined, skipValidation);
+              changedDocs[doc.id] = doc;
+            } catch (err) {
+              console.error(`error ingesting remote data change`, change);
+            }
           }
           Object.values(changedDocs).map(doc => eventHandlers.onRemoteDataSaved(doc));
           console.log(`ingestDataChanges ${changes.length} docs`);
@@ -576,14 +735,142 @@ async function ingestDataChanges(_connection: IConnection, groupId: string) {
           console.error('error processing remote data during fast sync', err);
         }
       }
-      lastReceivedDates[connection.remoteDeviceId]['users'] = Date.now();
       lastReceivedDates[connection.remoteDeviceId][groupId] = Date.now();
-      await db.local.save(lastReceivedDates);
+      db.local.save(lastReceivedDates);
     } catch (err) {
       reject(err);
     }
     resolve();
   });
+}
+
+let pendingDeepSyncDataChanges = Promise.resolve();
+async function deepSyncDataChanges(connection: IConnection, db: IDB, groupId: string, blockPrefix?: string) {
+  let unlockBlockSync: () => any;
+  let blockSyncLock = new Promise<void>((resolve) => {
+    unlockBlockSync = resolve;
+  })
+  let thisBlockSync = pendingDeepSyncDataChanges.then(async () => {
+    if (blockPrefix) {
+      console.log(`syncing dataChanges ${groupId} block ${blockPrefix}`);
+    }
+    let localHashes = await getPrefixHashes(groupId, blockPrefix);
+    const remoteHashes = await RPC(connection, getRemotePrefixHashes)(groupId, blockPrefix);
+    const blockPrefixes = Object.keys(remoteHashes).sort().reverse(); // reverse to do deepest first
+
+    for (let blockPrefix of blockPrefixes) {
+      const localHash = localHashes[blockPrefix];
+      const remoteHash = remoteHashes[blockPrefix];
+      if (localHash != remoteHash) {
+        if (blockPrefix.length < 9) {
+          // this assumes all blockIds in this set will, at most, result in `syncBlockId`
+          // so it is okay to unblock `syncBlockId` (which also prevents a deadlock)
+          unlockBlockSync();
+          await syncBlockId(connection, db, groupId, blockPrefix);
+        } else {
+          const blockId = blockPrefix;
+          const remoteBlockChangeInfo = await RPC(connection, getRemoteBlockChangeInfo)(groupId, blockId);
+          for (const remoteChangeInfo of remoteBlockChangeInfo) {
+            const localChange = await db.changes.get(remoteChangeInfo.id);
+            if (!localChange || localChange.modified < remoteChangeInfo.modified) {
+              await RPC(connection, getRemoteDataChange)(remoteChangeInfo.id)
+                .then(async remoteChange => {
+                  const doc = await ingestChange(remoteChange);
+                  eventHandlers.onRemoteDataSaved(doc);
+                })
+                .catch(err => {
+                  console.error('error syncing remote change', remoteChangeInfo, err);
+                })
+            }
+          }
+        }
+      }
+    }
+  });
+  pendingDeepSyncDataChanges = Promise.race([thisBlockSync, blockSyncLock]).catch(err => console.error(`error while syncing blockId`, { groupId, blockId: blockPrefix }, err));
+  await thisBlockSync;
+}
+
+let pendingDeepSyncData = Promise.resolve();
+async function deepSyncData(connection: IConnection, db: IDB, groupId: string, blockId: string = '') {
+  const isAdmin = await hasPermission(connection.remoteUser.id, groupId, 'admin');
+  if (!isAdmin) {
+    return;
+  }
+  let unlockBlockSync: () => any;
+  let blockSyncLock = new Promise<void>((resolve) => {
+    unlockBlockSync = resolve;
+  })
+  let thisBlockSync = pendingDeepSyncData.then(async () => {
+    if (blockId) {
+      console.log(`syncing data with admin ${connection.remoteUser?.id} for group ${groupId}, block ${blockId}`);
+    }
+    let localHashes = await getBlockIdHashes(groupId, blockId);
+    const remoteHashes = await RPC(connection, getRemoteIdBlockHashes)(groupId, blockId);
+    const blockIds = Object.keys(remoteHashes).sort().reverse(); // reverse to do newest first
+
+    for (let blockId of blockIds) {
+      const localHash = localHashes[blockId];
+      const remoteHash = remoteHashes[blockId];
+      if (localHash != remoteHash) {
+        if (blockId.length < 6 && !blockId.startsWith('u')) {
+          // this assumes all blockIds in this set will, at most, result in `syncBlockId`
+          // so it is okay to unblock `syncBlockId` (which also prevents a deadlock)
+          unlockBlockSync();
+          await syncBlockId(connection, db, groupId, blockId);
+        } else {
+          if (blockId.startsWith('u')) {
+            blockId = 'users';
+          }
+          const remoteBlockData = await RPC(connection, getRemoteBlockIds)(groupId, blockId);
+          for (const remoteData of remoteBlockData) {
+            const localData = await db.get(remoteData.id);
+            // if (!localData || localData.modified < remoteData.modified || (localData.signature != remoteData.signature && localData.modified == remoteData.modified && Math.random() > .8)) {
+            if (!localData || localData.modified < remoteData.modified) {
+              await RPC(connection, getRemoteData)(remoteData.id)
+                .then(async remoteData => {
+                  const alwaysValidate = ['Group', 'User', 'Type'].includes(remoteData.type);
+                  await db.save(remoteData, !alwaysValidate);
+                  eventHandlers.onRemoteDataSaved(remoteData)
+                })
+                .catch(err => {
+                  console.error('error syncing remote data', remoteData, err);
+                })
+            }
+          }
+        }
+      }
+    }
+  });
+  pendingDeepSyncData = Promise.race([thisBlockSync, blockSyncLock]).catch(err => console.error(`error while syncing blockId`, { groupId, blockId }, err));
+  await thisBlockSync;
+}
+
+async function syncAllGroupData(connection: IConnection, groupId: string) {
+  await verifyRemoteUser(connection);
+  const db = await getDB();
+  
+  // sync users
+  const { hash: localHash, users } = await getGroupUsersHash(groupId);
+  const remoteUsers = await getRemoteGroupUsers(groupId, localHash);
+  for (const remoteUser of remoteUsers) {
+    const localUser = users.find(u => u.id === remoteUser.id);
+    if (localUser && localUser.modified >= remoteUser.modified) continue;
+    await db.save(remoteUser);
+  }
+
+  // TODO: sync types
+
+  // fast sync data changes
+  await fastSyncDataChanges(connection, groupId);
+
+  // deep sync data changes
+  //  don't await, just queue up
+  deepSyncDataChanges(connection, db, groupId);
+
+  // deep sync data (if remote is admin, no verify)
+  //  don't await, just queue up
+  deepSyncData(connection, db, groupId);
 }
 
 interface SyncInfo {
@@ -638,44 +925,44 @@ async function getNextGroupInfoToSync(infos: SyncInfo[] = syncInfos): Promise<Sy
   return nextSync;
 }
 
-async function syncGroupObjectAndUsersAndTypes(connection: IConnection, localGroup: IGroup, remoteGroup): Promise<IGroup> {
-  // update group object if mine is older (check signature)
+// async function syncGroupObjectAndUsersAndTypes(connection: IConnection, localGroup: IGroup, remoteGroup): Promise<IGroup> {
+//   // update group object if mine is older (check signature)
 
-  // don't add groups from anyone but myself (for now, maybe add trusted users in the future)
-  if (!localGroup && connection.remoteUser.id !== me.id) {
-    throw new Error(`will not sync group from someone else's device if I have no record of it locally`);
-  }
+//   // don't add groups from anyone but myself (for now, maybe add trusted users in the future)
+//   if (!localGroup && connection.remoteUser.id !== me.id) {
+//     throw new Error(`will not sync group from someone else's device if I have no record of it locally`);
+//   }
 
-  let group = localGroup;
-  const db = await getDB();
-  if (localGroup.modified < remoteGroup.modified) {
-    group = remoteGroup;
+//   let group = localGroup;
+//   const db = await getDB();
+//   if (localGroup.modified < remoteGroup.modified) {
+//     group = remoteGroup;
 
-    // make sure you have signer in db
-    let signer = await getUser(group.signer);
-    if (!signer) {
-      signer = await RPC(connection, getRemoteData)(group.signer) as IUser;
-      await db.save(signer);
-    }
+//     // make sure you have signer in db
+//     let signer = await getUser(group.signer);
+//     if (!signer) {
+//       signer = await RPC(connection, getRemoteData)(group.signer) as IUser;
+//       await db.save(signer);
+//     }
 
-    // as part of this save, the signature and permissions will be verified
-    await db.save(remoteGroup);
+//     // as part of this save, the signature and permissions will be verified
+//     await db.save(remoteGroup);
 
-    // TODO users should be looked up from registries first
+//     // TODO users should be looked up from registries first
 
-    // update users from remote if remote's group is newer
-    let userIds: string[] = (group.members || []).map(m => m.userId);
-    userIds.push(group.owner);
-    userIds = uniq(compact(userIds));
-    for (const userId of userIds) {
-      if (!(await getUser(userId))) {
-        const remoteUser = await RPC(connection, getRemoteData)(group.signer) as IUser;
-        await db.save(remoteUser);
-      }
-    }
-  }
-  return group;
-}
+//     // update users from remote if remote's group is newer
+//     let userIds: string[] = (group.members || []).map(m => m.userId);
+//     userIds.push(group.owner);
+//     userIds = uniq(compact(userIds));
+//     for (const userId of userIds) {
+//       if (!(await getUser(userId))) {
+//         const remoteUser = await RPC(connection, getRemoteData)(group.signer) as IUser;
+//         await db.save(remoteUser);
+//       }
+//     }
+//   }
+//   return group;
+// }
 
 let pid = 0;
 function syncGroupBackground() {
@@ -687,10 +974,12 @@ function syncGroupBackground() {
       if (!si) pid = 0;
 
       let group: IGroup = await db.get(si.group.id);
-      group = await syncGroupObjectAndUsersAndTypes(si.connection, group, si.group);
+      // group = await syncGroupObjectAndUsersAndTypes(si.connection, group, si.group);
 
       // sync changes
-      await ingestDataChanges(si.connection, group.id);
+      // await ingestDataChanges(si.connection, group.id);
+      await syncAllGroupData(si.connection, group.id);
+
 
       // remove done and not-doing (simultaneously resolving their promises)
       syncInfos = syncInfos.filter(si => {
@@ -775,15 +1064,22 @@ export async function pushData(data: IData, dontBroadcast?: boolean) {
 const remotelyCallableFunctions: { [key: string]: Function } = {
   ping,
   testError,
-  getRemoteGroups,
-  getRemoteBlockHashes,
-  getRemoteIdBlockHashes,
-  getRemoteBlockData: getRemoteBlockIds,
-  getRemoteData,
+  
   pushData,
   signId,
   fastSyncRemote,
-  sendDataChangesRemote,
+  // sendDataChangesRemote,
+
+  getRemoteGroups,
+  getRemoteBlockHashes,
+  getRemoteIdBlockHashes,
+  getRemoteBlockIds,
+  getRemoteData,
+  getRemotePrefixHashes,
+  getRemoteBlockChangeInfo,
+  getRemoteDataChange,
+  
+  fastSyncDataChangesRemote,
 }
 
 export function setRemotelyCallableFunction(fn: Function, name?: string) {
