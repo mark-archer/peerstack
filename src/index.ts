@@ -16,6 +16,7 @@ export * as invitations from './invitations';
 export * as user from './user';
 export * as serviceWorker from './service-worker';
 export * as dataChange from "./data-change";
+export * as dataSync from "./data-sync";
 
 export { registerServiceWorker };
 

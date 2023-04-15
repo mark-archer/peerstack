@@ -116,16 +116,14 @@ describe("data-change-sync", () => {
       myGroupChange = (await db.changes.getSubjectChanges(myGroup.id))[0];
     });
 
-    test("when single change exists, return the hash of all details", async () => {
+    test("when single change exists, return the blockId hash", async () => {
       const groupChanges = await db.changes.getSubjectChanges(myGroup.id);
       expect(groupChanges.length).toEqual(1);
       const groupChange = groupChanges[0];
       expect(groupChange.modified).toEqual(myGroup.modified);
-      const detailHashes = await getDetailHashes(myGroup.id);
       const prefixHashes = await getPrefixHashes(myGroup.id);
       const blockId = getBlockId(groupChange.modified);
-      expect(prefixHashes).toMatchObject({
-        [blockId.substring(0, 8)]: hashObject(detailHashes),
+      expect(prefixHashes).toEqual({
         [blockId]: hashObject([{ id: groupChange.id, modified: groupChange.modified }]),
       });
     })

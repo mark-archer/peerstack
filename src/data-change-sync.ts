@@ -114,9 +114,8 @@ export async function getPrefixHashes(groupId: string, blockPrefix = 'B'): Promi
   // if (!hashes) ...
   let prefixes: string[] = Object.keys(hashes);
   while (prefixes.length === 1 && prefixes[0].length < 9) {
-    const childHashes = prefixHashDetails[groupId][prefixes[0]];
-    hashes = { ...hashes, ...childHashes };
-    prefixes = Object.keys(childHashes);
+    hashes = prefixHashDetails[groupId][prefixes[0]];
+    prefixes = Object.keys(hashes);
   }
   return hashes;
 }
