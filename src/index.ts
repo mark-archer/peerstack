@@ -48,7 +48,8 @@ export async function pushChangeToPeers(change: IDataChange) {
   for (const connection of connections()) {
     if (
       connection.remoteUserVerified &&
-      connection.groups?.includes(change.group) &&
+      // TODO connection.groups isn't apparently set, figure out why
+      // connection.groups?.includes(change.group) && 
       await hasPermission(connection.remoteUser?.id, change.group, 'read', db)
     ) {
       // don't need to await each peer connection push
