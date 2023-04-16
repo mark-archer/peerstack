@@ -166,13 +166,16 @@ async function fastSyncDataChanges(connection: IDeviceConnection, groupId: strin
         dcClosed = true;
       }
       // sequentially process remote data to try to keep things responsive. 
+      let sleepMs = 1;
       while ((!streamEOF && !dcClosed) || remoteJsonData.length) {
         try {
           if (!remoteJsonData.length) {
             console.log(`no remote data to process, going to sleep and will check again`);
-            await sleep(1); // TODO this value should be tuned
+            await sleep(sleepMs); // TODO this value should be tuned
+            sleepMs *= 2;
             continue;
           }
+          sleepMs = 1;
           const changes: IDataChange[] = remoteJsonData.map(json => parseJSON(json));
           remoteJsonData.length = 0;
 
@@ -283,13 +286,16 @@ async function fastSyncData(connection: IDeviceConnection, groupId: string) {
         dcClosed = true;
       }
       // sequentially process remote data to try to keep things responsive. 
+      let sleepMs = 1;
       while ((!streamEOF && !dcClosed) || remoteJsonData.length) {
         try {
           if (!remoteJsonData.length) {
             console.log(`no remote data to process, going to sleep and will check again`);
-            await sleep(1); // TODO this value should be tuned
+            await sleep(sleepMs); // TODO this value should be tuned
+            sleepMs *= 2;
             continue;
           }
+          sleepMs = 1;
           const docs: IData[] = remoteJsonData.map(json => parseJSON(json));
           remoteJsonData.length = 0;
           await db.save(docs, skipValidation);
