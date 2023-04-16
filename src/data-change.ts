@@ -381,6 +381,6 @@ export async function deleteData(id: string) {
   await checkPermission(userId, dbData.group, 'write');
   const dataChange = getDataChange(dbData, null);
   signObject(dataChange);
-  await ingestChange(dataChange, dbData);
+  return ingestChange(dataChange, dbData);
 }
 

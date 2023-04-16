@@ -246,13 +246,13 @@ export async function init(
       next: null as () => Promise<T>
     }
 
-    let ixCursor: IDBCursorWithValue;
+    let ixCursor: IDBCursorWithValue = null;
     let transactionClosed = false;
     let cursorFinished = false;
     let restartingCursor = false;
-    let priorValue: T;
-    let nextValue: T;
-    let resolveNextValue;
+    let priorValue: T = null;
+    let nextValue: T = null;
+    let resolveNextValue = null;
     let nPriorResults = 0;
 
     cursorState.next = () => new Promise((resolve, _reject) => {

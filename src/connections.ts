@@ -282,12 +282,13 @@ export async function checkConnection(connection: IDeviceConnection) {
 
 
 // regularly check if connections are active and close them if not
-setInterval(async () => {
-  const connection = shuffle(connections())[0];
-  if (connection) {
-    await checkConnection(connection);
-  }
-}, 10_000);
+// setInterval(async () => {
+//   const connection = shuffle(connections())[0];
+//   if (connection) {
+//     await checkConnection(connection);
+//   }
+// }, 10_000);
+// TODO put above back in 
 
 function closeConnection(connection: IDeviceConnection) {
   connection.dc?.close();

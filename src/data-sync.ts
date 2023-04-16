@@ -2,7 +2,7 @@ import * as _ from "lodash";
 import { uniq } from "lodash";
 import { newid, parseJSON, sleep, stringify } from "./common";
 import { connections, chunkSize, me, IDeviceConnection, deviceConnections } from "./connections";
-import { checkPermission, getBlockIds, getDetailHashes, getBlockIdHashes, getDB, hasPermission, IData, IDB, IGroup, getGroupUsersHash } from "./db";
+import { checkPermission, getBlockIds, getDetailHashes, getBlockIdHashes, getDB, hasPermission, IData, IDB, IGroup, getGroupUsersHash, getPersonalGroup } from "./db";
 import { ingestChange, IDataChange } from "./data-change";
 import { getBlockChangeInfo, getPrefixHashes } from "./data-change-sync";
 import { eventHandlers, getCurrentConnection, IConnection, ping, RPC, setRemotelyCallableFunction, verifyRemoteUser } from "./remote-calls";
@@ -10,9 +10,13 @@ import { eventHandlers, getCurrentConnection, IConnection, ping, RPC, setRemotel
 
 async function getRemoteGroups() {
   const connection: IConnection = getCurrentConnection();
+  await verifyRemoteUser(connection);
   const db = await getDB();
   const allGroups = (await db.find('Group', 'type')) as IGroup[];
   const readGroups: IGroup[] = []
+  if (connection.remoteUser?.id === me.id) {
+    readGroups.push(getPersonalGroup(me.id));
+  }
   for (const group of allGroups) {
     if (await hasPermission(connection.remoteUser?.id, group, 'read', db)) {
       readGroups.push(group);
@@ -179,7 +183,9 @@ async function fastSyncDataChanges(connection: IDeviceConnection, groupId: strin
               //  if syncing with self it'll skip verification and validation which is most the work
               //  it'll short-circuit if we already have the change
               const doc = await ingestChange(change, undefined, skipValidation);
-              changedDocs[doc.id] = doc;
+              if (doc) {
+                changedDocs[doc.id] = doc;
+              }
             } catch (err) {
               console.error(`error ingesting remote data change`, change, err);
             }
@@ -210,20 +216,13 @@ async function fastSyncDataRemote(groupId: string, dataChannelLabel: string, las
       dc.onclose = () => dcClosed = true;
 
       const db = await getDB();
-
-      // TODO try opening 3 dataChange cursors: one for normal data, one for users, one for types
-      //    if user or type is oldest modified and relevant for group, send that, otherwise send data
-      //    increment whichever one is sent, keep going until they area all done
-
-      const cursor = await db.openCursor([groupId,  lastModified ?? -Infinity], 'group-modified');
+      const cursor = await db.openCursor({ lower: [groupId, lastModified], upper: [groupId, Infinity] }, 'group-modified', 'next');
       while (await cursor.next()) {
         const doc = cursor.value;
         const json = stringify(doc);
         // if bigger than chunkSize need to send slow way because it'll overflow the buffer
         if (json.length > chunkSize) {
-          // TODO create `pushDataChange` fn and call for all connections in `commitChange`
-          // await RPC(connection, pushDataChange)(doc, true);
-          // console.warn('cannot sync data because it is too large')
+          // await RPC(connection, pushData)(doc, true);
           continue;
         }
         while (!dcClosed && (dc.bufferedAmount + json.length) > chunkSize) {
@@ -249,16 +248,23 @@ async function fastSyncDataRemote(groupId: string, dataChannelLabel: string, las
 async function fastSyncData(connection: IDeviceConnection, groupId: string) {
   return new Promise<void>(async (resolve, reject) => {
     try {
+      await verifyRemoteUser(connection)
       const skipValidation = connection.remoteUser.id === me.id;
+
       const db = await getDB();
+      const lastModifiedCursor = await db.openCursor({ lower: [groupId, -Infinity], upper: [groupId, Infinity] }, 'group-modified', 'prev');
+      let lastModified = 0;
+      while (await lastModifiedCursor.next()) {
+        if (lastModifiedCursor.value?.type !== 'Group') {
+          lastModified = lastModifiedCursor.value.modified;
+          break;
+        }
+      }
 
-      const lastModifiedCursor = await db.openCursor(groupId, 'group-modified', 'prev');
-      await lastModifiedCursor.next();
-      const lastModified = lastModifiedCursor.value?.modified || -Infinity;
-
-      const dcLabel = `stream-sync-data-${groupId}-${newid()}`;
+      const dcLabel = `stream-sync-${groupId}-${newid()}`;
       await RPC(connection, fastSyncDataRemote)(groupId, dcLabel, lastModified);
-
+      // let remotePromiseFinished = false;
+      // remotePromise.catch(() => 0).then(() => sleep(100)).then(() => remotePromiseFinished = true);
       const dc = await connection.waitForDataChannel(dcLabel);
 
       const remoteJsonData = [];
@@ -286,18 +292,9 @@ async function fastSyncData(connection: IDeviceConnection, groupId: string) {
           }
           const docs: IData[] = remoteJsonData.map(json => parseJSON(json));
           remoteJsonData.length = 0;
-
-          const changedDocs: { [id: string]: IData } = {};
-          for (const doc of docs) {
-            try {
-              await db.save(doc, skipValidation);
-              changedDocs[doc.id] = doc;
-            } catch (err) {
-              console.error(`error fast syncing remote data`, doc, err);
-            }
-          }
-          Object.values(changedDocs).map(doc => eventHandlers.onRemoteDataSaved(doc));
-          console.log(`fast syncing ${docs.length} docs`);
+          await db.save(docs, skipValidation);
+          docs.map(doc => eventHandlers.onRemoteDataSaved(doc));
+          console.log(`fastSynced ${docs.length} docs`);
         } catch (err) {
           console.error('error processing remote data during fast sync', err);
         }
@@ -344,7 +341,9 @@ async function deepSyncDataChanges(connection: IDeviceConnection, db: IDB, group
               await RPC(connection, getRemoteDataChange)(remoteChangeInfo.id)
                 .then(async remoteChange => {
                   const doc = await ingestChange(remoteChange, undefined, skipValidation);
-                  eventHandlers.onRemoteDataSaved(doc);
+                  if (doc) {
+                    eventHandlers.onRemoteDataSaved(doc);
+                  }
                 })
                 .catch(err => {
                   console.error('error syncing remote change', remoteChangeInfo, err);
@@ -438,19 +437,34 @@ async function syncAllGroupData(connection: IDeviceConnection, groupId: string) 
 
   // TODO: sync types
 
+  // go directly to `deepSyncData` if we don't have any data for this group yet
+  //  syncing changes, then data can be _very_ slow
+  const groupDataCursor = await db.openCursor({ lower: [groupId, -Infinity], upper: [groupId, Infinity] }, 'group-modified');
+  let hasData = false;
+  while (await groupDataCursor.next()) {
+    if (groupDataCursor.value && groupDataCursor.value.type !== 'Group') {
+      hasData = true;
+      break;
+    }
+  }
+  if (!hasData) {
+    deepSyncData(connection, db, groupId);
+    return;
+  }
+
   // fast sync data changes
   await fastSyncDataChanges(connection, groupId);
 
   // deep sync data changes
   //  don't await, just queue up
   deepSyncDataChanges(connection, db, groupId)
-  .then(() => {
-    console.log(`finished deep syncing dataChanges from ${connection.remoteDeviceId} for group ${groupId}`);
-    return deepSyncData(connection, db, groupId)
-  })
-  .then(() => {
-    console.log(`finished deep syncing data from ${connection.remoteDeviceId} for group ${groupId}`);
-  });
+    .then(() => {
+      console.log(`finished deep syncing dataChanges from ${connection.remoteDeviceId} for group ${groupId}`);
+      return deepSyncData(connection, db, groupId)
+    })
+    .then(() => {
+      console.log(`finished deep syncing data from ${connection.remoteDeviceId} for group ${groupId}`);
+    });
 }
 
 interface SyncInfo {
@@ -586,8 +600,10 @@ export async function pushDataChange(change: IDataChange, dontBroadcast?: boolea
   const db = await getDB();
   const dbChange = await db.changes.get(id);
   if (!dbChange) {
-    const data = await ingestChange(change)
-    eventHandlers.onRemoteDataSaved(data);
+    const doc = await ingestChange(change);
+    if (doc) {
+      eventHandlers.onRemoteDataSaved(doc);
+    }
   }
   if (!dontBroadcast) {
     connections().forEach(async _connection => {
@@ -615,7 +631,7 @@ Object.entries({
   getRemoteData,
   getRemotePrefixHashes,
   getRemoteBlockChangeInfo,
-  getRemoteDataChange,  
+  getRemoteDataChange,
   fastSyncDataChangesRemote,
   fastSyncDataRemote,
   pushDataChange,
