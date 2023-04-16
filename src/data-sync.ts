@@ -172,9 +172,10 @@ async function fastSyncDataChanges(connection: IDeviceConnection, groupId: strin
           if (!remoteJsonData.length) {
             console.log(`no remote data to process, going to sleep and will check again`);
             if (sleepMs > 1_000) {
-              throw new Error('data seems to have stopped coming in')
+              dc.close();
+              return reject('data seems to have stopped coming in');
             }
-            await sleep(sleepMs); // TODO this value should be tuned
+            await sleep(sleepMs);
             sleepMs *= 2;
             continue;
           }
@@ -296,9 +297,10 @@ async function fastSyncData(connection: IDeviceConnection, groupId: string) {
           if (!remoteJsonData.length) {
             console.log(`no remote data to process, going to sleep and will check again`);
             if (sleepMs > 1_000) {
-              throw new Error('data seems to have stopped coming in')
+              dc.close();
+              return reject('data seems to have stopped coming in');
             }
-            await sleep(sleepMs); // TODO this value should be tuned
+            await sleep(sleepMs);
             sleepMs *= 2;
             continue;
           }
