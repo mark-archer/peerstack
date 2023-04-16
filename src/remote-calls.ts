@@ -129,12 +129,20 @@ export function RPC<T extends Function>(connection: IConnection, fn: T): T {
   };
 }
 
+export const RPC_TIMEOUT_MS = 10_000;
 export async function makeRemoteCall(connection: IConnection, fnName: string, args: any[]) {
   const id = newid();
   let rejectRemoteCall;
+
   const remoteCallPromise = new Promise((resolve, reject) => {
     rejectRemoteCall = reject;
-    connection.handlers[id] = (err, result) => err ? reject(err) : resolve(result);
+    const pid = setTimeout(() => {
+      reject(`RPC timeout: ${fnName}(${args.join(',')})`);
+    }, 10_000);
+    connection.handlers[id] = (err, result) => {
+      clearTimeout(pid);
+      err ? reject(err) : resolve(result);
+    }
   });
   try {
     let remoteCall: IRemoteCall = {
