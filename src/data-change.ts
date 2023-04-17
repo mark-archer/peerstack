@@ -229,9 +229,9 @@ export async function ingestChange(dataChange: IDataChange, dbData?: IData, skip
   const db = await getDB();
 
   // if we already have this change in the db, just return
-  const dbDataChange = await db.changes.get(dataChange.id);
-  if (dbDataChange) {
-    if (dbDataChange.signature !== dataChange.signature) {
+  const dbChange = await db.changes.get(dataChange.id);
+  if (dbChange) {
+    if (dbChange.signature !== dataChange.signature) {
       throw new Error('A dataChange that has already been ingested was encountered again but with a different signature')
     }
     return;
@@ -261,9 +261,9 @@ export async function ingestChange(dataChange: IDataChange, dbData?: IData, skip
 
   if (dataChange.subjectDeleted) {
     dbData = {
+      id: dataChange.subject,
       type: 'Deleted',
       group: dataChange.group,
-      id: dataChange.subject,
       modified: dataChange.modified,
     }
   }
@@ -284,15 +284,15 @@ export async function ingestChange(dataChange: IDataChange, dbData?: IData, skip
     dbData = applyChanges(dbData, newerChangesThanInDb);
   }
 
-  // future "full/deep syncs" will only be done with users that have write permissions to group so we don't need signed objects
-  //    just verify user has write permissions and update local db with any objects that have a newer modified
-  //    existing "full sync" algorithm will continue to work fine
+  // "full/deep syncs" will only be done with group admins so we don't need signed objects
   //  _except_ groups so sign groups if your an admin, groups should always have a signature and be signed when saving 
   if (dbData.type === 'Group' && (await hasPermission(userId, dbData as IGroup, 'admin', db))) {
+    dbData.modified++; // increment modified so peers replace their local, unsigned copy with this one
     signObject(dbData);
   }
   // if I'm changing myself, sign it to let everyone know it's valid
-  else if (dbData?.type === 'User' && dbData?.id === me?.id) {
+  else if (dbData?.type === 'User' && dbData.id === me?.id) {
+    dbData.modified++; // increment modified so peers replace their local, unsigned copy with this one
     signObject(dbData);
   } 
   else {
@@ -387,6 +387,7 @@ export async function deleteData(id: string) {
   await checkPermission(userId, dbData.group, 'write');
   const dataChange = getDataChange(dbData, null);
   signObject(dataChange);
-  return ingestChange(dataChange, dbData);
+  await ingestChange(dataChange, dbData);
+  return dataChange;
 }
 

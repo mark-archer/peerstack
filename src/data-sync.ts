@@ -376,6 +376,8 @@ async function deepSyncDataChanges(connection: IDeviceConnection, db: IDB, group
 
 let pendingDeepSyncData = Promise.resolve();
 async function deepSyncData(connection: IDeviceConnection, db: IDB, groupId: string, blockId: string = '') {
+  // TODO consider changing this to users with `write`
+  //    I'd prefer not doing a lot of dataSyncs though since changes should cover everything moving forward
   const trustedUser = connection.remoteUser.id === me.id || await hasPermission(connection.remoteUser.id, groupId, 'admin');
   if (!trustedUser) {
     return;
@@ -447,8 +449,16 @@ async function syncAllGroupData(connection: IDeviceConnection, groupId: string) 
   const remoteUsers = await RPC(connection, getRemoteGroupUsers)(groupId, localHash);
   for (const remoteUser of remoteUsers) {
     const localUser = users.find(u => u.id === remoteUser.id);
-    if (localUser && localUser.modified >= remoteUser.modified) continue;
-    await db.save(remoteUser);
+    if (localUser && localUser.modified > remoteUser.modified) continue;
+    if (localUser && localUser.signature === remoteUser.signature) continue;
+    // if users send signed changes for themselves other users will end up with unsigned versions of their user object
+    //  these unsigned user objects are valid locally but peers can't confirm that so when we receive an unsigned user object we should ignore it
+    // if (localUser && !remoteUser.signature) continue;
+    // if (!localUser && !remoteUser.signature) {
+    //   console.warn(`received an unsigned copy of a user object and I have no local copy, saving but this is a security hole`)
+    // }
+    // Note all the above errors will be caught by db validation
+    await db.save(remoteUser).catch(err => console.warn(`error while syncing users for group ${groupId}: ${err}`, { localUser, remoteUser }));
   }
 
   // TODO: sync types
@@ -483,28 +493,37 @@ async function syncAllGroupData(connection: IDeviceConnection, groupId: string) 
     });
 }
 
-interface SyncInfo {
+interface ISyncInfo {
   connection: IDeviceConnection;
   group: IGroup;
   resolve: (() => void);
   reject: (() => void);
   priority: 1 | 2 | 3;
+  remoteUserHasAdmin: boolean,
+  remoteUserHasWrite: boolean,
 }
-let syncInfos: SyncInfo[] = [];
+let syncInfos: ISyncInfo[] = [];
 
-async function getNextGroupInfoToSync(infos: SyncInfo[] = syncInfos): Promise<SyncInfo> {
+async function getNextGroupInfoToSync(infos: ISyncInfo[] = syncInfos): Promise<ISyncInfo> {
   if (!infos.length) return null;
 
-  const filters: ((si: SyncInfo) => boolean)[] = [
-    // priorities 
+  const filters: ((si: ISyncInfo) => boolean)[] = [
+    // by priority first (usually priority is 2, this allows bumping groups to the front priority === 1)
     si => si.priority === 1,
     si => si.priority === 2,
 
-    // personal groups
+    // personal groups first
     si => si.group.id === me.id,
 
-    // active groups
+    // active groups before inactive
     si => !si.group.inactive,
+
+    // prefer my own devices
+    si => si.connection.remoteUser?.id === me.id,
+
+    // prefer admins, then contributors, then readers
+    si => si.remoteUserHasAdmin,
+    si => si.remoteUserHasWrite,
   ]
 
   // if any filter reduces the list of possibilities, recurse with that smaller list
@@ -520,18 +539,20 @@ async function getNextGroupInfoToSync(infos: SyncInfo[] = syncInfos): Promise<Sy
     return infos[0];
   }
 
-  // TODO prefer group admins
   // TODO prefer group hosts
   // TODO prefer devices that I've synced with most recently
-  // TODO prefer users that I trust (me being most trustworthy)
+  // TODO prefer users that I trust
 
   // prefer faster connections
   const uniqConns = uniq(infos.map(si => si.connection));
   const fastest = await Promise.race(uniqConns.map(async conn => {
-    await RPC(conn, ping)();
-    return conn;
+    try {
+      await RPC(conn, ping)();
+      return conn;
+    } catch (err) {
+      return null
+    }
   }));
-  // TODO this can stall out, there should be a `errorAfterTimeout` call
   const nextSync = syncInfos.find(si => si.connection === fastest);
   return nextSync;
 }
@@ -547,7 +568,7 @@ function syncGroupBackground() {
         return;
       }
 
-      // sync changes
+      // do the sync
       await syncAllGroupData(si.connection, si.group.id);
 
       // remove done and not-doing (simultaneously resolving their promises)
@@ -573,18 +594,26 @@ function syncGroupBackground() {
   })
 }
 
-export async function syncGroup(connection: IDeviceConnection, remoteGroup: IGroup, priority: 1 | 2 | 3 = 2) {
+export async function syncGroup(connection: IDeviceConnection, remoteGroup: IGroup, priority?: 1 | 2 | 3) {
   let resolve, reject;
   const promise = new Promise((_resolve, _reject) => {
     resolve = _resolve;
     reject = _reject;
   });
-  const syncInfo = {
-    priority,
+  await verifyRemoteUser(connection);
+  const db = await getDB();
+  const localGroup: IGroup = await db.get(remoteGroup.id);
+  const remoteUserHasAdmin = await hasPermission(connection.remoteUser.id, localGroup || remoteGroup, 'admin');
+  const remoteUserHasWrite = remoteUserHasAdmin || await hasPermission(connection.remoteUser.id, localGroup || remoteGroup, 'write');
+  const syncInfo: ISyncInfo = {
+    // active groups' priority default to 2, inactive groups priority default to 3
+    priority: priority || localGroup?.inactive && 3 || remoteGroup?.inactive && 3 || 2,
     connection,
     group: remoteGroup,
     resolve,
-    reject
+    reject,
+    remoteUserHasAdmin,
+    remoteUserHasWrite,
   };
   syncInfos.push(syncInfo);
   syncGroupBackground();
@@ -613,28 +642,24 @@ export async function pushDataChange(change: IDataChange, dontBroadcast?: boolea
   changesAlreadySeen[id] = true;
   const connection: IConnection = getCurrentConnection();
   await verifyRemoteUser(connection);
-  const db = await getDB();
-  const dbChange = await db.changes.get(id);
-  if (!dbChange) {
-    const doc = await ingestChange(change);
-    if (doc) {
-      eventHandlers.onRemoteDataSaved(doc);
-    }
-  }
-  if (!dontBroadcast) {
-    connections().forEach(async _connection => {
-      // this data was probably pushed from the current connection so resist forwarding it to that one but if it's the only connection available push it to try to get it propagating
-      if (connection == _connection && connections().length > 1) {
-        return;
-      }
-      // only push data if the user has indicated it is interested in this group
-      if (_connection.groups?.some(groupId => groupId == change.group)) {
-        // verified user has read permission to this group otherwise this is a security hole
-        if (await hasPermission(connection.remoteUser.id, change.group, 'read')) {
-          RPC(_connection, pushDataChange)(change);
+  const doc = await ingestChange(change);
+  if (doc) {
+    eventHandlers.onRemoteDataSaved(doc);
+    if (!dontBroadcast) {
+      connections().forEach(async _connection => {
+        // if the change just came from this connection, don't send it back
+        if (connection == _connection) {
+          return;
         }
-      }
-    });
+        // only push data if the user has indicated it is interested in this group
+        if (_connection.groups?.some(groupId => groupId == change.group)) {
+          // verified user has read permission to this group otherwise this is a security hole
+          if (await hasPermission(connection.remoteUser.id, change.group, 'read')) {
+            RPC(_connection, pushDataChange)(change);
+          }
+        }
+      });
+    }
   }
 }
 

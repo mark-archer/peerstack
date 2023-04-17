@@ -45,6 +45,7 @@ function invalidateCacheForModified(groupId: string, modified: number) {
 export function invalidateCache(groupId: string, modified: number, oldModified?: number) {
   if (groupId === 'users') {
     // users are synced in a different way so we don't need to worry about maintaining the cache for them
+    // NOTE: I'm not sure this is true, we do sync users for the group but I think we're sending partial changes for users so the users' aren't signed which is no good
     return;
   }
   invalidateCacheForModified(groupId, modified);
