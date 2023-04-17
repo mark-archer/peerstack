@@ -138,6 +138,10 @@ export async function notifyDevice(device: IDevice, notification: INotification,
     }
 
     // check if we have a web-push subscription, if so use that
+    if (!toPublicBoxKey) {
+      console.warn('not notifying device because no public key was given', { device, notification, toPublicBoxKey });
+      return;
+    }    
     const messageId = notification.id;
     const box = boxDataForPublicKey(notification, toPublicBoxKey);
     const message = JSON.stringify(box);

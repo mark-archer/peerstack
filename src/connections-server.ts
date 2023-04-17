@@ -158,7 +158,6 @@ export function init(
           // send it through socket connection if available 
           connectedDevice.emit('notify', params.message)
           return callback(null, 'success');
-
         } else if (device.pushSubscription) {
           // use web push if subscriptions available 
           const subscription = device.pushSubscription;

@@ -11,6 +11,7 @@ import {
   stringify,
   parseJSON
 } from './common';
+import { commitChange } from './data-change';
 import { getDB, IData, IGroup } from './db';
 
 module.exports.nacl = nacl;
@@ -104,6 +105,18 @@ export async function init(config?: { id: string, secretKey: string, name?: stri
     return userId
   }
 
+  const db = await getDB();
+  async function ensurePublicBoxKeyExists() {
+    const user: IUser = await db.get(userId);
+    if (user && !user.publicBoxKey) {
+      user.publicBoxKey = publicBoxKey;
+      user.modified++;
+      // signObject(user);
+      // await db.save(user);
+      await commitChange(user, { preserveModified: true });
+    }
+  }
+
   // look up stored credentials - first try credentials then try db.local
   try {
     // @ts-ignore
@@ -114,15 +127,16 @@ export async function init(config?: { id: string, secretKey: string, name?: stri
       // @ts-ignore
       secretKey = creds.password;
       publicBoxKey = hydrateUser(userId, secretKey).publicBoxKey;
+      await ensurePublicBoxKeyExists();
       return userId
     }
   } catch { }
   // if all else fails try to look it up in db.local
-  const db = await getDB();
   config = (await db.local.get(credentialsId))?.config;
   userId = config?.id;
   secretKey = config?.secretKey;
   publicBoxKey = hydrateUser(userId, secretKey).publicBoxKey;
+  await ensurePublicBoxKeyExists();
   return userId;
 }
 
