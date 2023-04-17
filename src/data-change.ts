@@ -3,7 +3,7 @@ import { idTime, isid_v1, newid } from "./common";
 import { me } from "./connections";
 import { invalidateCache } from "./data-change-sync";
 import { getDB, checkPermission, IData, hasPermission, IGroup, getUser, users, isGroup } from "./db";
-import { ISigned, IUser, keysEqual, signObject, userId, verifySigner } from './user';
+import { ISigned, isUser, IUser, keysEqual, signObject, userId, verifySigner } from './user';
 // import { isObject } from "./common";
 
 export type IChange = [string, any?]
@@ -343,7 +343,13 @@ export async function commitChange<T extends IData>(data: T, options: { preserve
       //  the user might have already signed this so this could be useless 
       //  and expensive but updates to groups should be rare so doing this for now
       signObject(data);
-    } else {
+    } 
+    else if (isUser(data)) {
+      if (data.id !== me.id) {
+        throw new Error(`You can only modify your own user object`);
+      }
+    }
+    else {
       await checkPermission(userId, data.group, 'write');
     }
     const dataChange = getDataChange(dbData, data);

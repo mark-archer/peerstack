@@ -45,6 +45,10 @@ export interface IUser extends ISigned, IData {
   devices?: { [deviceId: string]: IDevice }
 }
 
+export function isUser(data: IData): data is IUser {
+  return data.type === 'User' && data.group === 'users';
+}
+
 export function newUser(name?: string): IUser & { secretKey: string } {
   const userId = newid();
   const newKey = nacl.sign.keyPair();
