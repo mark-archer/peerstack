@@ -345,8 +345,8 @@ export async function commitChange<T extends IData>(data: T, options: { preserve
       signObject(data);
     } 
     else if (isUser(data)) {
-      if (data.id !== me.id) {
-        throw new Error(`You can only modify your own user object`);
+      if (data.id !== data.signer) {
+        throw new Error(`Users can only be modified by themselves`);
       }
     }
     else {
