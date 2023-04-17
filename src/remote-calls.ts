@@ -84,7 +84,7 @@ export async function verifyRemoteUser(connection: IConnection) {
       // TODO allow public keys to change
       //    this will have to happen if a user's private key is compromised so we need to plan for it
       //    The obvious solution is to use some server as a source of truth but that kind of violates the p2p model
-      throw new Error('Public keys do not match');
+      throw new Error("Remote user's pubic key does not match what we have in db");
       // IDEA use previously known devices to try to do multi-factor authentication
       //    If the user has two or more devices they regularly use, we can ask as many of those devices
       //    as we can connect with, which is the correct public key for their user.

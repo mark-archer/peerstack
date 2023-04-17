@@ -2,7 +2,7 @@ import { errorAfterTimeout, isObject, user } from ".";
 import { deviceConnections, deviceId, emit, onMessage } from "./connections";
 import { getDB, IData } from "./db";
 import * as remoteCalls from "./remote-calls";
-import { boxDataForPublicKey, IDevice, IDataBox, openBox, verifySignedObject, IUser, signObject } from "./user";
+import { boxDataForPublicKey, IDevice, IDataBox, openBox, IUser, signObject, verifySigner } from "./user";
 import { newid } from "./common";
 import { IDataChange, ingestChange } from "./data-change";
 
@@ -47,8 +47,7 @@ async function processNotification(notification: INotification): Promise<boolean
   if (dbNote) {
     return false;
   }
-  const sender: IUser = await db.get(notification.signer);
-  verifySignedObject(notification, sender.publicKey);
+  await verifySigner(notification);
   if (isObject(notification.change)) {
     const data = await ingestChange(notification.change);
     if (data) {
