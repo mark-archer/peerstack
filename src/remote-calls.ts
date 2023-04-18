@@ -137,6 +137,7 @@ export async function makeRemoteCall(connection: IConnection, fnName: string, ar
   const remoteCallPromise = new Promise((resolve, reject) => {
     rejectRemoteCall = reject;
     const pid = setTimeout(() => {
+      delete connection.handlers[id]  
       reject(`RPC timeout: ${fnName}(${args.join(',')})`);
     }, 10_000);
     connection.handlers[id] = (err, result) => {

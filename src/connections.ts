@@ -31,8 +31,6 @@ export interface IDeviceConnection extends IConnection {
   waitForDataChannel: (label: string) => Promise<RTCDataChannel>
 }
 
-const HEART_BEAT_MAX_WAIT_MS = 60_000;
-
 export let deviceId: string = null;
 export let me: IUser = null;
 let socket;
@@ -265,13 +263,7 @@ function garbageCollectConnections() {
 
 export async function checkConnection(connection: IDeviceConnection) {
   try {
-    const result = await Promise.race([
-      RPC(connection, ping)(),
-      new Promise<string>(resolve => setTimeout(() => resolve('timeout'), HEART_BEAT_MAX_WAIT_MS))
-    ]);
-    if (result === 'timeout') {
-      throw new Error('timeout');
-    }
+    await RPC(connection, ping)();
   } catch (err) {
     console.log('INFO: connection heartbeat ping failed so closing connection: ' + connection.id);
     closeConnection(connection);
@@ -281,12 +273,12 @@ export async function checkConnection(connection: IDeviceConnection) {
 }
 
 // regularly check if connections are active and close them if not
-setInterval(async () => {
+setInterval(() => {
   const connection = shuffle(connections())[0];
   if (connection) {
-    await checkConnection(connection);
+    checkConnection(connection);
   }
-}, HEART_BEAT_MAX_WAIT_MS*2);
+}, 60_000);
 
 function closeConnection(connection: IDeviceConnection) {
   connection.dc?.close();
