@@ -5,7 +5,7 @@ import { connections, chunkSize, me, IDeviceConnection, deviceConnections } from
 import { checkPermission, getBlockIds, getDetailHashes, getBlockIdHashes, getDB, hasPermission, IData, IDB, IGroup, getGroupUsersHash, getPersonalGroup } from "./db";
 import { ingestChange, IDataChange } from "./data-change";
 import { getBlockChangeInfo, getPrefixHashes } from "./data-change-sync";
-import { eventHandlers, getCurrentConnection, IConnection, ping, RPC, setRemotelyCallableFunction, verifyRemoteUser } from "./remote-calls";
+import { eventHandlers, getCurrentConnection, IConnection, ping, RPC, RPC_TIMEOUT_MS, setRemotelyCallableFunction, verifyRemoteUser } from "./remote-calls";
 
 
 async function getRemoteGroups() {
@@ -107,17 +107,22 @@ async function fastSyncDataChangesRemote(groupId: string, dataChannelLabel: stri
 
       const cursor = await db.changes.openCursor(groupId, lastModified ?? undefined);
       while (await cursor.next()) {
-        const doc = cursor.value;
-        const json = stringify(doc);
+        const change = cursor.value;
+        const json = stringify(change);
         // if bigger than chunkSize need to send slow way because it'll overflow the buffer
         if (json.length > chunkSize) {
-          // TODO create `pushDataChange` fn and call for all connections in `commitChange`
-          // await RPC(connection, pushDataChange)(doc, true);
+          await RPC(connection, pushDataChange)(change, true);
           continue;
         }
+        let sleepMs = 16;
         while (!dcClosed && (dc.bufferedAmount + json.length) > chunkSize) {
           console.log('buffer full so waiting');
-          await sleep(1);
+          await sleep(sleepMs);
+          sleepMs *= 2;
+          if (sleepMs > RPC_TIMEOUT_MS) {
+            dc.close();
+            return resolve();
+          }
         }
         if (dcClosed) {
           console.log('dc closed so breaking loop');
@@ -228,14 +233,20 @@ async function fastSyncDataRemote(groupId: string, dataChannelLabel: string, las
       while (await cursor.next()) {
         const doc = cursor.value;
         const json = stringify(doc);
-        // if bigger than chunkSize need to send slow way because it'll overflow the buffer
+        // if bigger than chunkSize skip because it'll overflow the buffer
         if (json.length > chunkSize) {
           // await RPC(connection, pushData)(doc, true);
           continue;
         }
+        let sleepMs = 16;
         while (!dcClosed && (dc.bufferedAmount + json.length) > chunkSize) {
           console.log('buffer full so waiting');
-          await sleep(1);
+          await sleep(sleepMs);
+          sleepMs *= 2;
+          if (sleepMs > RPC_TIMEOUT_MS) {
+            dc.close();
+            return resolve();
+          }
         }
         if (dcClosed) {
           console.log('dc closed so breaking loop');
