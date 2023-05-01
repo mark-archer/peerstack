@@ -148,7 +148,7 @@ async function fastSyncDataChanges(connection: IDeviceConnection, groupId: strin
 
       const lastModifiedCursor = await db.changes.openCursor(groupId, Infinity, 'prev');
       await lastModifiedCursor.next();
-      const lastModified = lastModifiedCursor.value?.modified || -Infinity;
+      const lastModified = (lastModifiedCursor.value?.modified + 1) || -Infinity;
 
       const dcLabel = `stream-sync-changes-${groupId}-${newid()}`;
       await RPC(connection, fastSyncDataChangesRemote)(groupId, dcLabel, lastModified);
