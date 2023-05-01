@@ -580,7 +580,9 @@ function syncGroupBackground() {
       }
 
       // do the sync
-      await syncAllGroupData(si.connection, si.group.id);
+      await syncAllGroupData(si.connection, si.group.id).catch(err => {
+        console.error(`error during syncAllGroupData`, err);
+      });
 
       // remove done and not-doing (simultaneously resolving their promises)
       syncInfos = syncInfos.filter(si2 => {
