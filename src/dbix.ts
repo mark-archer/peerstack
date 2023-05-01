@@ -415,9 +415,12 @@ export async function init(
       save: data => dbOp('changes', 'put', data),
       get: id => dbOp('changes', 'get', id),
       delete: id => dbOp('changes', 'delete', id),
-      openCursor: (group, modified = -Infinity, direction: IDBCursorDirection = 'next') => {
+      openCursor: (group, modified?: number, direction: IDBCursorDirection = 'next') => {
+        modified ??= direction.startsWith('next') ? -Infinity : Infinity;
+        const upperModified = direction.startsWith('next') ? Infinity : modified;
+        const lowerModified = direction.startsWith('next') ? modified : -Infinity;
+        const query: DBQuery = { lower: [group, lowerModified], upper: [group, upperModified] };
         const index: Indexes = 'group-modified';
-        const query: DBQuery = { lower: [group, modified], upper: [group, Infinity] };
         return openCursor<IDataChange>(query, index, direction, 'changes');
       },
       getSubjectChanges: (subject, modified?): Promise<IDataChange[]> => new Promise(async (resolve, reject) => {
