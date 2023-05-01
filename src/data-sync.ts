@@ -628,7 +628,9 @@ export async function syncGroup(connection: IDeviceConnection, remoteGroup: IGro
   };
   syncInfos.push(syncInfo);
   syncGroupBackground();
-  return promise;
+  return promise.catch(err => {
+    console.error(`error during syncGroup`, err);
+  });
 }
 
 export async function syncDBs(connection: IConnection) {
