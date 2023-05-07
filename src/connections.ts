@@ -4,6 +4,7 @@ import { IConnection, onRemoteMessage, ping, RPC } from "./remote-calls";
 import { IUser, signObject, init as initUser } from "./user";
 import { checkPendingInvitations, IInviteAccept, IInviteAcceptType } from "./invitations"
 import { shuffle, uniq } from "lodash";
+import { Event } from "./events";
 
 export interface ISDIExchange {
   connectionId: string
@@ -35,7 +36,7 @@ export let deviceId: string = null;
 export let me: IUser = null;
 let socket;
 // export const connections: IDeviceConnection[] = [];
-export const deviceConnections: { [deviceId: string]: IDeviceConnection} = {};
+export const deviceConnections: { [deviceId: string]: IDeviceConnection } = {};
 export const connections = () => Object.values(deviceConnections);
 
 let initialized = false;
@@ -64,7 +65,7 @@ export async function init(_deviceId: string, _me: IUser, serverUrl?: string) {
   // reconnect is called in addition to connect so redundant for now
   socket.on('reconnect', async () => {
     console.log('reconnected to server');
-    eventHandlers.onSignalingReconnected();
+    events.signalingReconnected.emit();
   });
   socket.on('disconnect', async () => {
     console.log('disconnected from server');
@@ -128,8 +129,7 @@ export async function registerDevice() {
   })
   const otherDevices = await getAvailableDevices();
   console.log('availableDevices', otherDevices.map(d => ({ deviceId: d.deviceId, userId: d.user.id })), otherDevices.length);
-  // otherDevices.forEach(device => connectToDevice(device.deviceId))
-  otherDevices.forEach(device => eventHandlers.onDeviceDiscovered(device.deviceId));
+  otherDevices.forEach(device => events.deviceDiscovered.emit(device.deviceId));
 }
 
 export async function getAvailableDevices(): Promise<IDeviceRegistration[]> {
@@ -186,23 +186,11 @@ async function sendIceCandidate(iceCandidate: ISDIExchange) {
   socket.emit('iceCandidate', iceCandidate)
 }
 
-export const eventHandlers: {
-  onDeviceDiscovered: (deviceId: string) => any,
-  onDeviceConnected: (connection: IDeviceConnection) => any,
-  onDeviceDisconnected: (connection: IDeviceConnection) => any,
-  onSignalingReconnected: () => any,
-} = {
-  // default to `connectToDevice` - automatically connect to every device
-  onDeviceDiscovered: connectToDevice,
-  onDeviceConnected: (connection: IDeviceConnection) => {
-    // placeholder
-  },
-  onDeviceDisconnected: (connection: IDeviceConnection) => {
-    // placeholder
-  },
-  onSignalingReconnected: () => {
-    // placeholder
-  },
+export const events = {
+  deviceDiscovered: new Event<string>('DeviceDiscovered'),
+  deviceConnected: new Event<IDeviceConnection>('DeviceConnected'),
+  deviceDisconnected: new Event<IDeviceConnection>('DeviceDisconnected'),
+  signalingReconnected: new Event<void>('SignalingReconnected'),
 }
 
 export interface IRemoteChunk {
@@ -250,17 +238,6 @@ function dcSendAndCloseOnError(connection: IDeviceConnection, strData: string) {
   }
 }
 
-function garbageCollectConnections() {
-  for (const c of Object.values(deviceConnections)) {
-    if (
-      ['closed', 'closing'].includes(c.dc?.readyState)
-      || ['closed', 'closing'].includes(c.pc?.connectionState)
-    ) {
-      delete deviceConnections[c.remoteDeviceId];
-    }
-  }
-}
-
 export async function checkConnection(connection: IDeviceConnection) {
   try {
     await RPC(connection, ping)();
@@ -283,15 +260,29 @@ setInterval(() => {
 function closeConnection(connection: IDeviceConnection) {
   connection.dc?.close();
   connection.pc?.close();
-  delete deviceConnections[connection.remoteDeviceId]
-  garbageCollectConnections();
+  connection.closed = true;
+  delete deviceConnections[connection.remoteDeviceId];
+  events.deviceDisconnected.emit(connection);
+  
+  // garbageCollectConnections();
+  for (const connection of Object.values(deviceConnections)) {
+    if (
+      ['closed', 'closing'].includes(connection.dc?.readyState)
+      || ['closed', 'closing'].includes(connection.pc?.connectionState)
+    ) {
+      connection.dc?.close();
+      connection.pc?.close();
+      connection.closed = true;
+      delete deviceConnections[connection.remoteDeviceId];
+      events.deviceDisconnected.emit(connection);
+    }
+  }
 }
 
 export async function connectToDevice(toDeviceId): Promise<IConnection> {
   try {
-    garbageCollectConnections();
     const existingConnection = deviceConnections[toDeviceId];
-    if (existingConnection && await checkConnection(existingConnection)) {
+    if (existingConnection && (await checkConnection(existingConnection))) {
       return existingConnection;
     }
     const connectionId = newid();
@@ -381,8 +372,6 @@ export async function connectToDevice(toDeviceId): Promise<IConnection> {
     dc.onclose = e => {
       console.log("dc.onclose: ", { deviceId: connection.remoteDeviceId, userId: connection.remoteUser?.id })
       connection.close();
-      eventHandlers.onDeviceDisconnected(connection);
-      connection.closed = true;
     }
 
     // send offer
@@ -409,7 +398,7 @@ export async function connectToDevice(toDeviceId): Promise<IConnection> {
     // connection is now established and data connection ready to use
     // console.log(`connection to peer established!`, { deviceId: connection.remoteDeviceId, userId: connection.remoteUser?.id });
 
-    eventHandlers.onDeviceConnected(connection);
+    events.deviceConnected.emit(connection);
     checkPendingInvitations(connection);
 
     return connection;
@@ -422,8 +411,6 @@ export async function connectToDevice(toDeviceId): Promise<IConnection> {
 
 async function handelOffer(offer: ISDIExchange) {
   try {
-    garbageCollectConnections();
-
     const rtcConfig: RTCConfiguration = {
       // peerIdentity: offer.connectionId,
       iceServers: await getIceServers()
@@ -510,14 +497,12 @@ async function handelOffer(offer: ISDIExchange) {
         dc.onmessage = e => onRemoteMessage(connection, e.data);
         dc.onopen = e => {
           console.log('dc2 connection open to', { deviceId: connection.remoteDeviceId, userId: connection.remoteUser?.id })
-          eventHandlers.onDeviceConnected(connection);
+          events.deviceConnected.emit(connection);
           checkPendingInvitations(connection);
         }
         dc.onclose = e => {
           console.log("dc2.onclose", { deviceId: connection.remoteDeviceId, userId: connection.remoteUser?.id })
           connection.close();
-          eventHandlers.onDeviceDisconnected(connection);
-          connection.closed = true;
         };
       } else {
         dc.onopen = e => {

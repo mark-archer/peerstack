@@ -19,12 +19,12 @@ const me = user.newUser();
 // you should try to use the same deviceId for the life of the device 
 const deviceId = newid();
 connections.init(deviceId, me, yourServerUrl || "https://peers.app/");
-connections.eventHandlers.onDeviceDiscovered = connections.connectToDevice;
-connections.eventHandlers.onDeviceConnected = async connection => {    
+connections.events.deviceDiscovered.subscribe(connections.connectToDevice);
+connections.events.deviceConnected.subscribe(async connection => {    
   // syncs data in all shared groups between both devices
   await remoteCalls.syncDBs(connection);
   // TODO whatever else you want to do between this and remote device
-}
+})
 ```
 
 The above is all you need to get your web app connecting to other devices running peerstack.  Currently devices will only connect to other devices with the same user or where the user is in one or more of the same [groups](#groups) as the current user.  There is a much more detailed example at [peerstack-example](https://github.com/mark-archer/peerstack-example).

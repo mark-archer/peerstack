@@ -1,7 +1,6 @@
 import * as _ from "lodash";
 import { fromJSON, isid, newid,  } from "./common";
-import { connections } from "./connections";
-import { getDB, IData } from "./db";
+import { getDB } from "./db";
 import { keysEqual, IUser, openMessage, signMessage, verifySignedObject } from "./user";
 
 export type txfn = <T>(data: (string | IRemoteData)) => Promise<T | void> | void
@@ -43,12 +42,6 @@ export interface IRemoteChunk extends IRemoteData {
   iChunk: number,
   totalChunks: number
   chunk: string,
-}
-
-export const eventHandlers = {
-  onRemoteDataSaved: (data: IData) => {
-    // placeholder
-  },
 }
 
 export async function ping(...args) {
@@ -129,7 +122,7 @@ export function RPC<T extends Function>(connection: IConnection, fn: T): T {
   };
 }
 
-export const RPC_TIMEOUT_MS = 10_000;
+export const RPC_TIMEOUT_MS = 15_000;
 export async function makeRemoteCall(connection: IConnection, fnName: string, args: any[]) {
   const id = newid();
   let rejectRemoteCall;

@@ -5,8 +5,12 @@ import { connections, chunkSize, me, IDeviceConnection, deviceConnections } from
 import { checkPermission, getBlockIds, getDetailHashes, getBlockIdHashes, getDB, hasPermission, IData, IDB, IGroup, getGroupUsersHash, getPersonalGroup } from "./db";
 import { ingestChange, IDataChange } from "./data-change";
 import { getBlockChangeInfo, getPrefixHashes } from "./data-change-sync";
-import { eventHandlers, getCurrentConnection, IConnection, ping, RPC, RPC_TIMEOUT_MS, setRemotelyCallableFunction, verifyRemoteUser } from "./remote-calls";
+import { getCurrentConnection, IConnection, ping, RPC, RPC_TIMEOUT_MS, setRemotelyCallableFunction, verifyRemoteUser } from "./remote-calls";
+import { Event } from "./events";
 
+export const events = {
+  remoteDataSaved: new Event<IData>('RemoteDataSaved')
+} 
 
 async function getRemoteGroups() {
   const connection: IConnection = getCurrentConnection();
@@ -202,11 +206,11 @@ async function fastSyncDataChanges(connection: IDeviceConnection, groupId: strin
               console.error(`error ingesting remote data change`, change, err);
             }
           }
-          Object.values(changedDocs).map(doc => eventHandlers.onRemoteDataSaved(doc));
+          Object.values(changedDocs).map(doc => events.remoteDataSaved.emit(doc));
           console.log(`ingestDataChanges ${changes.length} docs`);
         } catch (err) {
-          console.error('error processing remote data during fast sync', err);
           remoteJsonData.length = 0;
+          console.error('error processing remote data during fast sync', err);
         }
       }
     } catch (err) {
@@ -319,7 +323,7 @@ async function fastSyncData(connection: IDeviceConnection, groupId: string) {
           const docs: IData[] = remoteJsonData.map(json => parseJSON(json));
           remoteJsonData.length = 0;
           await db.save(docs, skipValidation);
-          docs.map(doc => eventHandlers.onRemoteDataSaved(doc));
+          docs.map(doc => events.remoteDataSaved.emit(doc));
           console.log(`fastSynced ${docs.length} docs`);
         } catch (err) {
           console.error('error processing remote data during fast sync', err);
@@ -369,7 +373,7 @@ async function deepSyncDataChanges(connection: IDeviceConnection, db: IDB, group
                 .then(async remoteChange => {
                   const doc = await ingestChange(remoteChange, undefined, skipValidation);
                   if (doc) {
-                    eventHandlers.onRemoteDataSaved(doc);
+                    events.remoteDataSaved.emit(doc)
                   }
                 })
                 .catch(err => {
@@ -436,7 +440,7 @@ async function deepSyncData(connection: IDeviceConnection, db: IDB, groupId: str
                   // we're only syncing with trustedUsers so we can usually skip validation
                   const skipValidation = !alwaysValidate;
                   await db.save(remoteData, skipValidation);
-                  eventHandlers.onRemoteDataSaved(remoteData)
+                  events.remoteDataSaved.emit(remoteData)
                 })
                 .catch(err => {
                   console.error('error syncing remote data', remoteData, err);
@@ -659,7 +663,7 @@ export async function pushDataChange(change: IDataChange, dontBroadcast?: boolea
   await verifyRemoteUser(connection);
   const doc = await ingestChange(change);
   if (doc) {
-    eventHandlers.onRemoteDataSaved(doc);
+    events.remoteDataSaved.emit(doc);
     if (!dontBroadcast) {
       connections().forEach(async _connection => {
         // if the change just came from this connection, don't send it back

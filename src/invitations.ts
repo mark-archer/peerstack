@@ -2,7 +2,8 @@ import { signObject, newUser, signMessageWithSecretKey, openMessage, init as ini
 import { registerDevice } from './connections';
 import { getDB, IData, IGroup } from './db';
 import { isid, newid } from './common';
-import { eventHandlers, getCurrentConnection, IConnection, RPC, setRemotelyCallableFunction } from './remote-calls';
+import { getCurrentConnection, IConnection, RPC, setRemotelyCallableFunction } from './remote-calls';
+import { events } from './data-sync';
 
 export interface IInvitation extends IData {
   type: 'Invitation',
@@ -98,7 +99,7 @@ export async function checkPendingInvitations(connection: IConnection) {
       }
       const group = await RPC(connection, confirmInvitation)(invitation.id, invitation.publicKey);
       await db.save(group);
-      eventHandlers.onRemoteDataSaved(group);
+      events.remoteDataSaved.emit(group);
 
       // @ts-ignore
       pendingInvite.type = "Deleted"

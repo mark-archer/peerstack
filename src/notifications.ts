@@ -1,10 +1,12 @@
 import { errorAfterTimeout, isObject, user } from ".";
 import { deviceConnections, deviceId, emit, onMessage } from "./connections";
 import { getDB, IData } from "./db";
+import * as dataSync from "./data-sync";
 import * as remoteCalls from "./remote-calls";
 import { boxDataForPublicKey, IDevice, IDataBox, openBox, IUser, signObject, verifySigner } from "./user";
 import { newid } from "./common";
 import { IDataChange, ingestChange } from "./data-change";
+import { Event } from "./events";
 
 export type INotificationStatus = 'read' | 'dismissed'
 
@@ -30,10 +32,10 @@ export function dataChangeToNotification(change: IDataChange): INotification {
   return notification;
 }
 
-export const eventHandlers = {
-  onNotificationReceived: (notification: INotification) => Promise.resolve(void 0),
-  onNotificationClicked: (notification: INotification) => Promise.resolve(void 0),
-};
+export const events = {
+  notificationReceived: new Event<INotification>('NotificationReceived'),
+  notificationClicked: new Event<INotification>('NotificationClicked'),
+}
 
 const seenNotificationIds: string[] = []
 
@@ -51,7 +53,7 @@ async function processNotification(notification: INotification): Promise<boolean
   if (isObject(notification.change)) {
     const data = await ingestChange(notification.change);
     if (data) {
-      remoteCalls.eventHandlers.onRemoteDataSaved(data);
+      dataSync.events.remoteDataSaved.emit(data);
     }
     notification.subject = notification.change.id;
     delete notification.change;
@@ -61,16 +63,13 @@ async function processNotification(notification: INotification): Promise<boolean
   notification.received = Date.now();
   signObject(notification);
   await db.save(notification);
-  try {
-    await eventHandlers.onNotificationReceived(notification);
-  } catch (err) {
-    console.error('error calling `onNotificationReceived`', err);
+  const result = await events.notificationReceived.emit(notification);
+  if (!result) {
+    console.error('emitting notification received returned false');
   }
   if (notification.dontShow || notification.status) {
     return false;
   }
-  // TODO this should maybe be reduced to notification id and subject
-  // notification.data = JSON.parse(JSON.stringify(notification));  
   notification.data = { id: notification.id, subject: notification.subject };
   return true;
 }
@@ -93,7 +92,7 @@ export async function receiveNotification(notification: INotification) {
         // This doesn't work on android
         const n = new Notification(notification.title, notification);
         n.onclick = (evt) => {
-          eventHandlers.onNotificationClicked(notification);
+          events.notificationClicked.emit(notification);
         }
       }
     }
@@ -232,17 +231,19 @@ if (typeof navigator !== 'undefined') {
     const data: { type: string, [key: string]: any } = event.data;
     if (data?.type === 'Notification') {
       const notification = data as INotification;
-      eventHandlers.onNotificationReceived(notification);
+      events.notificationReceived.emit(notification);
       if (notification.subject) {
         const db = await getDB();
         const _data = await db.get(notification.subject);
         if (_data) {
-          remoteCalls.eventHandlers.onRemoteDataSaved(_data);
+          // I'm not sure why this is here but it looks pretty intentional 
+          //    I suspect this is so event will be emitted in the "main" app thread instead of the background worker
+          dataSync.events.remoteDataSaved.emit(_data);
         }
       }
     } else if (data?.type === "NotificationClicked") {
       // TODO notifications can have different actions so we'll probably need a different or more specific event handler for that
-      eventHandlers.onNotificationClicked(data.notification as INotification)
+      events.notificationClicked.emit(data as INotification);
     }
   });
 }
