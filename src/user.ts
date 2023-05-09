@@ -324,7 +324,7 @@ export function verifySignedObject(obj: ISigned, publicKey: string) {
     let error;
     try {
       if (verifySignature(hash, signature, publicKey)) {
-        return true;
+        return;
       }
     } catch (err) {
       error = err;

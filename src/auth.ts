@@ -1,4 +1,5 @@
 import { IData } from "./db"
+import { ISigned } from "./user"
 
 
 export interface IKeyRegistry extends IData {
@@ -9,10 +10,9 @@ export interface IKeyRegistry extends IData {
   desc?: string      // optional description about this registry
 }
 
-export interface IPublicKey extends IData {
+interface IUserKey extends IData, ISigned {
   type: 'PublicKey' | 'SecretKey'
-  id: string
-  subject: string         // user, group, device, etc. that owns this key
+  subject: string         // user, group, device, etc. that owns this key (note that it's required vs optional in IData)
   publicKey: string       // to verify the identity of the owner of this key
   publicBoxKey: string    // to encrypt data to be sent to the owner of this key
   refreshed: number       // the timestamp this key was last confirmed to be in the registry
@@ -23,7 +23,11 @@ export interface IPublicKey extends IData {
   compromised?: number    // timestamp that the key was compromised (must be in past)
 }
 
-export interface ISecretKey extends IPublicKey {
+export interface IPublicKey extends IUserKey {
+  type: 'PublicKey'  
+}
+
+export interface ISecretKey extends IUserKey {
   type: 'SecretKey'
   secretKey: string
 }
@@ -42,7 +46,7 @@ export interface ISecretKey extends IPublicKey {
     sourceUrl allows publishing one key to many registries but retaining update permissions
       i.e. allow user to add their public key in Peers.app but also put the "source of truth url" as something else
     Most users will get the key and sourceUrl from Peers.app 
-      so they know it's not being highjacked (assuming they are don't remove their public key from Peers.app)
+      so they know it's not being highjacked (assuming they don't remove their public key from Peers.app)
       but will then use sourceUrl for updates so owning user retains control of updates
 
 Scenarios I want to support

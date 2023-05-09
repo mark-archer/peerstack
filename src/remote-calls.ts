@@ -73,6 +73,7 @@ export async function verifyRemoteUser(connection: IConnection) {
     verifySignedObject(connection.remoteUser, connection.remoteUser.publicKey);
     const db = await getDB();
     const dbUser = await db.get(connection.remoteUser.id) as IUser;
+    // TODO for all of the below issues see: host.ts and auth.ts, both are WIPs
     if (dbUser && !keysEqual(dbUser.publicKey, connection.remoteUser.publicKey)) {
       // TODO allow public keys to change
       //    this will have to happen if a user's private key is compromised so we need to plan for it
