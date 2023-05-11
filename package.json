@@ -12,7 +12,7 @@
     "test": "jest data-change --coverage --no-cache",
     "build": "webpack --config webpack.config.dev.js; webpack; tsc",
     "package": "yarn webpack",
-    "deploy": "yarn build; npm version patch; npm publish ."
+    "publish": "yarn build; npm version patch; npm publish ."
   },
   "devDependencies": {
     "@types/jest": "^26.0.15",
