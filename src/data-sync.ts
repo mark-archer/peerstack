@@ -125,6 +125,7 @@ async function fastSyncDataChangesRemote(groupId: string, dataChannelLabel: stri
           sleepMs *= 2;
           if (sleepMs > RPC_TIMEOUT_MS) {
             dc.close();
+            // connection.close() // ???????
             return resolve();
           }
         }

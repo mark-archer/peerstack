@@ -3,6 +3,12 @@ import { hashObject, idTime, isid_v1 } from './common';
 import { ISigned, IUser, keysEqual, verifySigner } from './user';
 import * as dbix from './dbix'
 import { IDataChange } from './data-change';
+import { Event } from './events';
+
+export const events = {
+  dataSaved: new Event<IData>('DataSaved'),
+  dataDeleted: new Event<IData>('DataDeleted'),
+}
 
 export interface IData extends ISigned {
   id: string
@@ -11,7 +17,8 @@ export interface IData extends ISigned {
   modified: number
   subject?: string
   ttl?: number // date in ms after which the data should be deleted
-  [key: string]: any
+
+  [key: string]: any // TODO this should probably be removed
 }
 
 export interface IGroupMember {
@@ -197,7 +204,10 @@ export async function init(opts?: PeerstackDBOpts): Promise<IDB> {
       }
     }
     await _db.save(data);
-    data.forEach((d: IData) => clearHashCache(d.group));
+    data.forEach((d: IData) => {
+      clearHashCache(d.group);
+      events.dataSaved.emit(d);
+    });
   };
 
   // NOTE: delete has very little use since deleting data that has already propagated to other devices will just get recreated when syncing with those devices
@@ -208,6 +218,7 @@ export async function init(opts?: PeerstackDBOpts): Promise<IDB> {
     if (!dbData) return;
     await _db.delete(id);
     clearHashCache(dbData.group);
+    events.dataDeleted.emit(dbData);
   }
 
   db.files.save = (file: IFile) => {
@@ -272,7 +283,7 @@ export async function hasPermission(userId: string, group: string | IGroup, acce
   if (typeof group === 'string') {
     group = await getGroup(group);
   }
-  
+
   // enables propagating deleted groups
   if ((group as any)?.type == 'Deleted' && group.id === group.group) {
     return true
@@ -496,7 +507,7 @@ export async function getDetailHashes(groupId: string) {
 
 export async function getGroupUsersHash(groupId: string) {
   const users = await getGroupUsers(groupId);
-  const hashValues = sortBy(users, ["modified", "id"]).map(u => ({ id: u.id, modified: u.modified }));  
+  const hashValues = sortBy(users, ["modified", "id"]).map(u => ({ id: u.id, modified: u.modified }));
   return { users, hash: hashObject(hashValues) };
 }
 
