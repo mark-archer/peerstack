@@ -5,7 +5,6 @@ import { getDB, hasPermission, IData, IFile } from "./db";
 import { getCurrentConnection, RPC, setRemotelyCallableFunction, verifyRemoteUser } from "./remote-calls";
 
 // remotelyCallableFunctions.getFile = getFile;
-setRemotelyCallableFunction(getFile);
 
 console.log('remote-files');
 
@@ -177,3 +176,5 @@ async function getFile(fileId: string) {
 
   return file;
 }
+
+setRemotelyCallableFunction(getFile, 'getFile');

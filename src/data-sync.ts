@@ -97,6 +97,7 @@ async function fastSyncDataChangesRemote(groupId: string, dataChannelLabel: stri
     try {
       const _connection: IConnection = getCurrentConnection();
       const connection = connections().find(c => c.id === _connection.id);
+      if (!connection) return resolve();
       await checkPermission(_connection.remoteUser?.id, groupId, 'read');
 
       const dc = await connection.pc.createDataChannel(dataChannelLabel);
@@ -227,6 +228,7 @@ async function fastSyncDataRemote(groupId: string, dataChannelLabel: string, las
     try {
       const _connection: IConnection = getCurrentConnection();
       const connection = connections().find(c => c.id === _connection.id);
+      if (!connection) return resolve();
       await checkPermission(_connection.remoteUser?.id, groupId, 'read');
 
       const dc = await connection.pc.createDataChannel(dataChannelLabel);
