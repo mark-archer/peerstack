@@ -353,9 +353,11 @@ export async function commitChange<T extends IData>(data: T, options: { preserve
       await checkPermission(userId, data.group, 'write');
     }
     const dataChange = getDataChange(dbData, data);
-    signObject(dataChange);
-    await ingestChange(dataChange, dbData);
-    changes.push(dataChange);
+    if (dataChange.changes.length) {
+      signObject(dataChange);
+      await ingestChange(dataChange, dbData);
+      changes.push(dataChange);
+    }
   }
   else { // group is changing
     // make sure I can write to both groups

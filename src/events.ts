@@ -83,12 +83,12 @@ export async function emit(event: IEventData): Promise<boolean> {
 
 // TODO probably comment this out or put behind a debug flag
 // subscribe to all events and log them out
-subscribe(
-  () => true,
-  (evt) => {
-    console.log(`event published: ${evt.name}`, { eventName: evt.name, data: evt.data });
-  }
-);
+// subscribe(
+//   () => true,
+//   (evt) => {
+//     console.log(`event published: ${evt.name}`, { eventName: evt.name, data: evt.data });
+//   }
+// );
 
 export type IHandler<T> = (data: T) => boolean | void | Promise<boolean> | Promise<void>;
 
