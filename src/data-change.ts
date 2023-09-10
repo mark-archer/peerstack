@@ -353,7 +353,7 @@ export async function commitChange<T extends IData>(data: T, options: { preserve
       await checkPermission(userId, data.group, 'write');
     }
     const dataChange = getDataChange(dbData, data);
-    if (dataChange.changes.length) {
+    if (dataChange.changes.length || dataChange.subjectDeleted) {
       signObject(dataChange);
       await ingestChange(dataChange, dbData);
       changes.push(dataChange);

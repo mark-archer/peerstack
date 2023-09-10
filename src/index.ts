@@ -1,3 +1,4 @@
+import { sleep } from './common';
 import { connections, deviceId } from './connections';
 import { commitChange, IDataChange } from './data-change';
 import { pushDataChange } from './data-sync';
@@ -28,12 +29,17 @@ export { registerServiceWorker };
   With one call we save the data to the db, push to connected peers, then web-push to disconnected peers.
 */
 export async function saveDataAndPushToPeers(data: IData, preserveModified = false) {
-  const changes = await commitChange(data, { preserveModified })
+  const changes = await commitChange(data, { preserveModified });
 
-  for (const change of changes) {
-    // we don't want this client waiting for the push to peers
-    pushChangeToPeers(change);
-  }
+  (async () => {
+    for (const change of changes) {
+      // we don't want this client waiting for the push to peers
+      await Promise.race([
+        pushChangeToPeers(change),
+        sleep(1000),
+      ]).catch(err => 0);
+    }
+  })();
 
   return data;
 }
