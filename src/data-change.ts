@@ -4,7 +4,12 @@ import { me } from "./connections";
 import { invalidateCache } from "./data-change-sync";
 import { getDB, checkPermission, IData, hasPermission, IGroup, getUser, users, isGroup } from "./db";
 import { ISigned, isUser, IUser, keysEqual, signObject, userId, verifySigner } from './user';
-// import { isObject } from "./common";
+import { Event } from './events';
+
+
+export const events = {
+  dataChangesIngested: new Event<{ updatedData: IData, dataBeforeChange?: IData, dataChange: IDataChange }>('dataChangesIngested'),
+}
 
 export type IChange = [string, any?]
 
@@ -241,6 +246,7 @@ export async function ingestChange(dataChange: IDataChange, dbData?: IData, skip
     dbData = await db.get(dataChange.subject);
   }
   const oldModified = dbData?.modified;
+  const dataBeforeChange = cloneDeep(dbData);
 
   if (!skipValidation) {
     // verify changes  
@@ -248,7 +254,7 @@ export async function ingestChange(dataChange: IDataChange, dbData?: IData, skip
     if (dataChange.subject === dataChange.signer && !dbData) {
       // this is creating (or modifying) a user we dont' have in the db
       // TODO look up the user's public key from a registry
-    } 
+    }
     else if (dbData?.type === 'User') {
       if (dataChange.signer !== dbData.id) {
         throw new Error('Changes to a user must be signed by themselves');
@@ -294,7 +300,7 @@ export async function ingestChange(dataChange: IDataChange, dbData?: IData, skip
   else if (dbData?.type === 'User' && dbData.id === me?.id) {
     dbData.modified++; // increment modified so peers replace their local, unsigned copy with this one
     signObject(dbData);
-  } 
+  }
   else {
     // otherwise delete signer and signature if they exist since they are probably no longer correct
     delete dbData.signer;
@@ -308,6 +314,8 @@ export async function ingestChange(dataChange: IDataChange, dbData?: IData, skip
   await db.changes.save(dataChange);
 
   invalidateCache(dataChange.group, dataChange.modified, oldModified);
+
+  events.dataChangesIngested.emit({ updatedData: dbData, dataBeforeChange, dataChange });
 
   return dbData;
 }
@@ -343,7 +351,7 @@ export async function commitChange<T extends IData>(data: T, options: { preserve
       //  the user might have already signed this so this could be useless 
       //  and expensive but updates to groups should be rare so doing this for now
       signObject(data);
-    } 
+    }
     else if (isUser(data)) {
       if (data.id !== data.signer) {
         throw new Error(`Users can only be modified by themselves`);
