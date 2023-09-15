@@ -275,7 +275,7 @@ async function fastSyncData(connection: IDeviceConnection, groupId: string) {
   return new Promise<void>(async (resolve, reject) => {
     try {
       await verifyRemoteUser(connection)
-      const skipValidation = connection.remoteUser.id === me.id;
+      const skipValidation = connection.remoteUser.id === me.id || (await hasPermission(connection.remoteUser.id, groupId, 'write'));
 
       const db = await getDB();
       const lastModifiedCursor = await db.openCursor({ lower: [groupId, -Infinity], upper: [groupId, Infinity] }, 'group-modified', 'prev');

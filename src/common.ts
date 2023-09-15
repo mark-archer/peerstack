@@ -321,8 +321,12 @@ export function toJSON(obj: any) {
       return ("__REGEXP " + obj.toString());
     //   if(isDate(obj))
     //       return "__DATE " + obj.toISOString();
-    if (_.isDate(obj))
+    if (_.isDate(obj)) {
+      if (String(obj) === 'Invalid Date') {
+        return null;
+      }
       return obj.toISOString();
+    }
     if (_.isFunction(obj))
       return '__FUNCTION ' + obj.toString();
     if (_.isElement(obj)) {
