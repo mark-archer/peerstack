@@ -323,7 +323,11 @@ async function fastSyncData(connection: IDeviceConnection, groupId: string) {
             continue;
           }
           sleepMs = 8;
-          const docs: IData[] = remoteJsonData.map(json => parseJSON(json));
+          // NOTE This is getting pretty hacky permissions-wise.  Probably want to redo this somehow.  It might not be needed if data-changes is working correctly
+          const docs: IData[] = remoteJsonData.map(json => parseJSON(json)).filter(d => 
+            connection.remoteUser.id === me.id ||
+            !['User', 'Group'].includes(d.type)
+          );
           remoteJsonData.length = 0;
           await db.save(docs, skipValidation);
           docs.map(doc => events.remoteDataSaved.emit(doc));
