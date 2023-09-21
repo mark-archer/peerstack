@@ -162,8 +162,9 @@ export function getDetailHashes(groupId: string, blockId_?: string) {
 }
 
 export async function getBlockChangeInfo(groupId: string, blockId: string) {
-  const minModified = getBlockRange(blockId).min;
-  const maxModified = getBlockRange(blockId).max;
+  const range = getBlockRange(blockId);
+  const minModified = range.min;
+  const maxModified = range.max;
   const db = await getDB();
   const cursor = await db.changes.openCursor(groupId, minModified);
   const data: { id: string, modified: number}[] = [];

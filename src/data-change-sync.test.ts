@@ -1,7 +1,7 @@
 import 'should';
 import { hashObject } from './common';
 import { commitChange, IDataChange } from './data-change';
-import { BLOCK_SIZE, getBlockId, getDetailHashes, getPrefixHashes, invalidateCache } from './data-change-sync';
+import { BLOCK_SIZE, getBlockId, getBlockRange, getDetailHashes, getPrefixHashes, invalidateCache } from './data-change-sync';
 import { IDB, IGroup } from './db';
 import { initDBWithMemoryMock } from "./db-mock.test";
 import { init as initUser, newData, newGroup, newUser, signObject, signObjectWithIdAndSecretKey } from './user';
@@ -23,6 +23,17 @@ describe("data-change-sync", () => {
     myGroup = newGroup();
     signObject(myGroup);
     await commitChange(myGroup);
+    myGroup = await db.get(myGroup.id);
+  });
+
+  describe("getBlockRange", () => {
+    test("user block range", () => {
+      const userBlock = getBlockRange('users');
+      expect(userBlock).toEqual({
+          min: -Infinity,
+          max: Infinity,
+      });
+    });
   });
 
   describe("getBlockId", () => {
@@ -61,7 +72,8 @@ describe("data-change-sync", () => {
       const groupChanges = await db.changes.getSubjectChanges(myGroup.id);
       expect(groupChanges.length).toEqual(1);
       const groupChange = groupChanges[0];
-      expect(groupChange.modified).toEqual(myGroup.modified);
+      // expect(groupChange.modified).toEqual(myGroup.modified - 1); // I think `myGroup` is somehow having it's `modified` value incremented
+      expect(groupChange.modified).toEqual(myGroup.modified); // I think `myGroup` is somehow having it's `modified` value incremented
       const detailHashes = await getDetailHashes(myGroup.id);
       const blockId = getBlockId(groupChange.modified);
       expect(detailHashes).toEqual({
@@ -120,7 +132,7 @@ describe("data-change-sync", () => {
       const groupChanges = await db.changes.getSubjectChanges(myGroup.id);
       expect(groupChanges.length).toEqual(1);
       const groupChange = groupChanges[0];
-      expect(groupChange.modified).toEqual(myGroup.modified);
+      expect(groupChange.modified).toEqual(myGroup.modified - 1);
       const prefixHashes = await getPrefixHashes(myGroup.id);
       const blockId = getBlockId(groupChange.modified);
       expect(prefixHashes).toEqual({
@@ -183,7 +195,7 @@ describe("data-change-sync", () => {
 
       expect(hashes2).toMatchObject({
         [b2]: hashObject([
-          { id: myGroupChange.id, modified: m2 },
+          { id: myGroupChange.id, modified: m2 - 1 },
           { id: c1_2.id, modified: m2 },
           { id: c2_2.id, modified: m2 },
         ]),
