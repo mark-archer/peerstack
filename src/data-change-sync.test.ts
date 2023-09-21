@@ -72,8 +72,7 @@ describe("data-change-sync", () => {
       const groupChanges = await db.changes.getSubjectChanges(myGroup.id);
       expect(groupChanges.length).toEqual(1);
       const groupChange = groupChanges[0];
-      // expect(groupChange.modified).toEqual(myGroup.modified - 1); // I think `myGroup` is somehow having it's `modified` value incremented
-      expect(groupChange.modified).toEqual(myGroup.modified); // I think `myGroup` is somehow having it's `modified` value incremented
+      expect(groupChange.modified).toEqual(myGroup.modified - 1); // I think `myGroup` is somehow having it's `modified` value incremented
       const detailHashes = await getDetailHashes(myGroup.id);
       const blockId = getBlockId(groupChange.modified);
       expect(detailHashes).toEqual({
