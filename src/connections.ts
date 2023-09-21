@@ -250,12 +250,14 @@ export async function checkConnection(connection: IDeviceConnection) {
 }
 
 // regularly check if connections are active and close them if not
-setInterval(() => {
+const connectionWatchDog = setInterval(() => {
   const connection = shuffle(connections())[0];
   if (connection) {
     checkConnection(connection);
   }
 }, 60_000);
+// @ts-ignore
+connectionWatchDog?.unref?.();
 
 function closeConnection(connection: IDeviceConnection) {
   connection.dc?.close();

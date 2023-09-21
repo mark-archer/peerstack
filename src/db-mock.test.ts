@@ -186,3 +186,5 @@ export async function initDBWithMemoryMock(): Promise<IDB> {
     persistenceLayer: await mockPersistencyLayerOpts()
   });
 }
+
+test('dummy', () => expect(1).toEqual(1));
