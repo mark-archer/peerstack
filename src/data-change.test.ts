@@ -2,7 +2,7 @@ import { newUser, init, newData, signObject, signObjectWithIdAndSecretKey,newGro
 import * as _ from 'lodash';
 import 'should';
 import { initDBWithMemoryMock } from "./db-mock.test";
-import { applyChanges, getChanges, isEmptyArray, isEmptyObj, isLeaf, isObj, commitChange, deleteData, getDataChange, ingestChange } from "./data-change";
+import { applyChanges, getChanges, isEmptyArray, isEmptyObj, isLeaf, isObj, commitChange, deleteData, getDataChange, ingestChange, IDataChange } from "./data-change";
 import { IData, IDB, IGroup } from "./db";
 import { cloneDeep } from "lodash";
 import { newid } from "./common";
@@ -741,6 +741,20 @@ describe('data-change', () => {
       dbData = await db.get(data.id);
       // note that `b` should be updated but `a` shouldn't since there is a newer change for it
       expect(dbData).toMatchObject({ a: 2, b: 2, modified: data.modified+1 });
+    })
+
+    test('change for an object that this device does not have but `skipValidation` is true', async () => {
+      const dataChange: IDataChange = {
+        id: newid(),
+        subject: newid(),
+        group: myGroup.id,
+        modified: 1,
+        changes: [['n', 1]],
+      }
+      signObjectWithIdAndSecretKey(dataChange, peer.id, peer.secretKey);
+      await expect(
+        ingestChange(dataChange, undefined, true)
+      ).rejects.toThrow(/Cannot apply partial changes to an object that doesn\'t exist/);
     })
 
     describe('create or modify a user', () => {

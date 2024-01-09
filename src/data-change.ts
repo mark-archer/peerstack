@@ -276,6 +276,9 @@ export async function ingestChange(dataChange: IDataChange, dbData?: IData, skip
 
   if (dataChange.modified > (dbData?.modified ?? -Infinity)) {
     dbData = applyChanges(dbData, dataChange.changes);
+    if (!dbData) {
+      throw new Error(`Cannot apply partial changes to an object that doesn't exist (ingestChange was probably called with a change for an object that isn't in the local db)`);
+    }
     dbData.modified = dataChange.modified;
   } else {
     const existingChanges = await db.changes.getSubjectChanges(dataChange.subject, dataChange.modified);
